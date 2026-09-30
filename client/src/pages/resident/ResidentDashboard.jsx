@@ -89,7 +89,7 @@ export const ResidentDashboard = () => {
             variant="danger"
             size="sm"
             className="rounded-xl shadow-xs"
-            onClick={() => alert('🚨 Emergency SOS broadcast initiated to estate security dispatch.')}
+            onClick={() => alert('Emergency SOS broadcast initiated to estate security dispatch.')}
           >
             <ShieldAlert className="w-4 h-4 mr-1.5" />
             SOS Alert

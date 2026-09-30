@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 export const PaymentOverviewCard = ({ data }) => {
   const [filter, setFilter] = useState('This Month');
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState(null);
+  const [isAnimated, setIsAnimated] = useState(false);
+  const [displayPercentage, setDisplayPercentage] = useState(0);
 
   const collected = data?.collected || 8950000;
   const outstanding = data?.outstanding || 3480000;
   const total = data?.total || 12430000;
-  const percentage = data?.percentage || 72;
+  const targetPercentage = data?.percentage || 72;
 
   // Chart data points
   const chartData = data?.chartData || [
@@ -30,10 +32,46 @@ export const PaymentOverviewCard = ({ data }) => {
 
   const maxVal = 4500000; // ₦4.5M scale ceiling
 
-  // Circular progress calculations for 72% donut
+  // Circular progress calculations for donut
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  const targetStrokeDashoffset = circumference - (targetPercentage / 100) * circumference;
+
+  // On-load motion: Trigger bar heights and donut progress after mount
+  useEffect(() => {
+    setIsAnimated(false);
+    setDisplayPercentage(0);
+
+    const timer = setTimeout(() => {
+      setIsAnimated(true);
+    }, 60);
+
+    // Number counter animation for percentage
+    const duration = 1200; // 1.2s
+    const startTime = performance.now();
+
+    const animateCounter = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(eased * targetPercentage);
+      setDisplayPercentage(current);
+
+      if (progress < 1) {
+        requestAnimationFrame(animateCounter);
+      } else {
+        setDisplayPercentage(targetPercentage);
+      }
+    };
+
+    const counterRaf = requestAnimationFrame(animateCounter);
+
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(counterRaf);
+    };
+  }, [data, filter, targetPercentage]);
 
   return (
     <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-card">
@@ -46,6 +84,7 @@ export const PaymentOverviewCard = ({ data }) => {
         {/* Period Filter Dropdown */}
         <div className="relative">
           <button
+            type="button"
             onClick={() => setFilterOpen(!filterOpen)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
           >
@@ -58,6 +97,7 @@ export const PaymentOverviewCard = ({ data }) => {
               {['This Month', 'Last Month', 'This Quarter', 'Year to Date'].map((opt) => (
                 <button
                   key={opt}
+                  type="button"
                   onClick={() => {
                     setFilter(opt);
                     setFilterOpen(false);
@@ -105,8 +145,11 @@ export const PaymentOverviewCard = ({ data }) => {
             {/* Bars container */}
             <div className="w-full pl-8 h-full flex items-end justify-between gap-1 sm:gap-2 z-10">
               {chartData.map((item, idx) => {
-                const receivedHeight = Math.min(100, (item.received / maxVal) * 100);
-                const outstandingHeight = Math.min(100, (item.outstanding / maxVal) * 100);
+                const targetReceived = Math.min(100, (item.received / maxVal) * 100);
+                const targetOutstanding = Math.min(100, (item.outstanding / maxVal) * 100);
+
+                const currentReceived = isAnimated ? targetReceived : 0;
+                const currentOutstanding = isAnimated ? targetOutstanding : 0;
 
                 return (
                   <div
@@ -124,17 +167,23 @@ export const PaymentOverviewCard = ({ data }) => {
                       </div>
                     )}
 
-                    {/* Dual grouped bars */}
+                    {/* Dual grouped bars with staggered spring growth */}
                     <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1 h-full pb-1">
                       {/* Received Bar (Solid Orange) */}
                       <div
-                        style={{ height: `${receivedHeight}%` }}
-                        className="w-1.5 sm:w-2.5 bg-primary rounded-t-sm transition-all duration-300 group-hover:brightness-110"
+                        style={{ 
+                          height: `${currentReceived}%`,
+                          transition: `height 800ms cubic-bezier(0.16, 1, 0.3, 1) ${idx * 35}ms` 
+                        }}
+                        className="w-1.5 sm:w-2.5 bg-primary rounded-t-sm group-hover:brightness-110"
                       />
                       {/* Outstanding Bar (Soft Peach) */}
                       <div
-                        style={{ height: `${outstandingHeight}%` }}
-                        className="w-1.5 sm:w-2.5 bg-orange-200/80 rounded-t-sm transition-all duration-300 group-hover:brightness-105"
+                        style={{ 
+                          height: `${currentOutstanding}%`,
+                          transition: `height 800ms cubic-bezier(0.16, 1, 0.3, 1) ${idx * 35 + 40}ms` 
+                        }}
+                        className="w-1.5 sm:w-2.5 bg-orange-200/80 rounded-t-sm group-hover:brightness-105"
                       />
                     </div>
 
@@ -163,7 +212,7 @@ export const PaymentOverviewCard = ({ data }) => {
 
         {/* Right: Radial Donut Chart & Breakdown (4 cols) */}
         <div className="lg:col-span-4 bg-slate-50/70 rounded-2xl p-5 border border-slate-100 flex flex-col items-center justify-center">
-          {/* Radial Donut SVG Meter */}
+          {/* Radial Donut SVG Meter with smooth arc transition */}
           <div className="relative w-36 h-36 flex items-center justify-center my-1">
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 130 130">
               {/* Background Track */}
@@ -181,20 +230,23 @@ export const PaymentOverviewCard = ({ data }) => {
                 cx="65"
                 cy="65"
                 r={radius}
-                className="text-primary transition-all duration-1000 ease-out"
+                style={{
+                  strokeDashoffset: isAnimated ? targetStrokeDashoffset : circumference,
+                  transition: 'stroke-dashoffset 1100ms cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+                className="text-primary"
                 strokeWidth="12"
                 strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
                 stroke="currentColor"
                 fill="transparent"
               />
             </svg>
 
-            {/* Inner Percentage Label */}
+            {/* Inner Percentage Label with Smooth Counter */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="text-2xl font-black text-slate-900 leading-none">
-                {percentage}%
+              <span className="text-2xl font-black text-slate-900 leading-none tabular-nums">
+                {displayPercentage}%
               </span>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
                 Collected

@@ -1,7 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 
 export const EstatesOverviewDeck = ({ estates = [], onViewAll }) => {
+  const [isAnimated, setIsAnimated] = useState(false);
+
+  useEffect(() => {
+    setIsAnimated(false);
+    const timer = setTimeout(() => setIsAnimated(true), 80);
+    return () => clearTimeout(timer);
+  }, [estates]);
+
   return (
     <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-card flex flex-col justify-between">
       {/* Header bar */}
@@ -10,6 +18,7 @@ export const EstatesOverviewDeck = ({ estates = [], onViewAll }) => {
           Estates Overview
         </h3>
         <button
+          type="button"
           onClick={onViewAll}
           className="text-xs font-bold text-primary hover:text-primary-600 transition-colors cursor-pointer"
         >
@@ -19,7 +28,7 @@ export const EstatesOverviewDeck = ({ estates = [], onViewAll }) => {
 
       {/* Grid of Estate Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {estates.map((est) => {
+        {estates.map((est, idx) => {
           const occupancy = est.occupancyPercentage || 85;
 
           return (
@@ -35,7 +44,10 @@ export const EstatesOverviewDeck = ({ estates = [], onViewAll }) => {
                     alt={est.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-                  <button className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-white/90 backdrop-blur-xs flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors">
+                  <button 
+                    type="button"
+                    className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-white/90 backdrop-blur-xs flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+                  >
                     <MoreHorizontal className="w-4 h-4" />
                   </button>
                 </div>
@@ -56,8 +68,11 @@ export const EstatesOverviewDeck = ({ estates = [], onViewAll }) => {
                 </div>
                 <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
                   <div
-                    style={{ width: `${occupancy}%` }}
-                    className="h-full bg-primary rounded-full transition-all duration-500"
+                    style={{ 
+                      width: isAnimated ? `${occupancy}%` : '0%',
+                      transition: `width 800ms cubic-bezier(0.16, 1, 0.3, 1) ${idx * 100}ms`
+                    }}
+                    className="h-full bg-primary rounded-full"
                   />
                 </div>
               </div>

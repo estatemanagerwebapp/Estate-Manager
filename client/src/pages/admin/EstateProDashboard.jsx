@@ -56,16 +56,16 @@ export const EstateProDashboard = ({ isScanQROpen, setIsScanQROpen }) => {
         setGenerateInvoiceOpen(true);
         break;
       case 'record-payment':
-        showToast('💳 Record Payment: Select an invoice or scan transaction reference.');
+        showToast('Record Payment: Select an invoice or scan transaction reference.');
         break;
       case 'create-pass':
         setCreatePassOpen(true);
         break;
       case 'remote-gate':
-        showToast('🚪 Command Dispatched: Main Entrance Gate opened remotely by Administrator.');
+        showToast('Command Dispatched: Main Entrance Gate opened remotely by Administrator.');
         break;
       case 'maintenance-request':
-        showToast('🔧 Maintenance Log: New work order dispatch ticket initialized.');
+        showToast('Maintenance Log: New work order dispatch ticket initialized.');
         break;
       default:
         break;
@@ -100,9 +100,8 @@ export const EstateProDashboard = ({ isScanQROpen, setIsScanQROpen }) => {
       {/* Greeting & Top Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <span>Good morning, Tobi</span>
-            <span className="text-2xl inline-block transform hover:rotate-12 transition-transform cursor-default">👋</span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Good morning, Tobi
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
             Here's what's happening across your estates today.
@@ -240,7 +239,7 @@ export const EstateProDashboard = ({ isScanQROpen, setIsScanQROpen }) => {
         isOpen={isScanQROpen}
         onClose={() => setIsScanQROpen(false)}
         onVerified={() => {
-          showToast('✅ Gate Access Granted! Arrival alert dispatched.');
+          showToast('Gate Access Granted: Arrival alert dispatched.');
           refetch();
         }}
       />
