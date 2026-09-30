@@ -5,6 +5,9 @@
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #F8F9FB;
+    color: #101828;
+    -webkit-font-smoothing: antialiased;
   }
   
   .font-mono {
@@ -12,27 +15,31 @@
   }
 }
 
-/* High-contrast gate mode */
-.gate-mode {
-  background-color: #090d16;
-  color: #f8fafc;
+/* Custom sleek scrollbar for desktop & horizontal decks */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.gate-mode input {
-  background-color: #1e293b;
-  border-color: #334155;
-  color: #ffffff;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* Glassmorphism subtle utility */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+::-webkit-scrollbar-thumb {
+  background: #D0D5DD;
+  border-radius: 9999px;
 }
 
-.dark .glass-panel {
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+::-webkit-scrollbar-thumb:hover {
+  background: #98A2B3;
+}
+
+/* Subtle pulse for live status dots */
+@keyframes pulse-gentle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.08); }
+}
+
+.animate-pulse-gentle {
+  animation: pulse-gentle 2.5s infinite ease-in-out;
 }
