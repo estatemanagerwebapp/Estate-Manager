@@ -55,6 +55,18 @@ const estateSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    imageUrl: {
+      type: String,
+      default: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&auto=format&fit=crop&q=80'
+    },
+    totalUnits: {
+      type: Number,
+      default: 100
+    },
+    occupancyRate: {
+      type: Number,
+      default: 85
+    },
     isActive: {
       type: Boolean,
       default: true

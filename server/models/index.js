@@ -14,6 +14,7 @@ const Notification = require('./Notification');
 const Facility = require('./Facility');
 const Booking = require('./Booking');
 const AuditLog = require('./AuditLog');
+const UpcomingDue = require('./UpcomingDue');
 
 module.exports = {
   User,
@@ -31,5 +32,6 @@ module.exports = {
   Notification,
   Facility,
   Booking,
-  AuditLog
+  AuditLog,
+  UpcomingDue
 };

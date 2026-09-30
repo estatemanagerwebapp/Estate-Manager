@@ -2,7 +2,51 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 const User = require('../models/User');
+const { isConnected } = require('../config/db');
 const { loginSchema, registerSchema } = require('@estate-manager/shared/schemas');
+
+const MOCK_USERS = {
+  'superadmin@estatemanager.io': {
+    _id: 'usr_superadmin_01',
+    firstName: 'Super',
+    lastName: 'Admin',
+    email: 'superadmin@estatemanager.io',
+    phone: '+234 800 000 0001',
+    role: 'SUPER_ADMIN',
+    accessControlStatus: 'ENABLED',
+    isActive: true
+  },
+  'admin@estatemanager.io': {
+    _id: 'usr_admin_01',
+    firstName: 'Tola',
+    lastName: 'Balogun',
+    email: 'admin@estatemanager.io',
+    phone: '+234 801 234 5678',
+    role: 'ESTATE_ADMIN',
+    accessControlStatus: 'ENABLED',
+    isActive: true
+  },
+  'guard@estatemanager.io': {
+    _id: 'usr_guard_01',
+    firstName: 'Musa',
+    lastName: 'Ibrahim',
+    email: 'guard@estatemanager.io',
+    phone: '+234 802 345 6789',
+    role: 'GUARD',
+    accessControlStatus: 'ENABLED',
+    isActive: true
+  },
+  'resident@estatemanager.io': {
+    _id: 'usr_resident_01',
+    firstName: 'Adeola',
+    lastName: 'Johnson',
+    email: 'resident@estatemanager.io',
+    phone: '+234 803 123 4567',
+    role: 'RESIDENT',
+    accessControlStatus: 'ENABLED',
+    isActive: true
+  }
+};
 
 const generateTokens = (user) => {
   const payload = {
@@ -77,6 +121,28 @@ exports.register = async (req, res, next) => {
 exports.login = async (req, res, next) => {
   try {
     const validated = loginSchema.parse(req.body);
+
+    if (!isConnected()) {
+      const mockUser = MOCK_USERS[validated.email];
+      if (mockUser) {
+        const { accessToken, refreshToken } = generateTokens(mockUser);
+        res.cookie('access_token', accessToken, {
+          httpOnly: true,
+          secure: config.env === 'production',
+          sameSite: 'lax',
+          maxAge: 3600000
+        });
+        return res.json({
+          success: true,
+          message: 'Login successful (Preview Mode).',
+          data: {
+            user: mockUser,
+            token: accessToken,
+            refreshToken
+          }
+        });
+      }
+    }
 
     const user = await User.findOne({ email: validated.email }).select('+password');
     if (!user) {

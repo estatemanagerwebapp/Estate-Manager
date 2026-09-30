@@ -7,7 +7,7 @@ dotenv.config(); // fallback to local
 
 module.exports = {
   env: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT, 10) || 5000,
+  port: parseInt(process.env.PORT, 10) || 5001,
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   mongoUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/estate_manager',
   jwtSecret: process.env.JWT_SECRET || 'estate-manager-dev-jwt-secret-key-min-32-chars-long',
