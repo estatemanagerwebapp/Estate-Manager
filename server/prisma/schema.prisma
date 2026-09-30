@@ -1,0 +1,285 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ESTATE_ADMIN
+  GUARD
+  RESIDENT
+  AUDITOR
+}
+
+enum AccessControlStatus {
+  ENABLED
+  DISABLED
+}
+
+enum AccessCodeType {
+  GUEST
+  DELIVERY
+  SERVICE
+  FREQUENT
+  EVENT
+}
+
+enum AccessCodeStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+  RESTRICTED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum GateAction {
+  ENTRY
+  EXIT
+  DENIED
+}
+
+model Estate {
+  id                      String            @id @default(cuid())
+  name                    String
+  code                    String            @unique
+  address                 String
+  city                    String            @default("Lagos")
+  state                   String            @default("Lagos")
+  country                 String            @default("Nigeria")
+  totalUnits              Int               @default(100)
+  occupancyRate           Int               @default(85)
+  imageUrl                String?
+  contactEmail            String?
+  contactPhone            String?
+  requireVisitorImage     Boolean           @default(true)
+  requireVehicleImage     Boolean           @default(false)
+  defaultCodeValidityHours Int              @default(12)
+  isActive                Boolean           @default(true)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  properties              Property[]
+  userProperties          UserProperty[]
+  invoices                Invoice[]
+  payments                Payment[]
+  accessCodes             AccessCode[]
+  verificationLogs        VerificationLog[]
+  upcomingDues            UpcomingDue[]
+  complaints              Complaint[]
+}
+
+model Property {
+  id                String         @id @default(cuid())
+  estateId          String
+  type              String         @default("APARTMENT")
+  court             String?
+  block             String?
+  floor             String?
+  apartmentNumber   String
+  displayIdentifier String
+  occupancyStatus   String         @default("VACANT")
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  estate            Estate         @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  userProperties    UserProperty[]
+  invoices          Invoice[]
+  accessCodes       AccessCode[]
+  verificationLogs  VerificationLog[]
+  complaints        Complaint[]
+
+  @@unique([estateId, displayIdentifier])
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  firstName           String
+  lastName            String
+  email               String               @unique
+  phone               String
+  password            String
+  role                Role                 @default(RESIDENT)
+  accessControlStatus AccessControlStatus  @default(ENABLED)
+  restrictionReason   String?
+  restrictedAt        DateTime?
+  avatar              String?
+  isActive            Boolean              @default(true)
+  lastLoginAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  userProperties      UserProperty[]
+  invoices            Invoice[]
+  payments            Payment[]
+  accessCodes         AccessCode[]
+  createdComplaints   Complaint[]          @relation("ResidentComplaints")
+  assignedComplaints  Complaint[]          @relation("StaffComplaints")
+  verifiedLogs        VerificationLog[]    @relation("GuardLogs")
+  residentLogs        VerificationLog[]    @relation("ResidentLogs")
+}
+
+model UserProperty {
+  id           String    @id @default(cuid())
+  userId       String
+  propertyId   String
+  estateId     String
+  relationship String    @default("OWNER") // OWNER or TENANT
+  isPrimary    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  estate       Estate    @relation(fields: [estateId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+}
+
+model Invoice {
+  id             String         @id @default(cuid())
+  invoiceNumber  String         @unique
+  estateId       String
+  propertyId     String
+  residentId     String
+  title          String
+  description    String?
+  amount         Float
+  paidAmount     Float          @default(0)
+  status         InvoiceStatus  @default(PENDING)
+  dueDate        DateTime
+  items          Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  estate         Estate         @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  property       Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  resident       User           @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+}
+
+model Payment {
+  id               String    @id @default(cuid())
+  paymentReference String    @unique
+  invoiceId        String
+  residentId       String
+  estateId         String
+  amount           Float
+  channel          String    @default("CARD")
+  status           String    @default("SUCCESS")
+  paidAt           DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+
+  invoice          Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  resident         User      @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  estate           Estate    @relation(fields: [estateId], references: [id], onDelete: Cascade)
+}
+
+model AccessCode {
+  id          String           @id @default(cuid())
+  codeHash    String
+  codeDisplay String
+  estateId    String
+  propertyId  String
+  residentId  String
+  type        AccessCodeType   @default(GUEST)
+  status      AccessCodeStatus @default(ACTIVE)
+  visitorName String
+  visitorPhone String?
+  vehiclePlate String?
+  validFrom   DateTime         @default(now())
+  expiresAt   DateTime
+  maxUses     Int              @default(1)
+  useCount    Int              @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  estate      Estate           @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  property    Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  resident    User             @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  logs        VerificationLog[]
+}
+
+model VerificationLog {
+  id                String      @id @default(cuid())
+  accessCodeId      String?
+  estateId          String
+  propertyId        String?
+  residentId        String?
+  verifiedByGuardId String
+  gateAction        GateAction  @default(ENTRY)
+  visitorName       String
+  vehiclePlate      String?
+  visitorImageUrl   String?
+  vehicleImageUrl   String?
+  guardNotes        String?
+  verifiedAt        DateTime    @default(now())
+
+  accessCode        AccessCode? @relation(fields: [accessCodeId], references: [id], onDelete: SetNull)
+  estate            Estate      @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  property          Property?   @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  resident          User?       @relation("ResidentLogs", fields: [residentId], references: [id], onDelete: SetNull)
+  guard             User        @relation("GuardLogs", fields: [verifiedByGuardId], references: [id], onDelete: Cascade)
+}
+
+model UpcomingDue {
+  id          String    @id @default(cuid())
+  estateId    String
+  title       String
+  unitsCount  Int       @default(20)
+  dueDaysText String    @default("Due in 3 days")
+  dueDate     DateTime  @default(now())
+  amount      Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  estate      Estate    @relation(fields: [estateId], references: [id], onDelete: Cascade)
+}
+
+model Complaint {
+  id              String    @id @default(cuid())
+  ticketNumber    String    @unique
+  estateId        String
+  propertyId      String
+  residentId      String
+  assignedToId    String?
+  title           String
+  description     String
+  priority        String    @default("MEDIUM")
+  status          String    @default("OPEN")
+  resolutionNotes String?
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  estate          Estate    @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  property        Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  resident        User      @relation("ResidentComplaints", fields: [residentId], references: [id], onDelete: Cascade)
+  assignedTo      User?     @relation("StaffComplaints", fields: [assignedToId], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  action      String
+  targetModel String
+  targetId    String
+  estateId    String?
+  details     Json?
+  performedBy String
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime  @default(now())
+}
