@@ -1,0 +1,34 @@
+{
+  "name": "estate-manager-web-app",
+  "version": "1.0.0",
+  "description": "Estate Manager Web App — Enterprise Multi-Estate Property Management & Gate Security Ecosystem",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev:prototype": "node server.js",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "lint": "npm --prefix client run lint",
+    "test": "npm --prefix server test",
+    "tunnel": "cloudflared tunnel --url http://localhost:8000"
+  },
+  "keywords": [
+    "estate-manager",
+    "pwa",
+    "multi-tenant",
+    "gate-security",
+    "proptech"
+  ],
+  "author": "Estate Manager Engineering Team",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

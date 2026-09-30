@@ -1,0 +1,10 @@
+{
+  "name": "@estate-manager/shared",
+  "version": "1.0.0",
+  "description": "Shared constants, permissions, types and validation schemas for Estate Manager",
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
