@@ -12,7 +12,7 @@
     "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
-    "dev:prototype": "node server.js",
+    "dev:prototype": "node design/prototype-server.js",
     "build": "npm --prefix client run build",
     "start": "npm --prefix server start",
     "lint": "npm --prefix client run lint",
