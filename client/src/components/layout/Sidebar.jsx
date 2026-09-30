@@ -53,11 +53,11 @@ export const Sidebar = ({
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* Sidebar Container - Fixed Viewport with Isolated Independent Scrolling */}
       <aside 
         className={`
-          fixed top-0 bottom-0 left-0 z-40 h-screen bg-white border-r border-slate-200/80 
-          flex flex-col justify-between transition-all duration-300 ease-in-out
+          fixed top-0 bottom-0 left-0 z-40 h-screen max-h-screen bg-white border-r border-slate-200/80 
+          flex flex-col overflow-hidden transition-all duration-300 ease-in-out select-none
           ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           ${isCollapsed ? 'lg:w-20 w-64' : 'w-64'}
         `}
@@ -76,8 +76,8 @@ export const Sidebar = ({
           )}
         </button>
 
-        {/* Brand Header */}
-        <div className={`h-20 flex items-center border-b border-slate-100 ${
+        {/* Brand Header - Pinned at top */}
+        <div className={`h-20 flex-shrink-0 flex items-center border-b border-slate-100 ${
           isCollapsed ? 'lg:px-3 px-6 justify-center lg:justify-center' : 'px-6 justify-between'
         }`}>
           <div className="flex items-center gap-3 min-w-0">
@@ -107,10 +107,13 @@ export const Sidebar = ({
           </button>
         </div>
 
-        {/* Scrollable Navigation Items */}
-        <div className={`flex-1 overflow-y-auto py-4 space-y-1 ${
-          isCollapsed ? 'lg:px-2 px-4' : 'px-4'
-        }`}>
+        {/* Scrollable Navigation Items - Independent Scroll Container with Overscroll Containment */}
+        <nav 
+          aria-label="Sidebar Navigation"
+          className={`flex-1 min-h-0 overflow-y-auto overscroll-contain py-4 space-y-1 ${
+            isCollapsed ? 'lg:px-2 px-4' : 'px-4'
+          }`}
+        >
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -147,10 +150,10 @@ export const Sidebar = ({
               </NavLink>
             );
           })}
-        </div>
+        </nav>
 
-        {/* Bottom CTA Card: Quick Gate Access */}
-        <div className={`border-t border-slate-100 bg-slate-50/50 ${
+        {/* Bottom CTA Card: Quick Gate Access - Pinned at bottom */}
+        <div className={`flex-shrink-0 border-t border-slate-100 bg-slate-50/50 ${
           isCollapsed ? 'lg:p-3 p-4' : 'p-4'
         }`}>
           {isCollapsed ? (
