@@ -145,8 +145,8 @@ export const EstatesPage = () => {
         </div>
 
         <Button
-          onClick={() => setIsAddModalOpen(true)}
-          className="shadow-sm shadow-primary/25 gap-2 shrink-0 self-start sm:self-auto"
+          onClick={() => navigate('/admin/estates/new')}
+          className="shadow-sm shadow-primary/25 gap-2 shrink-0 self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Add Estate</span>

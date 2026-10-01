@@ -62,11 +62,35 @@ model Estate {
   totalUnits              Int               @default(100)
   occupancyRate           Int               @default(85)
   imageUrl                String?
+  galleryImages           String[]          @default([])
   description             String?
+  estateType              String            @default("Residential")
   amenities               String[]          @default([])
   status                  String            @default("ACTIVE")
+  area                    String?
+  googleMapsUrl           String?
+  managerName             String?
+  managerEmail            String?
+  managerPhone            String?
+  officeAddress           String?
   contactEmail            String?
   contactPhone            String?
+  visitorAccessRule       String            @default("Requires Approval")
+  vehicleAccessRule       String            @default("Allowed with Registration")
+  deliveryAccessRule      String            @default("Allowed with Verification")
+  gatePassExpiry          String            @default("Same Day")
+  enableQrCode            Boolean           @default(true)
+  enableFaceRecognition   Boolean           @default(true)
+  enableIntercomNotifications Boolean       @default(false)
+  serviceChargeType       String            @default("Per Unit")
+  billingCycle            String            @default("Monthly")
+  defaultServiceCharge    Float             @default(50000)
+  gracePeriodDays         Int               @default(7)
+  enableMaintenanceRequests Boolean         @default(true)
+  enableEstateOffice      Boolean           @default(true)
+  enableInvoiceGeneration Boolean           @default(true)
+  enableDuesAndFees       Boolean           @default(true)
+  sendWelcomeEmail        Boolean           @default(true)
   requireVisitorImage     Boolean           @default(true)
   requireVehicleImage     Boolean           @default(false)
   defaultCodeValidityHours Int              @default(12)

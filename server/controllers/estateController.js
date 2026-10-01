@@ -115,7 +115,26 @@ exports.getEstateById = async (req, res, next) => {
 
 exports.createEstate = async (req, res, next) => {
   try {
-    const estate = await prisma.estate.create({ data: req.body });
+    const payload = { ...req.body };
+
+    // Auto-generate code if not provided
+    if (!payload.code && payload.name) {
+      const cleanPrefix = payload.name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'EST';
+      const randNum = Math.floor(100 + Math.random() * 900);
+      payload.code = `${cleanPrefix}-${randNum}`;
+    }
+
+    if (payload.totalUnits !== undefined) {
+      payload.totalUnits = parseInt(payload.totalUnits, 10) || 100;
+    }
+    if (payload.defaultServiceCharge !== undefined) {
+      payload.defaultServiceCharge = parseFloat(payload.defaultServiceCharge) || 50000;
+    }
+    if (payload.gracePeriodDays !== undefined) {
+      payload.gracePeriodDays = parseInt(payload.gracePeriodDays, 10) || 7;
+    }
+
+    const estate = await prisma.estate.create({ data: payload });
     res.status(201).json({
       success: true,
       message: 'Estate created successfully.',

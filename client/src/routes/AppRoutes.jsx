@@ -5,6 +5,7 @@ import { AppLayout } from '../layouts/AppLayout';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { EstateProDashboard } from '../pages/admin/EstateProDashboard';
 import { EstatesPage } from '../pages/admin/EstatesPage';
+import { AddEstateWizardPage } from '../pages/admin/AddEstateWizardPage';
 import { EstateDetailsPage } from '../pages/admin/EstateDetailsPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
@@ -40,6 +41,7 @@ export const AppRoutes = () => {
         <Route path="/" element={<DashboardWrapper />} />
         <Route path="/admin" element={<DashboardWrapper />} />
         <Route path="/admin/estates" element={<EstatesPage />} />
+        <Route path="/admin/estates/new" element={<AddEstateWizardPage />} />
         <Route path="/admin/estates/:id" element={<EstateDetailsPage />} />
         <Route path="/admin/*" element={<DashboardWrapper />} />
 
