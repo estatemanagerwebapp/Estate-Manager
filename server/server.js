@@ -89,4 +89,6 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   startServer();
 }
 
-module.exports = { app, server };
+module.exports = app;
+module.exports.app = app;
+module.exports.server = server;
