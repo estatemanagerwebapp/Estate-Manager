@@ -8,6 +8,7 @@
     "server": {
       "root": "server",
       "framework": "express",
+      "buildCommand": "prisma generate --schema=./prisma/schema.prisma",
       "bindings": [
         {
           "type": "service",
