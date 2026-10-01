@@ -123,6 +123,7 @@ export const Sidebar = ({
                 <NavLink
                   key={item.label}
                   to={item.path}
+                  end={item.exact || item.end || item.path === '/admin'}
                   onClick={() => {
                     if (window.innerWidth < 1024) onClose();
                   }}
