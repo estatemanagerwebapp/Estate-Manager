@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { AppLayout } from '../layouts/AppLayout';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { EstateProDashboard } from '../pages/admin/EstateProDashboard';
+import { EstatesPage } from '../pages/admin/EstatesPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -37,6 +38,7 @@ export const AppRoutes = () => {
         {/* Main EstatePro Command Center Dashboard */}
         <Route path="/" element={<DashboardWrapper />} />
         <Route path="/admin" element={<DashboardWrapper />} />
+        <Route path="/admin/estates" element={<EstatesPage />} />
         <Route path="/admin/*" element={<DashboardWrapper />} />
 
         {/* Persona sub-modules */}

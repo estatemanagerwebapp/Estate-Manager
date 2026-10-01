@@ -62,6 +62,9 @@ model Estate {
   totalUnits              Int               @default(100)
   occupancyRate           Int               @default(85)
   imageUrl                String?
+  description             String?
+  amenities               String[]          @default([])
+  status                  String            @default("ACTIVE")
   contactEmail            String?
   contactPhone            String?
   requireVisitorImage     Boolean           @default(true)
