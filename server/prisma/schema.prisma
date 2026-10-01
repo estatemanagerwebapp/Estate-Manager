@@ -109,24 +109,66 @@ model Estate {
 }
 
 model Property {
-  id                String         @id @default(cuid())
-  estateId          String
-  type              String         @default("APARTMENT")
-  court             String?
-  block             String?
-  floor             String?
-  apartmentNumber   String
-  displayIdentifier String
-  occupancyStatus   String         @default("VACANT")
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id                        String         @id @default(cuid())
+  estateId                  String
+  type                      String         @default("Apartment")
+  category                  String         @default("Residential")
+  subtype                   String?        // e.g. "3 Bedroom", "Studio", "Shop", "Office"
+  court                     String?
+  block                     String?
+  floor                     String?
+  apartmentNumber           String
+  displayIdentifier         String
+  occupancyStatus           String         @default("VACANT") // VACANT, OCCUPIED, UNDER_MAINTENANCE, RESERVED, ARCHIVED
+  
+  // Specs
+  bedrooms                  Int            @default(3)
+  bathrooms                 Int            @default(3)
+  parkingSlots              Int            @default(2)
+  sizeSqm                   Float          @default(120)
+  buildYear                 Int?           @default(2023)
+  description               String?
+  position                  String?
+  
+  // Rental & Pricing
+  monthlyRent               Float          @default(50000)
+  serviceCharge             Float          @default(5000)
+  billingCycle              String         @default("Monthly")
+  gracePeriodDays           Int            @default(7)
+  nextDueDate               DateTime?
+  
+  // Occupancy details
+  currentTenantId           String?
+  tenantName                String?
+  tenantEmail               String?
+  tenantPhone               String?
+  tenantAvatar              String?
+  moveInDate                DateTime?
+  leaseEndDate              DateTime?
+  tenancyType               String?        @default("Residential")
+  agreementDocument         String?
+  notes                     String?
+  
+  // Images
+  imageUrl                  String?
+  galleryImages             String[]       @default([])
+  
+  // Feature Toggles / Additional Settings
+  includeInPublicListings   Boolean        @default(false)
+  enableMaintenanceRequests Boolean        @default(true)
+  allowVisitorRegistration  Boolean        @default(true)
+  receivePaymentReminders   Boolean        @default(true)
+  
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 
-  estate            Estate         @relation(fields: [estateId], references: [id], onDelete: Cascade)
-  userProperties    UserProperty[]
-  invoices          Invoice[]
-  accessCodes       AccessCode[]
-  verificationLogs  VerificationLog[]
-  complaints        Complaint[]
+  estate                    Estate         @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  currentTenant             User?          @relation("CurrentTenantProperty", fields: [currentTenantId], references: [id], onDelete: SetNull)
+  userProperties            UserProperty[]
+  invoices                  Invoice[]
+  accessCodes               AccessCode[]
+  verificationLogs          VerificationLog[]
+  complaints                Complaint[]
 
   @@unique([estateId, displayIdentifier])
 }
@@ -148,6 +190,7 @@ model User {
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
+  tenantProperties    Property[]           @relation("CurrentTenantProperty")
   userProperties      UserProperty[]
   invoices            Invoice[]
   payments            Payment[]

@@ -7,6 +7,10 @@ import { EstateProDashboard } from '../pages/admin/EstateProDashboard';
 import { EstatesPage } from '../pages/admin/EstatesPage';
 import { AddEstateWizardPage } from '../pages/admin/AddEstateWizardPage';
 import { EstateDetailsPage } from '../pages/admin/EstateDetailsPage';
+import { UnitsPage } from '../pages/admin/UnitsPage';
+import { UnitDetailsPage } from '../pages/admin/UnitDetailsPage';
+import { AddUnitPage } from '../pages/admin/AddUnitPage';
+import { EditUnitPage } from '../pages/admin/EditUnitPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -40,9 +44,18 @@ export const AppRoutes = () => {
         {/* Main EstatePro Command Center Dashboard */}
         <Route path="/" element={<DashboardWrapper />} />
         <Route path="/admin" element={<DashboardWrapper />} />
+        
+        {/* Estates Suite */}
         <Route path="/admin/estates" element={<EstatesPage />} />
         <Route path="/admin/estates/new" element={<AddEstateWizardPage />} />
         <Route path="/admin/estates/:id" element={<EstateDetailsPage />} />
+
+        {/* Units & Properties Suite (Part 3) */}
+        <Route path="/admin/properties" element={<UnitsPage />} />
+        <Route path="/admin/properties/new" element={<AddUnitPage />} />
+        <Route path="/admin/properties/:id" element={<UnitDetailsPage />} />
+        <Route path="/admin/properties/:id/edit" element={<EditUnitPage />} />
+
         <Route path="/admin/*" element={<DashboardWrapper />} />
 
         {/* Persona sub-modules */}
