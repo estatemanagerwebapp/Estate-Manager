@@ -8,7 +8,7 @@ import { Building2, Shield, User, Key, AlertCircle } from 'lucide-react';
 export const LoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('superadmin@estatemanager.io');
+  const [email, setEmail] = useState('admin@estatemanager.io');
   const [password, setPassword] = useState('Admin@12345');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,7 +21,7 @@ export const LoginPage = () => {
     try {
       const res = await login(email, password);
       if (res.data?.user?.role === 'SUPER_ADMIN') {
-        navigate('/super-admin');
+        navigate('/admin/estates');
       } else if (res.data?.user?.role === 'GUARD') {
         navigate('/guard');
       } else {
@@ -36,7 +36,7 @@ export const LoginPage = () => {
 
   const setDemoUser = (roleEmail, defaultRoute) => {
     setEmail(roleEmail);
-    setPassword('DemoPass123!');
+    setPassword('Admin@12345');
   };
 
   return (
