@@ -1,13 +1,13 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('../config/env');
-const User = require('../models/User');
+const prisma = require('../lib/prisma');
 const { isConnected } = require('../config/db');
 const { loginSchema, registerSchema } = require('@estate-manager/shared/schemas');
 
 const MOCK_USERS = {
   'superadmin@estatemanager.io': {
-    _id: 'usr_superadmin_01',
+    id: 'usr_superadmin_01',
     firstName: 'Super',
     lastName: 'Admin',
     email: 'superadmin@estatemanager.io',
@@ -17,7 +17,7 @@ const MOCK_USERS = {
     isActive: true
   },
   'admin@estatemanager.io': {
-    _id: 'usr_admin_01',
+    id: 'usr_admin_01',
     firstName: 'Tola',
     lastName: 'Balogun',
     email: 'admin@estatemanager.io',
@@ -27,7 +27,7 @@ const MOCK_USERS = {
     isActive: true
   },
   'guard@estatemanager.io': {
-    _id: 'usr_guard_01',
+    id: 'usr_guard_01',
     firstName: 'Musa',
     lastName: 'Ibrahim',
     email: 'guard@estatemanager.io',
@@ -37,7 +37,7 @@ const MOCK_USERS = {
     isActive: true
   },
   'resident@estatemanager.io': {
-    _id: 'usr_resident_01',
+    id: 'usr_resident_01',
     firstName: 'Adeola',
     lastName: 'Johnson',
     email: 'resident@estatemanager.io',
@@ -50,7 +50,7 @@ const MOCK_USERS = {
 
 const generateTokens = (user) => {
   const payload = {
-    id: user._id.toString(),
+    id: user.id,
     email: user.email,
     role: user.role,
     accessControlStatus: user.accessControlStatus
@@ -71,7 +71,7 @@ exports.register = async (req, res, next) => {
   try {
     const validated = registerSchema.parse(req.body);
 
-    const existingUser = await User.findOne({ email: validated.email });
+    const existingUser = await prisma.user.findUnique({ where: { email: validated.email } });
     if (existingUser) {
       return res.status(409).json({
         success: false,
@@ -80,16 +80,17 @@ exports.register = async (req, res, next) => {
       });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(validated.password, salt);
+    const hashedPassword = await bcrypt.hash(validated.password, 10);
 
-    const newUser = await User.create({
-      firstName: validated.firstName,
-      lastName: validated.lastName,
-      email: validated.email,
-      phone: validated.phone,
-      password: hashedPassword,
-      role: validated.role
+    const newUser = await prisma.user.create({
+      data: {
+        firstName: validated.firstName,
+        lastName: validated.lastName,
+        email: validated.email,
+        phone: validated.phone,
+        password: hashedPassword,
+        role: validated.role
+      }
     });
 
     const { accessToken, refreshToken } = generateTokens(newUser);
@@ -101,8 +102,7 @@ exports.register = async (req, res, next) => {
       maxAge: 3600000
     });
 
-    const userObj = newUser.toObject();
-    delete userObj.password;
+    const { password, ...userObj } = newUser;
 
     res.status(201).json({
       success: true,
@@ -144,7 +144,7 @@ exports.login = async (req, res, next) => {
       }
     }
 
-    const user = await User.findOne({ email: validated.email }).select('+password');
+    const user = await prisma.user.findUnique({ where: { email: validated.email } });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -170,8 +170,10 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    user.lastLoginAt = new Date();
-    await user.save();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() }
+    });
 
     const { accessToken, refreshToken } = generateTokens(user);
 
@@ -182,8 +184,7 @@ exports.login = async (req, res, next) => {
       maxAge: 3600000
     });
 
-    const userObj = user.toObject();
-    delete userObj.password;
+    const { password, ...userObj } = user;
 
     res.json({
       success: true,
@@ -201,7 +202,7 @@ exports.login = async (req, res, next) => {
 
 exports.getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id || req.user._id);
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -210,9 +211,11 @@ exports.getMe = async (req, res, next) => {
       });
     }
 
+    const { password, ...userObj } = user;
+
     res.json({
       success: true,
-      data: { user }
+      data: { user: userObj }
     });
   } catch (error) {
     next(error);

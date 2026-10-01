@@ -1,25 +1,29 @@
 const crypto = require('crypto');
-const Complaint = require('../models/Complaint');
+const prisma = require('../lib/prisma');
 const { createComplaintSchema } = require('@estate-manager/shared/schemas');
 
 exports.getComplaints = async (req, res, next) => {
   try {
     const { estateId, status } = req.query;
-    const query = {};
+    const where = {};
 
     if (req.user.role === 'RESIDENT') {
-      query.residentId = req.user._id || req.user.id;
+      where.residentId = req.user.id;
     } else if (estateId) {
-      query.estateId = estateId;
+      where.estateId = estateId;
     }
 
-    if (status) query.status = status;
+    if (status) where.status = status;
 
-    const complaints = await Complaint.find(query)
-      .populate('estateId', 'name code')
-      .populate('propertyId', 'displayIdentifier')
-      .populate('residentId', 'firstName lastName phone')
-      .sort({ createdAt: -1 });
+    const complaints = await prisma.complaint.findMany({
+      where,
+      include: {
+        estate: { select: { name: true, code: true } },
+        property: { select: { displayIdentifier: true } },
+        resident: { select: { firstName: true, lastName: true, phone: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     res.json({
       success: true,
@@ -36,15 +40,16 @@ exports.createComplaint = async (req, res, next) => {
     const validated = createComplaintSchema.parse(req.body);
     const ticketNumber = `TCK-${Date.now().toString().slice(-6)}-${crypto.randomInt(10, 99)}`;
 
-    const complaint = await Complaint.create({
-      ticketNumber,
-      estateId: validated.estateId,
-      propertyId: validated.propertyId,
-      residentId: req.user._id || req.user.id,
-      title: validated.title,
-      description: validated.description,
-      priority: validated.priority,
-      attachments: validated.attachments || []
+    const complaint = await prisma.complaint.create({
+      data: {
+        ticketNumber,
+        estateId: validated.estateId,
+        propertyId: validated.propertyId,
+        residentId: req.user.id,
+        title: validated.title,
+        description: validated.description,
+        priority: validated.priority
+      }
     });
 
     res.status(201).json({
@@ -62,8 +67,8 @@ exports.updateComplaintStatus = async (req, res, next) => {
     const { id } = req.params;
     const { status, resolutionNotes } = req.body;
 
-    const complaint = await Complaint.findById(id);
-    if (!complaint) {
+    const existing = await prisma.complaint.findUnique({ where: { id } });
+    if (!existing) {
       return res.status(404).json({
         success: false,
         error: 'TICKET_NOT_FOUND',
@@ -71,12 +76,16 @@ exports.updateComplaintStatus = async (req, res, next) => {
       });
     }
 
-    complaint.status = status;
-    if (resolutionNotes) complaint.resolutionNotes = resolutionNotes;
+    const updateData = { status };
+    if (resolutionNotes) updateData.resolutionNotes = resolutionNotes;
     if (status === 'RESOLVED' || status === 'CLOSED') {
-      complaint.resolvedAt = new Date();
+      updateData.resolvedAt = new Date();
     }
-    await complaint.save();
+
+    const complaint = await prisma.complaint.update({
+      where: { id },
+      data: updateData
+    });
 
     res.json({
       success: true,

@@ -76,7 +76,7 @@ export const ResidentDashboard = () => {
       {/* Property Context Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-bold text-primary uppercase tracking-wide">
             <Building className="w-3.5 h-3.5" />
             <span>Mansfield Estate</span>
           </div>
@@ -138,7 +138,7 @@ export const ResidentDashboard = () => {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-indigo-600" />
+            <KeyRound className="w-4 h-4 text-primary" />
             <span>Active & Recent Gate Codes</span>
           </h3>
           <span className="text-xs text-slate-500 font-medium">{codes.length} Total</span>
@@ -174,7 +174,7 @@ export const ResidentDashboard = () => {
                       navigator.clipboard.writeText(item.code);
                       alert(`Code ${item.code} copied!`);
                     }}
-                    className="text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+                    className="text-primary hover:text-primary-600 font-semibold cursor-pointer"
                   >
                     Copy
                   </button>
@@ -215,7 +215,7 @@ export const ResidentDashboard = () => {
         ) : (
           <div className="text-center space-y-4">
             <div className="p-6 bg-slate-900 rounded-2xl text-white">
-              <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest block mb-2">
+              <span className="text-xs font-bold text-primary-300 uppercase tracking-widest block mb-2">
                 Visitor Access Pass
               </span>
               <span className="text-4xl font-black font-mono tracking-widest">

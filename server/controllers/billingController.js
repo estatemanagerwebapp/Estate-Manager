@@ -1,27 +1,30 @@
 const crypto = require('crypto');
-const Invoice = require('../models/Invoice');
-const Payment = require('../models/Payment');
+const prisma = require('../lib/prisma');
 const { INVOICE_STATUS } = require('@estate-manager/shared/constants/status');
 
 exports.getInvoices = async (req, res, next) => {
   try {
     const { estateId, status } = req.query;
-    const query = {};
+    const where = {};
 
     // If resident, scope to their own records
     if (req.user.role === 'RESIDENT') {
-      query.residentId = req.user._id || req.user.id;
+      where.residentId = req.user.id;
     } else if (estateId) {
-      query.estateId = estateId;
+      where.estateId = estateId;
     }
 
-    if (status) query.status = status;
+    if (status) where.status = status;
 
-    const invoices = await Invoice.find(query)
-      .populate('estateId', 'name code')
-      .populate('propertyId', 'displayIdentifier')
-      .populate('residentId', 'firstName lastName email')
-      .sort({ createdAt: -1 });
+    const invoices = await prisma.invoice.findMany({
+      where,
+      include: {
+        estate: { select: { name: true, code: true } },
+        property: { select: { displayIdentifier: true } },
+        resident: { select: { firstName: true, lastName: true, email: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     res.json({
       success: true,
@@ -39,16 +42,18 @@ exports.createInvoice = async (req, res, next) => {
 
     const invoiceNumber = `INV-${Date.now().toString().slice(-6)}-${crypto.randomInt(100, 999)}`;
 
-    const invoice = await Invoice.create({
-      invoiceNumber,
-      estateId,
-      propertyId,
-      residentId,
-      title,
-      description,
-      amount,
-      dueDate,
-      items: items || [{ description: title, amount }]
+    const invoice = await prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        estateId,
+        propertyId,
+        residentId,
+        title,
+        description,
+        amount,
+        dueDate: new Date(dueDate),
+        items: items || [{ description: title, amount }]
+      }
     });
 
     res.status(201).json({
@@ -66,7 +71,7 @@ exports.payInvoice = async (req, res, next) => {
     const { id } = req.params;
     const { amount, channel = 'CARD' } = req.body;
 
-    const invoice = await Invoice.findById(id);
+    const invoice = await prisma.invoice.findUnique({ where: { id } });
     if (!invoice) {
       return res.status(404).json({
         success: false,
@@ -78,32 +83,37 @@ exports.payInvoice = async (req, res, next) => {
     const payAmount = amount || (invoice.amount - invoice.paidAmount);
     const paymentRef = `PAY-${Date.now()}-${crypto.randomInt(1000, 9999)}`;
 
-    const payment = await Payment.create({
-      paymentReference: paymentRef,
-      invoiceId: invoice._id,
-      residentId: req.user._id || req.user.id,
-      estateId: invoice.estateId,
-      amount: payAmount,
-      channel,
-      status: 'SUCCESS',
-      paidAt: new Date(),
-      gatewayResponse: { reference: paymentRef, status: 'success' }
+    const payment = await prisma.payment.create({
+      data: {
+        paymentReference: paymentRef,
+        invoiceId: invoice.id,
+        residentId: req.user.id,
+        estateId: invoice.estateId,
+        amount: payAmount,
+        channel,
+        status: 'SUCCESS',
+        paidAt: new Date()
+      }
     });
 
-    invoice.paidAmount += payAmount;
-    if (invoice.paidAmount >= invoice.amount) {
-      invoice.status = INVOICE_STATUS.PAID;
-    } else {
-      invoice.status = INVOICE_STATUS.PARTIALLY_PAID;
-    }
-    await invoice.save();
+    // Compute new status before update
+    const newPaidAmount = invoice.paidAmount + payAmount;
+    const newStatus = newPaidAmount >= invoice.amount ? INVOICE_STATUS.PAID : INVOICE_STATUS.PARTIALLY_PAID;
+
+    const updatedInvoice = await prisma.invoice.update({
+      where: { id },
+      data: {
+        paidAmount: { increment: payAmount },
+        status: newStatus
+      }
+    });
 
     res.json({
       success: true,
       message: 'Payment processed successfully.',
       data: {
         payment,
-        updatedInvoice: invoice
+        updatedInvoice
       }
     });
   } catch (error) {

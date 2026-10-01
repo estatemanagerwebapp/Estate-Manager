@@ -1,11 +1,12 @@
-const Estate = require('../models/Estate');
-const Property = require('../models/Property');
-const UserProperty = require('../models/UserProperty');
+const prisma = require('../lib/prisma');
 const { propertySchema } = require('@estate-manager/shared/schemas');
 
 exports.getEstates = async (req, res, next) => {
   try {
-    const estates = await Estate.find({ isActive: true }).sort({ name: 1 });
+    const estates = await prisma.estate.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' }
+    });
     res.json({
       success: true,
       count: estates.length,
@@ -18,7 +19,7 @@ exports.getEstates = async (req, res, next) => {
 
 exports.getEstateById = async (req, res, next) => {
   try {
-    const estate = await Estate.findById(req.params.id);
+    const estate = await prisma.estate.findUnique({ where: { id: req.params.id } });
     if (!estate) {
       return res.status(404).json({
         success: false,
@@ -38,7 +39,7 @@ exports.getEstateById = async (req, res, next) => {
 
 exports.createEstate = async (req, res, next) => {
   try {
-    const estate = await Estate.create(req.body);
+    const estate = await prisma.estate.create({ data: req.body });
     res.status(201).json({
       success: true,
       message: 'Estate created successfully.',
@@ -51,7 +52,10 @@ exports.createEstate = async (req, res, next) => {
 
 exports.getEstateProperties = async (req, res, next) => {
   try {
-    const properties = await Property.find({ estateId: req.params.id }).sort({ displayIdentifier: 1 });
+    const properties = await prisma.property.findMany({
+      where: { estateId: req.params.id },
+      orderBy: { displayIdentifier: 'asc' }
+    });
     res.json({
       success: true,
       count: properties.length,
@@ -65,7 +69,7 @@ exports.getEstateProperties = async (req, res, next) => {
 exports.createProperty = async (req, res, next) => {
   try {
     const validated = propertySchema.parse(req.body);
-    const property = await Property.create(validated);
+    const property = await prisma.property.create({ data: validated });
     res.status(201).json({
       success: true,
       message: 'Property created successfully.',
@@ -78,9 +82,13 @@ exports.createProperty = async (req, res, next) => {
 
 exports.getMyProperties = async (req, res, next) => {
   try {
-    const userProps = await UserProperty.find({ userId: req.user._id || req.user.id })
-      .populate('estateId', 'name code address gateConfiguration')
-      .populate('propertyId');
+    const userProps = await prisma.userProperty.findMany({
+      where: { userId: req.user.id },
+      include: {
+        estate: { select: { name: true, code: true, address: true, requireVisitorImage: true, requireVehicleImage: true } },
+        property: true
+      }
+    });
 
     res.json({
       success: true,

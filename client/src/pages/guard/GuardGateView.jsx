@@ -102,7 +102,7 @@ export const GuardGateView = () => {
       {/* Header bar */}
       <div className="flex items-center justify-between pb-4 border-b border-slate-800/80 mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20">
+          <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/30">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
@@ -113,9 +113,9 @@ export const GuardGateView = () => {
 
         <button
           onClick={() => setHighContrast(!highContrast)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-700 text-xs font-semibold hover:bg-slate-800 transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-700 text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
         >
-          {highContrast ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
+          {highContrast ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-primary" />}
           <span>{highContrast ? 'Day Mode' : 'Night Gate Mode'}</span>
         </button>
       </div>
@@ -137,7 +137,7 @@ export const GuardGateView = () => {
                 placeholder="------"
                 className={`w-full py-4 text-center font-mono text-3xl font-black tracking-[0.5em] rounded-2xl border ${
                   highContrast ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-                } focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                } focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary`}
               />
               <Button
                 variant="primary"
@@ -202,7 +202,7 @@ export const GuardGateView = () => {
               </span>
               <button
                 onClick={() => setHasPhoto(!hasPhoto)}
-                className="text-indigo-400 hover:underline cursor-pointer"
+                className="text-primary hover:text-primary-600 hover:underline cursor-pointer"
               >
                 {hasPhoto ? 'Photo Attached (OK)' : 'Attach Photo'}
               </button>
@@ -267,7 +267,7 @@ export const GuardGateView = () => {
         <div className="lg:col-span-5 space-y-4">
           <Card className={`p-5 border rounded-2xl ${cardTheme}`}>
             <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-indigo-400" />
+              <Clock className="w-4 h-4 text-primary" />
               <span>Real-Time Checkpoint Stream</span>
             </h3>
 

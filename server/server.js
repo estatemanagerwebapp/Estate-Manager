@@ -48,14 +48,16 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser(config.cookieSecret));
 
-// 6. NoSQL Injection Sanitization
+// 6. Request Sanitization
 app.use(sanitize);
 
 // 7. Route Mounting
 app.use('/api', apiRoutes);
+// Support serverless environments where /api prefix might be trimmed
+app.use('/', apiRoutes);
 
-// Root Health & Status
-app.get('/', (req, res) => {
+// Root Health & Status (fallback if apiRoutes doesn't handle root)
+app.get('/status', (req, res) => {
   res.json({
     name: 'Estate Manager API',
     version: '1.0.0',
@@ -83,7 +85,7 @@ const startServer = async () => {
   });
 };
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   startServer();
 }
 

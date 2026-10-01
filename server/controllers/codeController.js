@@ -1,14 +1,13 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const AccessCode = require('../models/AccessCode');
-const User = require('../models/User');
+const prisma = require('../lib/prisma');
 const { createAccessCodeSchema } = require('@estate-manager/shared/schemas');
 const { ACCESS_CONTROL_STATUS, ACCESS_CODE_STATUS } = require('@estate-manager/shared/constants/status');
 
 exports.createAccessCode = async (req, res, next) => {
   try {
     // Check resident accessControlStatus (Rule 11, 12)
-    const user = await User.findById(req.user._id || req.user.id);
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user || user.accessControlStatus === ACCESS_CONTROL_STATUS.DISABLED) {
       return res.status(403).json({
         success: false,
@@ -22,29 +21,30 @@ exports.createAccessCode = async (req, res, next) => {
 
     // Cryptographically secure 6-digit random code
     const rawCode = crypto.randomInt(100000, 999999).toString();
-    const salt = await bcrypt.genSalt(10);
-    const codeHash = await bcrypt.hash(rawCode, salt);
+    const codeHash = await bcrypt.hash(rawCode, 10);
 
-    const accessCode = await AccessCode.create({
-      codeHash,
-      codeDisplay: `${rawCode.slice(0, 2)}****`,
-      estateId: validated.estateId,
-      propertyId: validated.propertyId,
-      residentId: req.user._id || req.user.id,
-      type: validated.type,
-      visitorName: validated.visitorName,
-      visitorPhone: validated.visitorPhone,
-      vehiclePlate: validated.vehiclePlate,
-      validFrom: validated.validFrom ? new Date(validated.validFrom) : new Date(),
-      expiresAt: new Date(validated.expiresAt),
-      maxUses: validated.maxUses || 1
+    const accessCode = await prisma.accessCode.create({
+      data: {
+        codeHash,
+        codeDisplay: `${rawCode.slice(0, 2)}****`,
+        estateId: validated.estateId,
+        propertyId: validated.propertyId,
+        residentId: req.user.id,
+        type: validated.type,
+        visitorName: validated.visitorName,
+        visitorPhone: validated.visitorPhone,
+        vehiclePlate: validated.vehiclePlate,
+        validFrom: validated.validFrom ? new Date(validated.validFrom) : new Date(),
+        expiresAt: new Date(validated.expiresAt),
+        maxUses: validated.maxUses || 1
+      }
     });
 
     res.status(201).json({
       success: true,
       message: 'Access code created successfully.',
       data: {
-        codeId: accessCode._id,
+        codeId: accessCode.id,
         rawCode, // Single-time return of raw verification code
         visitorName: accessCode.visitorName,
         expiresAt: accessCode.expiresAt,
@@ -59,10 +59,14 @@ exports.createAccessCode = async (req, res, next) => {
 
 exports.getMyAccessCodes = async (req, res, next) => {
   try {
-    const codes = await AccessCode.find({ residentId: req.user._id || req.user.id })
-      .populate('estateId', 'name code')
-      .populate('propertyId', 'displayIdentifier')
-      .sort({ createdAt: -1 });
+    const codes = await prisma.accessCode.findMany({
+      where: { residentId: req.user.id },
+      include: {
+        estate: { select: { name: true, code: true } },
+        property: { select: { displayIdentifier: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     res.json({
       success: true,
@@ -77,9 +81,8 @@ exports.getMyAccessCodes = async (req, res, next) => {
 exports.revokeAccessCode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const code = await AccessCode.findOne({
-      _id: id,
-      residentId: req.user._id || req.user.id
+    const code = await prisma.accessCode.findFirst({
+      where: { id, residentId: req.user.id }
     });
 
     if (!code) {
@@ -90,13 +93,15 @@ exports.revokeAccessCode = async (req, res, next) => {
       });
     }
 
-    code.status = ACCESS_CODE_STATUS.REVOKED;
-    await code.save();
+    await prisma.accessCode.update({
+      where: { id },
+      data: { status: ACCESS_CODE_STATUS.REVOKED }
+    });
 
     res.json({
       success: true,
       message: 'Access code revoked successfully.',
-      data: { codeId: code._id }
+      data: { codeId: code.id }
     });
   } catch (error) {
     next(error);

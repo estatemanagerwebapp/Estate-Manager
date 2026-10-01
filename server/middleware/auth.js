@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config/env');
-const User = require('../models/User');
+const prisma = require('../lib/prisma');
 
 const authenticate = async (req, res, next) => {
   try {
@@ -22,9 +22,9 @@ const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, config.jwtSecret);
 
-    // Attempt to fetch fresh user status if database is connected
+    // Attempt to fetch fresh user status from Prisma
     try {
-      const user = await User.findById(decoded.id).select('+password');
+      const user = await prisma.user.findUnique({ where: { id: decoded.id } });
       if (user && !user.isActive) {
         return res.status(403).json({
           success: false,
@@ -32,7 +32,12 @@ const authenticate = async (req, res, next) => {
           message: 'Your account has been deactivated.'
         });
       }
-      req.user = user ? user.toObject() : decoded;
+      if (user) {
+        const { password, ...userObj } = user;
+        req.user = userObj;
+      } else {
+        req.user = decoded;
+      }
     } catch {
       // In detached/mock mode, rely on decoded JWT payload
       req.user = decoded;

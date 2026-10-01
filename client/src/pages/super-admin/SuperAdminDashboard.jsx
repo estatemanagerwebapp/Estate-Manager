@@ -79,7 +79,7 @@ export const SuperAdminDashboard = () => {
       {/* Global Metrics Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+          <div className="w-12 h-12 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary">
             <Building2 className="w-6 h-6" />
           </div>
           <div>
@@ -99,7 +99,7 @@ export const SuperAdminDashboard = () => {
         </Card>
 
         <Card className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
+          <div className="w-12 h-12 rounded-2xl bg-orange-50/70 border border-orange-100/60 flex items-center justify-center text-primary">
             <KeyRound className="w-6 h-6" />
           </div>
           <div>
@@ -124,7 +124,7 @@ export const SuperAdminDashboard = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-indigo-600" />
+              <ShieldAlert className="w-5 h-5 text-primary" />
               <span>Surgical Debt-Enforcement Console (Rules 11, 12, 13)</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -213,7 +213,7 @@ export const SuperAdminDashboard = () => {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 rows={3}
-                className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
               />
             </div>
           )}

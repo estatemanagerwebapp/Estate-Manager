@@ -9,7 +9,6 @@ module.exports = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 5001,
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
-  mongoUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/estate_manager',
   jwtSecret: process.env.JWT_SECRET || 'estate-manager-dev-jwt-secret-key-min-32-chars-long',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1h',
   refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET || 'estate-manager-dev-refresh-token-secret-key',

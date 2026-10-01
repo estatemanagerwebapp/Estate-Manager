@@ -43,7 +43,7 @@ export const LoginPage = () => {
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl border border-slate-100">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white mb-3 shadow-lg shadow-indigo-200">
+          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center text-white mb-3 shadow-lg shadow-primary/30">
             <Building2 className="w-7 h-7" />
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Estate Manager</h1>
@@ -90,15 +90,15 @@ export const LoginPage = () => {
             <button
               type="button"
               onClick={() => setDemoUser('admin@estatemanager.io', '/super-admin')}
-              className="p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 text-xs font-semibold text-slate-700 flex flex-col items-center gap-1 transition-colors"
+              className="p-2 rounded-xl bg-slate-50 hover:bg-orange-50/60 hover:border-primary/40 border border-slate-200 text-xs font-semibold text-slate-700 flex flex-col items-center gap-1 transition-colors cursor-pointer"
             >
-              <Shield className="w-4 h-4 text-indigo-600" />
+              <Shield className="w-4 h-4 text-primary" />
               <span>Super Admin</span>
             </button>
             <button
               type="button"
               onClick={() => setDemoUser('guard@estatemanager.io', '/guard')}
-              className="p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 text-xs font-semibold text-slate-700 flex flex-col items-center gap-1 transition-colors"
+              className="p-2 rounded-xl bg-slate-50 hover:bg-orange-50/60 hover:border-primary/40 border border-slate-200 text-xs font-semibold text-slate-700 flex flex-col items-center gap-1 transition-colors cursor-pointer"
             >
               <Key className="w-4 h-4 text-emerald-600" />
               <span>Guard</span>
@@ -106,9 +106,9 @@ export const LoginPage = () => {
             <button
               type="button"
               onClick={() => setDemoUser('resident@estatemanager.io', '/resident')}
-              className="p-2 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 text-xs font-semibold text-slate-700 flex flex-col items-center gap-1 transition-colors"
+              className="p-2 rounded-xl bg-slate-50 hover:bg-orange-50/60 hover:border-primary/40 border border-slate-200 text-xs font-semibold text-slate-700 flex flex-col items-center gap-1 transition-colors cursor-pointer"
             >
-              <User className="w-4 h-4 text-amber-600" />
+              <User className="w-4 h-4 text-primary" />
               <span>Resident</span>
             </button>
           </div>
