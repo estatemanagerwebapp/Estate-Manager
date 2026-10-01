@@ -29,10 +29,12 @@
   ],
   "author": "Estate Manager Engineering Team",
   "license": "ISC",
-  "devDependencies": {
+  "dependencies": {
     "@prisma/client": "^5.22.0",
-    "concurrently": "^9.1.2",
     "prisma": "^5.22.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   },
   "allowScripts": {
     "prisma@5.22.0": true,
