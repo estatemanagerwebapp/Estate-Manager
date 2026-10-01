@@ -187,6 +187,24 @@ model User {
   avatar              String?
   isActive            Boolean              @default(true)
   lastLoginAt         DateTime?
+  
+  // Resident profile fields (Part 4)
+  residentCode        String?              @unique
+  dateOfBirth         DateTime?
+  gender              String?
+  identificationType  String?
+  idNumber            String?
+  emergencyContactName String?
+  emergencyContactPhone String?
+  address             String?
+  residentStatus      String               @default("ACTIVE") // ACTIVE, PENDING, INACTIVE, MOVED_OUT
+  notes               String?
+  documents           Json?                @default("[]")
+  generateQrCode      Boolean              @default(true)
+  allowVisitorRegistration Boolean          @default(true)
+  sendWelcomeEmail    Boolean              @default(true)
+  residentPortalAccess Boolean             @default(false)
+
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -202,15 +220,20 @@ model User {
 }
 
 model UserProperty {
-  id           String    @id @default(cuid())
-  userId       String
-  propertyId   String
-  estateId     String
-  relationship String    @default("OWNER") // OWNER or TENANT
-  isPrimary    Boolean   @default(false)
-  moveInDate   DateTime? @default(now())
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  userId              String
+  propertyId          String
+  estateId            String
+  relationship        String    @default("Owner") // Owner, Tenant, Business, Family Member
+  status              String    @default("ACTIVE") // ACTIVE, PENDING, INACTIVE, MOVED_OUT
+  isPrimary           Boolean   @default(false)
+  moveInDate          DateTime? @default(now())
+  expectedMoveOutDate DateTime?
+  leaseStartDate      DateTime?
+  leaseEndDate        DateTime?
+  monthlyRent         Float?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)

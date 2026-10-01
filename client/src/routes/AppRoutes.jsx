@@ -11,6 +11,9 @@ import { UnitsPage } from '../pages/admin/UnitsPage';
 import { UnitDetailsPage } from '../pages/admin/UnitDetailsPage';
 import { AddUnitPage } from '../pages/admin/AddUnitPage';
 import { EditUnitPage } from '../pages/admin/EditUnitPage';
+import { ResidentsPage } from '../pages/admin/ResidentsPage';
+import { ResidentDetailsPage } from '../pages/admin/ResidentDetailsPage';
+import { AddResidentPage } from '../pages/admin/AddResidentPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -55,6 +58,11 @@ export const AppRoutes = () => {
         <Route path="/admin/properties/new" element={<AddUnitPage />} />
         <Route path="/admin/properties/:id" element={<UnitDetailsPage />} />
         <Route path="/admin/properties/:id/edit" element={<EditUnitPage />} />
+
+        {/* Residents Suite (Part 4) */}
+        <Route path="/admin/residents" element={<ResidentsPage />} />
+        <Route path="/admin/residents/new" element={<AddResidentPage />} />
+        <Route path="/admin/residents/:id" element={<ResidentDetailsPage />} />
 
         <Route path="/admin/*" element={<DashboardWrapper />} />
 
