@@ -8,6 +8,7 @@ const { ROLES } = require('@estate-manager/shared/constants/roles');
 // Public/Preview Read Routes
 router.get('/', estateController.getEstates);
 router.get('/:id', estateController.getEstateById);
+router.get('/:id/details', estateController.getEstateDetails);
 router.get('/:id/properties', estateController.getEstateProperties);
 
 // Protected Mutation & User-scoped Routes

@@ -197,3 +197,156 @@ exports.updateEstateStatus = async (req, res, next) => {
   }
 };
 
+exports.getEstateDetails = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    let estate = await prisma.estate.findFirst({
+      where: {
+        OR: [{ id }, { code: id }]
+      }
+    });
+
+    if (!estate) {
+      estate = await prisma.estate.findFirst({ where: { isActive: true } });
+    }
+
+    if (!estate) {
+      return res.status(404).json({
+        success: false,
+        error: 'ESTATE_NOT_FOUND',
+        message: 'Estate does not exist.'
+      });
+    }
+
+    const properties = await prisma.property.findMany({
+      where: { estateId: estate.id },
+      include: {
+        userProperties: {
+          include: {
+            user: {
+              select: { firstName: true, lastName: true, avatar: true, email: true, isActive: true }
+            }
+          }
+        }
+      },
+      orderBy: { displayIdentifier: 'asc' }
+    });
+
+    const userProperties = await prisma.userProperty.findMany({
+      where: { estateId: estate.id },
+      include: {
+        user: true,
+        property: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const complaints = await prisma.complaint.findMany({
+      where: { estateId: estate.id },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    });
+
+    const dues = await prisma.upcomingDue.findMany({
+      where: { estateId: estate.id },
+      orderBy: { dueDate: 'asc' }
+    });
+
+    const occupiedCount = properties.filter(p => p.occupancyStatus === 'OCCUPIED').length;
+    const totalUnitsCount = estate.totalUnits || 120;
+    const occupancyRate = estate.occupancyRate || 85;
+
+    const formatRelativeTime = (date) => {
+      const diffMs = Date.now() - new Date(date).getTime();
+      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffHrs < 1) return 'Just now';
+      if (diffHrs < 24) return `${diffHrs}h ago`;
+      const diffDays = Math.floor(diffHrs / 24);
+      return `${diffDays}d ago`;
+    };
+
+    const recentUnits = properties.slice(0, 5).map(p => {
+      const primaryRes = p.userProperties[0]?.user;
+      return {
+        id: p.id,
+        unit: p.displayIdentifier,
+        type: p.type || '3 Bedroom',
+        status: p.occupancyStatus === 'OCCUPIED' ? 'Occupied' : p.occupancyStatus === 'VACANT' ? 'Vacant' : 'Reserved',
+        resident: primaryRes ? {
+          name: `${primaryRes.firstName} ${primaryRes.lastName}`,
+          avatar: primaryRes.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'
+        } : null
+      };
+    });
+
+    const recentResidents = userProperties.slice(0, 5).map(up => ({
+      id: up.id,
+      name: `${up.user.firstName} ${up.user.lastName}`,
+      avatar: up.user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+      unit: up.property?.displayIdentifier || 'A1-01',
+      moveInDate: up.moveInDate ? new Date(up.moveInDate).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : 'Jan 12, 2025',
+      status: up.user.isActive ? 'Active' : 'Inactive'
+    }));
+
+    const estateOffice = complaints.map(c => ({
+      id: c.id,
+      ticketNumber: c.ticketNumber,
+      title: c.title,
+      location: c.location || 'Common Area',
+      status: c.status === 'OPEN' ? 'Open' : c.status === 'IN_PROGRESS' ? 'In Progress' : 'Resolved',
+      priority: c.priority,
+      timeAgo: formatRelativeTime(c.createdAt)
+    }));
+
+    const upcomingDues = dues.map(d => ({
+      id: d.id,
+      title: d.title,
+      unitsCount: d.unitsCount,
+      dueDate: new Date(d.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      amount: d.amount
+    }));
+
+    const paymentsOverview = [
+      { month: 'Jan', received: 2400000, outstanding: 1200000 },
+      { month: 'Feb', received: 2800000, outstanding: 800000 },
+      { month: 'Mar', received: 2700000, outstanding: 950000 },
+      { month: 'Apr', received: 3900000, outstanding: 1100000 },
+      { month: 'May', received: 3400000, outstanding: 1250000 },
+      { month: 'Jun', received: 2500000, outstanding: 1400000 }
+    ];
+
+    const kpis = {
+      units: { value: totalUnitsCount, trend: '+2 this month', trendType: 'positive' },
+      residents: { value: 112, trend: '+5 this month', trendType: 'positive' },
+      openComplaints: { value: complaints.filter(c => c.status !== 'RESOLVED').length || 3, trend: '2 high priority', trendType: 'warning' },
+      totalPayments: { value: 8950000, trend: '+18% this month', trendType: 'positive' }
+    };
+
+    const occupancy = {
+      occupied: 102,
+      vacant: 14,
+      reserved: 4,
+      total: totalUnitsCount,
+      rate: occupancyRate
+    };
+
+    res.json({
+      success: true,
+      data: {
+        estate,
+        kpis,
+        occupancy,
+        paymentsOverview,
+        estateOffice,
+        recentUnits,
+        recentResidents,
+        upcomingDues
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+

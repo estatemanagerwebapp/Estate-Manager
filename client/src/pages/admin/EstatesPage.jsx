@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Building, 
@@ -26,6 +27,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 
 export const EstatesPage = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // View state
@@ -458,7 +460,7 @@ export const EstatesPage = () => {
                     size="sm"
                     onClick={() => {
                       localStorage.setItem('activeEstateId', estate.id);
-                      window.location.href = `/admin?estateId=${estate.id}`;
+                      navigate(`/admin/estates/${estate.id}`);
                     }}
                     className="border-orange-200 text-primary hover:bg-orange-50/60 hover:border-primary text-xs font-bold px-3.5 py-1.5 rounded-xl shrink-0"
                   >
@@ -568,7 +570,7 @@ export const EstatesPage = () => {
                     size="sm"
                     onClick={() => {
                       localStorage.setItem('activeEstateId', estate.id);
-                      window.location.href = `/admin?estateId=${estate.id}`;
+                      navigate(`/admin/estates/${estate.id}`);
                     }}
                     className="w-full border-orange-200 text-primary hover:bg-orange-50/60 text-xs font-bold py-2 rounded-xl mt-2"
                   >
