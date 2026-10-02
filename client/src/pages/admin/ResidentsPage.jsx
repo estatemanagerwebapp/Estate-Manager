@@ -248,120 +248,89 @@ export const ResidentsPage = () => {
         </div>
       </div>
 
-      {/* Tabs & Search Filter Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-3">
-        {/* Tabs */}
-        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'ALL', label: 'All Residents' },
-            { id: 'ACTIVE', label: 'Active' },
-            { id: 'PENDING', label: 'Pending' },
-            { id: 'INACTIVE', label: 'Inactive' },
-            { id: 'MOVED_OUT', label: 'Moved Out' }
-          ].map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => { setActiveTab(tab.id); setPage(1); }}
-                className={`text-sm font-semibold whitespace-nowrap pb-3 -mb-3 transition-colors relative cursor-pointer ${
-                  isActive ? 'text-primary' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {tab.label}
-                {isActive && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-                )}
-              </button>
-            );
-          })}
+      {/* Filters Bar — single aligned row */}
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 pb-4">
+        {/* All Residents / Status Dropdown */}
+        <div className="relative">
+          <select
+            value={activeTab}
+            onChange={(e) => { setActiveTab(e.target.value); setStatusFilter('all'); setPage(1); }}
+            className="appearance-none pl-3 pr-8 py-2 text-xs font-semibold rounded-xl bg-white border border-slate-200/90 text-slate-700 hover:border-slate-300 focus:outline-none focus:border-primary cursor-pointer"
+          >
+            <option value="ALL">All Residents</option>
+            <option value="ACTIVE">Active</option>
+            <option value="PENDING">Pending</option>
+            <option value="INACTIVE">Inactive</option>
+            <option value="MOVED_OUT">Moved Out</option>
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
-        {/* Filter Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Search */}
-          <div className="relative min-w-[200px] flex-1 sm:flex-initial">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search residents..."
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-              className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl bg-white border border-slate-200/90 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-            />
-          </div>
+        {/* Search */}
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search residents..."
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+            className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl bg-white border border-slate-200/90 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          />
+        </div>
 
-          {/* Estate Dropdown */}
-          <div className="relative">
-            <select
-              value={estateFilter}
-              onChange={(e) => { setEstateFilter(e.target.value); setPage(1); }}
-              className="appearance-none pl-3 pr-8 py-2 text-xs font-medium rounded-xl bg-white border border-slate-200/90 text-slate-700 hover:border-slate-300 focus:outline-none focus:border-primary cursor-pointer"
-            >
-              <option value="all">Estate</option>
-              {estatesData.map((est) => (
-                <option key={est.id} value={est.id}>{est.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+        {/* Estate Dropdown */}
+        <div className="relative">
+          <select
+            value={estateFilter}
+            onChange={(e) => { setEstateFilter(e.target.value); setPage(1); }}
+            className="appearance-none pl-3 pr-8 py-2 text-xs font-medium rounded-xl bg-white border border-slate-200/90 text-slate-700 hover:border-slate-300 focus:outline-none focus:border-primary cursor-pointer"
+          >
+            <option value="all">Estate</option>
+            {estatesData.map((est) => (
+              <option key={est.id} value={est.id}>{est.name}</option>
+            ))}
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
 
-          {/* Unit Type Dropdown */}
-          <div className="relative">
-            <select
-              value={unitTypeFilter}
-              onChange={(e) => { setUnitTypeFilter(e.target.value); setPage(1); }}
-              className="appearance-none pl-3 pr-8 py-2 text-xs font-medium rounded-xl bg-white border border-slate-200/90 text-slate-700 hover:border-slate-300 focus:outline-none focus:border-primary cursor-pointer"
-            >
-              <option value="all">Unit Type</option>
-              <option value="Apartment">Apartment</option>
-              <option value="Duplex">Duplex</option>
-              <option value="Studio">Studio</option>
-              <option value="Commercial">Commercial</option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+        {/* Unit Type Dropdown */}
+        <div className="relative">
+          <select
+            value={unitTypeFilter}
+            onChange={(e) => { setUnitTypeFilter(e.target.value); setPage(1); }}
+            className="appearance-none pl-3 pr-8 py-2 text-xs font-medium rounded-xl bg-white border border-slate-200/90 text-slate-700 hover:border-slate-300 focus:outline-none focus:border-primary cursor-pointer"
+          >
+            <option value="all">Unit Type</option>
+            <option value="Apartment">Apartment</option>
+            <option value="Duplex">Duplex</option>
+            <option value="Studio">Studio</option>
+            <option value="Commercial">Commercial</option>
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
 
-          {/* Status Dropdown */}
-          <div className="relative">
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="appearance-none pl-3 pr-8 py-2 text-xs font-medium rounded-xl bg-white border border-slate-200/90 text-slate-700 hover:border-slate-300 focus:outline-none focus:border-primary cursor-pointer"
-            >
-              <option value="all">Status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="PENDING">Pending</option>
-              <option value="INACTIVE">Inactive</option>
-              <option value="MOVED_OUT">Moved Out</option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/60">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-lg transition-all ${
-                viewMode === 'list' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="List View"
-            >
-              <List className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-all ${
-                viewMode === 'grid' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Grid View"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
+        {/* View Mode Toggle — pushed to end */}
+        <div className="ml-auto flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/60">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`p-1.5 rounded-lg transition-all ${
+              viewMode === 'list' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
+            title="List View"
+          >
+            <List className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={`p-1.5 rounded-lg transition-all ${
+              viewMode === 'grid' ? 'bg-white text-primary shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
+            title="Grid View"
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
