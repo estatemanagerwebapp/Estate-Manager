@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -8,6 +8,7 @@ import { Building2, Shield, User, Key, AlertCircle } from 'lucide-react';
 export const LoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('admin@estatemanager.io');
   const [password, setPassword] = useState('Admin@12345');
   const [loading, setLoading] = useState(false);
@@ -20,12 +21,16 @@ export const LoginPage = () => {
 
     try {
       const res = await login(email, password);
-      if (res.data?.user?.role === 'SUPER_ADMIN') {
-        navigate('/admin/estates');
+      // Redirect back to the page the user originally tried to visit, or role default
+      const from = location.state?.from?.pathname;
+      if (from && from !== '/login') {
+        navigate(from, { replace: true });
+      } else if (res.data?.user?.role === 'SUPER_ADMIN') {
+        navigate('/admin/estates', { replace: true });
       } else if (res.data?.user?.role === 'GUARD') {
-        navigate('/guard');
+        navigate('/guard', { replace: true });
       } else {
-        navigate('/resident');
+        navigate('/admin', { replace: true });
       }
     } catch (err) {
       setError(err.message || 'Authentication failed. Please check credentials.');
