@@ -22,6 +22,13 @@ export const StatCard = ({
     }
   };
 
+  const getValueFontSize = () => {
+    const str = String(value || '');
+    if (str.length >= 15) return 'text-lg sm:text-xl';
+    if (str.length >= 11) return 'text-xl sm:text-2xl';
+    return 'text-2xl sm:text-3xl';
+  };
+
   return (
     <div
       onClick={onClick}
@@ -39,12 +46,15 @@ export const StatCard = ({
         </div>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <span className="text-xs font-semibold text-slate-500 block mb-1">
           {label}
         </span>
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-sans">
+        <div className="flex items-baseline justify-between gap-2 overflow-hidden">
+          <span 
+            title={typeof value === 'string' ? value : undefined}
+            className={`${getValueFontSize()} font-black text-slate-900 tracking-tight font-sans tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+          >
             {value}
           </span>
         </div>

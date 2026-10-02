@@ -3,15 +3,68 @@
  * Adheres strictly to the project rules: zero emojis, Lucide icons, enterprise styling.
  */
 
-export const formatNaira = (amount) => {
+export const formatNaira = (amount, options = {}) => {
   const numeric = typeof amount === 'number' ? amount : parseFloat(amount) || 0;
+  
+  if (options.compact) {
+    return formatCompactNaira(numeric);
+  }
+
+  const isWhole = numeric % 1 === 0;
+  // If explicitly requested or auto-trimming whole figures >= ₦1,000 (saves 3 wasted chars: '.00')
+  const shouldHideDecimals = options.hideDecimals === true || (options.autoTrimCents !== false && isWhole && Math.abs(numeric) >= 1000);
+
   return new Intl.NumberFormat('en-NG', {
     style: 'currency',
     currency: 'NGN',
     currencyDisplay: 'narrowSymbol',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    minimumFractionDigits: shouldHideDecimals ? 0 : 2,
+    maximumFractionDigits: shouldHideDecimals ? 0 : 2
   }).format(numeric);
+};
+
+/**
+ * Compact currency formatter for high-value proptech dashboards (millions, billions).
+ * Examples:
+ * - 62000 -> ₦62,000
+ * - 3560000 -> ₦3.56M
+ * - 150000000 -> ₦150M
+ * - 1250000000 -> ₦1.25B
+ */
+export const formatCompactNaira = (amount) => {
+  const numeric = typeof amount === 'number' ? amount : parseFloat(amount) || 0;
+  const abs = Math.abs(numeric);
+
+  if (abs < 1_000_000) {
+    return formatNaira(numeric, { autoTrimCents: true });
+  }
+
+  if (abs < 1_000_000_000) {
+    const val = numeric / 1_000_000;
+    const formatted = val % 1 === 0 ? val.toFixed(0) : (abs >= 100_000_000 ? val.toFixed(1) : val.toFixed(2)).replace(/\.0$/, '');
+    return `₦${formatted}M`;
+  }
+
+  if (abs < 1_000_000_000_000) {
+    const val = numeric / 1_000_000_000;
+    const formatted = val % 1 === 0 ? val.toFixed(0) : val.toFixed(2).replace(/\.?0+$/, '');
+    return `₦${formatted}B`;
+  }
+
+  const val = numeric / 1_000_000_000_000;
+  return `₦${val.toFixed(2).replace(/\.?0+$/, '')}T`;
+};
+
+/**
+ * Returns dynamic font size Tailwind class based on figure length to prevent overflow in KPI cards.
+ */
+export const getNairaTextSizeClass = (amount, isCompact = false) => {
+  if (isCompact) return 'text-2xl';
+  const numeric = Math.abs(typeof amount === 'number' ? amount : parseFloat(amount) || 0);
+  if (numeric >= 1_000_000_000) return 'text-lg sm:text-xl'; // 10+ figures
+  if (numeric >= 100_000_000) return 'text-xl sm:text-2xl';  // 9 figures
+  if (numeric >= 10_000_000) return 'text-xl sm:text-2xl';   // 8 figures
+  return 'text-2xl';
 };
 
 export const formatDate = (dateInput) => {

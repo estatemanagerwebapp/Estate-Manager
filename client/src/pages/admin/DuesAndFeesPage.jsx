@@ -16,11 +16,12 @@ import {
   Building, 
   CreditCard,
   RefreshCw,
-  Info
+  Info,
+  SlidersHorizontal
 } from 'lucide-react';
 import api from '../../services/api';
 import duesService from '../../services/duesService';
-import { formatNaira } from '../../utils/formatters';
+import { formatNaira, formatCompactNaira, getNairaTextSizeClass } from '../../utils/formatters';
 import { CreateFeeScheduleModal } from '../../components/dues/CreateFeeScheduleModal';
 import { BatchAssessModal } from '../../components/dues/BatchAssessModal';
 import { SendDuesReminderModal } from '../../components/dues/SendDuesReminderModal';
@@ -35,6 +36,7 @@ export const DuesAndFeesPage = () => {
   const [complianceStatusFilter, setComplianceStatusFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [isCompactCurrency, setIsCompactCurrency] = useState(false);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -142,11 +144,25 @@ export const DuesAndFeesPage = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsCompactCurrency(!isCompactCurrency)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              isCompactCurrency 
+                ? 'bg-orange-50 border-orange-200 text-primary shadow-xs' 
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-xs'
+            }`}
+            title="Toggle between compact (₦M/₦B) and exact figures"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>{isCompactCurrency ? 'Figures: Compact (₦M)' : 'Figures: Exact (₦)'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => handleOpenAssess()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-xs transition-all cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-xs transition-all cursor-pointer"
           >
             <Calculator className="w-4 h-4 text-primary" />
             <span>Batch Assess Next Cycle</span>
@@ -154,7 +170,7 @@ export const DuesAndFeesPage = () => {
           <button
             type="button"
             onClick={() => setCreateModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-600 active:scale-98 text-white font-semibold text-xs shadow-sm shadow-primary/30 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary hover:bg-primary-600 active:scale-98 text-white font-semibold text-xs shadow-sm shadow-primary/30 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Create Fee Schedule</span>
@@ -165,75 +181,96 @@ export const DuesAndFeesPage = () => {
       {/* Financial KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Assessed */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex items-center justify-between group hover:border-slate-300 transition-all">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary">
-              <Receipt className="w-6 h-6 text-primary" />
+        <div 
+          onClick={() => setIsCompactCurrency(!isCompactCurrency)}
+          title="Click to toggle compact / exact figure"
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all cursor-pointer select-none"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Assessed</span>
+            <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+              <Receipt className="w-4 h-4 text-primary" />
             </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Assessed</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-0.5">
-                {formatNaira(kpis.totalAssessed)}
-              </h3>
-              <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                Active annual billing
-              </p>
+          </div>
+          <div className="mt-3">
+            <div 
+              className={`${getNairaTextSizeClass(kpis.totalAssessed, isCompactCurrency)} font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+              title={`Exact: ${formatNaira(kpis.totalAssessed, { autoTrimCents: false })}`}
+            >
+              {isCompactCurrency ? formatCompactNaira(kpis.totalAssessed) : formatNaira(kpis.totalAssessed)}
             </div>
+            <p className="text-xs font-medium text-slate-500 mt-1">
+              Active annual billing
+            </p>
           </div>
         </div>
 
         {/* Collected Dues */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex items-center justify-between group hover:border-slate-300 transition-all">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-              <CheckCircle2 className="w-6 h-6" />
+        <div 
+          onClick={() => setIsCompactCurrency(!isCompactCurrency)}
+          title="Click to toggle compact / exact figure"
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all cursor-pointer select-none"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Collected Dues</span>
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition-transform">
+              <CheckCircle2 className="w-4 h-4" />
             </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Collected Dues</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-0.5">
-                {formatNaira(kpis.totalCollected)}
-              </h3>
-              <p className="text-xs font-semibold text-emerald-600 mt-0.5 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>{kpis.complianceRate}% compliance rate</span>
-              </p>
+          </div>
+          <div className="mt-3">
+            <div 
+              className={`${getNairaTextSizeClass(kpis.totalCollected, isCompactCurrency)} font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+              title={`Exact: ${formatNaira(kpis.totalCollected, { autoTrimCents: false })}`}
+            >
+              {isCompactCurrency ? formatCompactNaira(kpis.totalCollected) : formatNaira(kpis.totalCollected)}
             </div>
+            <p className="text-xs font-semibold text-emerald-600 mt-1 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>{kpis.complianceRate}% compliance rate</span>
+            </p>
           </div>
         </div>
 
         {/* Overdue Dues */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex items-center justify-between group hover:border-slate-300 transition-all">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
-              <AlertTriangle className="w-6 h-6" />
+        <div 
+          onClick={() => setIsCompactCurrency(!isCompactCurrency)}
+          title="Click to toggle compact / exact figure"
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all cursor-pointer select-none"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Overdue Dues</span>
+            <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 group-hover:scale-105 transition-transform">
+              <AlertTriangle className="w-4 h-4" />
             </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Overdue Dues</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-0.5">
-                {formatNaira(kpis.totalOverdue)}
-              </h3>
-              <p className="text-xs font-semibold text-rose-600 mt-0.5">
-                Pending collection
-              </p>
+          </div>
+          <div className="mt-3">
+            <div 
+              className={`${getNairaTextSizeClass(kpis.totalOverdue, isCompactCurrency)} font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+              title={`Exact: ${formatNaira(kpis.totalOverdue, { autoTrimCents: false })}`}
+            >
+              {isCompactCurrency ? formatCompactNaira(kpis.totalOverdue) : formatNaira(kpis.totalOverdue)}
             </div>
+            <p className="text-xs font-semibold text-rose-600 mt-1">
+              Pending collection
+            </p>
           </div>
         </div>
 
         {/* Active Schedules */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex items-center justify-between group hover:border-slate-300 transition-all">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-              <Coins className="w-6 h-6" />
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Fee Schedules</span>
+            <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 group-hover:scale-105 transition-transform">
+              <Coins className="w-4 h-4" />
             </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Fee Schedules</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-0.5">
-                {kpis.activeSchedulesCount} Levies
-              </h3>
-              <p className="text-xs font-semibold text-blue-600 mt-0.5">
-                Active fee catalog
-              </p>
+          </div>
+          <div className="mt-3">
+            <div className="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap">
+              {kpis.activeSchedulesCount} Levies
             </div>
+            <p className="text-xs font-semibold text-blue-600 mt-1">
+              Active fee catalog
+            </p>
           </div>
         </div>
       </div>

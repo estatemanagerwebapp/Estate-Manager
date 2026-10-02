@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { billingService } from '../../services/billingService';
-import { formatNaira, formatDate } from '../../utils/formatters';
+import { formatNaira, formatCompactNaira, getNairaTextSizeClass, formatDate } from '../../utils/formatters';
 import { GenerateInvoiceModal } from '../../components/billing/GenerateInvoiceModal';
 import { PaymentReceiptModal } from '../../components/billing/PaymentReceiptModal';
 import { RecordPaymentModal } from '../../components/billing/RecordPaymentModal';
@@ -142,7 +142,10 @@ export const BillingHubPage = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-slate-900 tracking-tight">
+            <div 
+              className={`${getNairaTextSizeClass(stats.totalInvoiced)} font-bold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+              title={`Exact: ${formatNaira(stats.totalInvoiced, { autoTrimCents: false })}`}
+            >
               {formatNaira(stats.totalInvoiced)}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
@@ -163,7 +166,10 @@ export const BillingHubPage = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-slate-900 tracking-tight">
+            <div 
+              className={`${getNairaTextSizeClass(stats.totalPaid)} font-bold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+              title={`Exact: ${formatNaira(stats.totalPaid, { autoTrimCents: false })}`}
+            >
               {formatNaira(stats.totalPaid)}
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
@@ -182,7 +188,10 @@ export const BillingHubPage = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-slate-900 tracking-tight">
+            <div 
+              className={`${getNairaTextSizeClass(stats.totalOutstanding)} font-bold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis`}
+              title={`Exact: ${formatNaira(stats.totalOutstanding, { autoTrimCents: false })}`}
+            >
               {formatNaira(stats.totalOutstanding)}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium mt-1">
