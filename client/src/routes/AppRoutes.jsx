@@ -14,6 +14,7 @@ import { EditUnitPage } from '../pages/admin/EditUnitPage';
 import { ResidentsPage } from '../pages/admin/ResidentsPage';
 import { ResidentDetailsPage } from '../pages/admin/ResidentDetailsPage';
 import { AddResidentPage } from '../pages/admin/AddResidentPage';
+import { BillingHubPage } from '../pages/admin/BillingHubPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -63,6 +64,12 @@ export const AppRoutes = () => {
         <Route path="/admin/residents" element={<ResidentsPage />} />
         <Route path="/admin/residents/new" element={<AddResidentPage />} />
         <Route path="/admin/residents/:id" element={<ResidentDetailsPage />} />
+
+        {/* Invoicing & Billing Suite */}
+        <Route path="/admin/invoices" element={<BillingHubPage />} />
+        <Route path="/admin/billing" element={<BillingHubPage />} />
+        <Route path="/admin/payments" element={<BillingHubPage />} />
+        <Route path="/admin/dues" element={<BillingHubPage />} />
 
         <Route path="/admin/*" element={<DashboardWrapper />} />
 
