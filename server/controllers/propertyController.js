@@ -124,9 +124,10 @@ exports.getProperties = async (req, res, next) => {
     const archivedCount = getStatusCount('ARCHIVED');
 
     // KPI Metrics calculation
-    const effectiveTotal = Math.max(sumEstateUnits, dbTotalUnits);
-    const occupancyRate = effectiveTotal > 0 ? Math.round((occupiedCount / (occupiedCount + vacantCount || 1)) * 100) : 84;
-    const vacancyRate = effectiveTotal > 0 ? Math.round((vacantCount / (occupiedCount + vacantCount || 1)) * 100) : 13;
+    const effectiveTotal = sumEstateUnits > 0 ? Math.max(sumEstateUnits, dbTotalUnits) : dbTotalUnits;
+    const totalCounted = occupiedCount + vacantCount + maintenanceCount;
+    const occupancyRate = totalCounted > 0 ? Math.round((occupiedCount / totalCounted) * 100) : 0;
+    const vacancyRate = totalCounted > 0 ? Math.round((vacantCount / totalCounted) * 100) : 0;
 
     const kpis = {
       totalUnits: {
@@ -151,7 +152,7 @@ exports.getProperties = async (req, res, next) => {
     };
 
     // Format properties for UI
-    const formattedList = filteredProperties.map(p => {
+    const formattedList = properties.map(p => {
       const tenant = p.currentTenant || (p.tenantName ? {
         firstName: p.tenantName.split(' ')[0] || '',
         lastName: p.tenantName.split(' ').slice(1).join(' ') || '',
