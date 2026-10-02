@@ -14,8 +14,24 @@ exports.getInvoices = async (req, res, next) => {
       where.estateId = estateId;
     }
 
+    const now = new Date();
+
     if (status && status !== 'ALL') {
-      where.status = status;
+      if (status === 'OVERDUE') {
+        where.OR = [
+          { status: 'OVERDUE' },
+          {
+            status: { notIn: ['PAID', 'CANCELLED'] },
+            dueDate: { lt: now }
+          }
+        ];
+      } else if (status === 'PAID') {
+        where.status = 'PAID';
+      } else if (status === 'PENDING') {
+        where.status = { in: ['PENDING', 'PARTIALLY_PAID'] };
+      } else {
+        where.status = status;
+      }
     }
 
     const invoices = await prisma.invoice.findMany({
@@ -29,13 +45,21 @@ exports.getInvoices = async (req, res, next) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    const enrichedInvoices = invoices.map(inv => {
+      const isPastDue = inv.dueDate && new Date(inv.dueDate) < now && inv.status !== 'PAID' && inv.status !== 'CANCELLED';
+      return {
+        ...inv,
+        status: isPastDue ? 'OVERDUE' : inv.status,
+        isOverdue: isPastDue
+      };
+    });
+
     // Compute live stats across all visible invoices
     const allInvoices = await prisma.invoice.findMany({
       where: req.user.role === 'RESIDENT' ? { residentId: req.user.id } : (estateId && estateId !== 'ALL' ? { estateId } : {}),
       include: { payments: true }
     });
 
-    const now = new Date();
     let totalInvoiced = 0;
     let totalPaid = 0;
     let paidCount = 0;
@@ -57,7 +81,7 @@ exports.getInvoices = async (req, res, next) => {
     const totalOutstanding = Math.max(0, totalInvoiced - totalPaid);
 
     // Apply search filter in-memory if search parameter is passed
-    let filteredInvoices = invoices;
+    let filteredInvoices = enrichedInvoices;
     if (search && search.trim()) {
       const q = search.trim().toLowerCase();
       filteredInvoices = invoices.filter(inv => {

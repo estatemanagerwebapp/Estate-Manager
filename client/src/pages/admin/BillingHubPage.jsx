@@ -301,21 +301,52 @@ export const BillingHubPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {isLoading ? (
-                <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span>Loading real-time financial records from database...</span>
-                    </div>
-                  </td>
-                </tr>
+              {isLoading || isFetching ? (
+                <>
+                  {[...Array(5)].map((_, i) => (
+                    <tr key={i} className="animate-pulse border-b border-slate-100">
+                      <td className="py-4 px-4">
+                        <div className="h-4 bg-slate-200 rounded-md w-28" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 bg-slate-200 rounded-md w-36 mb-1.5" />
+                        <div className="h-3 bg-slate-100 rounded-md w-24" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 bg-slate-200 rounded-md w-48 mb-1.5" />
+                        <div className="h-3 bg-slate-100 rounded-md w-20" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 bg-slate-200 rounded-md w-20" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-4 bg-slate-200 rounded-md w-24 mb-1" />
+                        <div className="h-3 bg-slate-100 rounded-md w-16" />
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="h-6 bg-slate-200 rounded-full w-20" />
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="h-7 bg-slate-200 rounded-lg w-24 ml-auto" />
+                      </td>
+                    </tr>
+                  ))}
+                </>
               ) : invoices.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-12 text-center text-slate-400">
                     <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-medium text-slate-600">No invoices found matching current filters.</p>
                     <p className="text-[11px] text-slate-400 mt-1">Try switching tabs or generating a new estate invoice.</p>
+                    {(activeTab !== 'ALL' || searchQuery || estateFilter !== 'ALL') && (
+                      <button
+                        type="button"
+                        onClick={() => { setActiveTab('ALL'); setSearchQuery(''); setEstateFilter('ALL'); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors mt-3 cursor-pointer"
+                      >
+                        <span>View All Invoices</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
