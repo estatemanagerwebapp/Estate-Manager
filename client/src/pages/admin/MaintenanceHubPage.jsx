@@ -48,6 +48,13 @@ export const MaintenanceHubPage = () => {
   const [isArtisanModalOpen, setIsArtisanModalOpen] = useState(false);
   const [activeTicket, setActiveTicket] = useState(null);
 
+  // Toast Notification state
+  const [toast, setToast] = useState(null);
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   // Form states
   const [ticketForm, setTicketForm] = useState({
     estateId: '',
@@ -167,10 +174,11 @@ export const MaintenanceHubPage = () => {
   // Mutations
   const createTicketMutation = useMutation({
     mutationFn: (data) => maintenanceService.createComplaint(data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-tickets'] });
       queryClient.invalidateQueries({ queryKey: ['maintenance-stats'] });
       setIsCreateModalOpen(false);
+      showToast(`Work order ${data?.ticketNumber ? '#' + data.ticketNumber : ''} created successfully.`);
       setTicketForm({
         estateId: estates[0]?.id || '',
         propertyId: '',
@@ -183,6 +191,9 @@ export const MaintenanceHubPage = () => {
         estimatedCost: '',
         dueDate: ''
       });
+    },
+    onError: (err) => {
+      showToast(err?.message || 'Failed to create work order ticket.', 'error');
     }
   });
 
@@ -192,7 +203,11 @@ export const MaintenanceHubPage = () => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-tickets'] });
       queryClient.invalidateQueries({ queryKey: ['maintenance-stats'] });
       setIsAssignModalOpen(false);
+      showToast(`Artisan dispatched successfully to ticket #${activeTicket?.ticketNumber || ''}.`);
       setActiveTicket(null);
+    },
+    onError: (err) => {
+      showToast(err?.message || 'Failed to dispatch artisan.', 'error');
     }
   });
 
@@ -202,7 +217,11 @@ export const MaintenanceHubPage = () => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-tickets'] });
       queryClient.invalidateQueries({ queryKey: ['maintenance-stats'] });
       setIsResolveModalOpen(false);
+      showToast(`Ticket #${activeTicket?.ticketNumber || ''} marked as resolved & closed.`);
       setActiveTicket(null);
+    },
+    onError: (err) => {
+      showToast(err?.message || 'Failed to update ticket status.', 'error');
     }
   });
 
@@ -211,6 +230,7 @@ export const MaintenanceHubPage = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-schedules'] });
       setIsScheduleModalOpen(false);
+      showToast('Preventive maintenance schedule configured successfully.');
       setScheduleForm({
         estateId: estates[0]?.id || '',
         title: '',
@@ -223,6 +243,9 @@ export const MaintenanceHubPage = () => {
         estimatedCost: '',
         notes: ''
       });
+    },
+    onError: (err) => {
+      showToast(err?.message || 'Failed to create PM schedule.', 'error');
     }
   });
 
@@ -230,6 +253,10 @@ export const MaintenanceHubPage = () => {
     mutationFn: ({ id, data }) => maintenanceService.updateSchedule(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-schedules'] });
+      showToast('Maintenance marked complete and schedule advanced.');
+    },
+    onError: (err) => {
+      showToast(err?.message || 'Failed to update PM schedule.', 'error');
     }
   });
 
@@ -238,12 +265,16 @@ export const MaintenanceHubPage = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-artisans'] });
       setIsArtisanModalOpen(false);
+      showToast('Artisan registered and added to directory.');
       setArtisanForm({
         estateId: estates[0]?.id || '',
         name: '',
         phone: '',
         category: 'Electrical'
       });
+    },
+    onError: (err) => {
+      showToast(err?.message || 'Failed to register artisan.', 'error');
     }
   });
 
@@ -333,7 +364,23 @@ export const MaintenanceHubPage = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
+      {/* Toast Notification Alert */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-elevated border text-xs font-semibold flex items-center gap-2.5 animate-in slide-in-from-bottom duration-200 ${
+          toast.type === 'error'
+            ? 'bg-rose-900 text-white border-rose-700'
+            : 'bg-slate-900 text-white border-slate-700'
+        }`}>
+          {toast.type === 'error' ? (
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {/* 1. TOP HEADER & ACTIONS BAR */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-card">
         <div>
