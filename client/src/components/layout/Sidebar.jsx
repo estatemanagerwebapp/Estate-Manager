@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Building, 
@@ -14,7 +14,7 @@ import {
   Briefcase, 
   BarChart3, 
   Bell, 
-  QrCode,
+  QrCode, 
   X,
   ChevronLeft,
   ChevronRight
@@ -27,15 +27,15 @@ export const Sidebar = ({
   onToggleCollapse, 
   onScanQR 
 }) => {
+  const location = useLocation();
+
   const navItems = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
     { label: 'Estates', path: '/admin/estates', icon: Building },
     { label: 'Units & Properties', path: '/admin/properties', icon: Layers },
     { label: 'Residents', path: '/admin/residents', icon: Users },
     { label: 'Gate Access', path: '/admin/gate-access', icon: ShieldCheck },
-    { label: 'Invoices', path: '/admin/invoices', icon: Receipt },
-    { label: 'Payments', path: '/admin/payments', icon: CreditCard },
-    { label: 'Dues & Fees', path: '/admin/dues', icon: Coins },
+    { label: 'Billing & Finance', path: '/admin/finance', icon: Receipt },
     { label: 'Maintenance', path: '/admin/maintenance', icon: Wrench },
     { label: 'Visitors', path: '/admin/visitors', icon: UserCheck },
     { label: 'Staff', path: '/admin/staff', icon: Briefcase },
@@ -119,6 +119,11 @@ export const Sidebar = ({
           >
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isFinanceMatch = item.path === '/admin/finance' && 
+                ['/admin/finance', '/admin/invoices', '/admin/payments', '/admin/dues', '/admin/billing'].some(p => location.pathname.startsWith(p));
+              const isGateMatch = item.path === '/admin/gate-access' &&
+                ['/admin/gate-access', '/admin/gate'].some(p => location.pathname.startsWith(p));
+
               return (
                 <NavLink
                   key={item.label}
@@ -127,30 +132,36 @@ export const Sidebar = ({
                   onClick={() => {
                     if (window.innerWidth < 1024) onClose();
                   }}
-                  className={({ isActive }) => `
-                    flex items-center rounded-xl text-sm font-semibold transition-all duration-150 relative group
-                    ${isCollapsed ? 'lg:justify-center lg:px-0 lg:py-2.5 px-3.5 py-2.5 gap-3' : 'px-3.5 py-2.5 gap-3'}
-                    ${isActive 
-                      ? 'bg-primary text-white shadow-sm shadow-primary/25' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }
-                  `}
+                  className={({ isActive }) => {
+                    const active = isActive || isFinanceMatch || isGateMatch;
+                    return `
+                      flex items-center rounded-xl text-sm font-semibold transition-all duration-150 relative group
+                      ${isCollapsed ? 'lg:justify-center lg:px-0 lg:py-2.5 px-3.5 py-2.5 gap-3' : 'px-3.5 py-2.5 gap-3'}
+                      ${active 
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25' 
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      }
+                    `;
+                  }}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-800'}`} />
-                      <span className={isCollapsed ? 'lg:hidden block' : 'block'}>
-                        {item.label}
-                      </span>
-
-                      {/* Floating Tooltip when Collapsed on Desktop */}
-                      {isCollapsed && (
-                        <div className="hidden lg:group-hover:flex absolute left-full ml-3 px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl pointer-events-none z-50 whitespace-nowrap items-center">
+                  {({ isActive }) => {
+                    const active = isActive || isFinanceMatch || isGateMatch;
+                    return (
+                      <>
+                        <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-slate-500 group-hover:text-slate-800'}`} />
+                        <span className={isCollapsed ? 'lg:hidden block' : 'block'}>
                           {item.label}
-                        </div>
-                      )}
-                    </>
-                  )}
+                        </span>
+
+                        {/* Floating Tooltip when Collapsed on Desktop */}
+                        {isCollapsed && (
+                          <div className="hidden lg:group-hover:flex absolute left-full ml-3 px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-xl pointer-events-none z-50 whitespace-nowrap items-center">
+                            {item.label}
+                          </div>
+                        )}
+                      </>
+                    );
+                  }}
                 </NavLink>
               );
             })}

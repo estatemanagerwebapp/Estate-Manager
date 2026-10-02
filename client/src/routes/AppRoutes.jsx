@@ -17,6 +17,7 @@ import { AddResidentPage } from '../pages/admin/AddResidentPage';
 import { BillingHubPage } from '../pages/admin/BillingHubPage';
 import { GateSecurityHubPage } from '../pages/admin/GateSecurityHubPage';
 import { DuesAndFeesPage } from '../pages/admin/DuesAndFeesPage';
+import { FinanceHubPage } from '../pages/admin/FinanceHubPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -104,11 +105,12 @@ export const AppRoutes = () => {
         <Route path="/admin/residents/new" element={<AddResidentPage />} />
         <Route path="/admin/residents/:id" element={<ResidentDetailsPage />} />
 
-        {/* Invoicing & Billing Suite */}
-        <Route path="/admin/invoices" element={<BillingHubPage />} />
-        <Route path="/admin/billing" element={<BillingHubPage />} />
-        <Route path="/admin/payments" element={<BillingHubPage />} />
-        <Route path="/admin/dues" element={<DuesAndFeesPage />} />
+        {/* Financial, Billing & Dues Suite */}
+        <Route path="/admin/finance" element={<FinanceHubPage />} />
+        <Route path="/admin/invoices" element={<FinanceHubPage defaultTab="INVOICES" />} />
+        <Route path="/admin/billing" element={<FinanceHubPage defaultTab="INVOICES" />} />
+        <Route path="/admin/payments" element={<FinanceHubPage defaultTab="PAYMENTS" />} />
+        <Route path="/admin/dues" element={<FinanceHubPage defaultTab="DUES" />} />
 
         {/* Gate Access & Visitor Suite */}
         <Route path="/admin/gate-access" element={<GateSecurityHubPage />} />
