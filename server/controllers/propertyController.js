@@ -76,16 +76,7 @@ exports.getProperties = async (req, res, next) => {
       select: { totalUnits: true }
     });
     const sumEstateUnits = estates.reduce((acc, curr) => acc + (curr.totalUnits || 0), 0) || 320;
-
-    const [
-      filteredProperties,
-      totalCount,
-      dbTotalUnits,
-      occupiedCount,
-      vacantCount,
-      maintenanceCount,
-      archivedCount
-    ] = await Promise.all([
+    const [properties, totalCount, statusGroups] = await Promise.all([
       prisma.property.findMany({
         where,
         include: {
@@ -118,12 +109,19 @@ exports.getProperties = async (req, res, next) => {
         take: limitNum
       }),
       prisma.property.count({ where }),
-      prisma.property.count({ where: estateFilter }),
-      prisma.property.count({ where: { ...estateFilter, occupancyStatus: 'OCCUPIED' } }),
-      prisma.property.count({ where: { ...estateFilter, occupancyStatus: 'VACANT' } }),
-      prisma.property.count({ where: { ...estateFilter, occupancyStatus: 'UNDER_MAINTENANCE' } }),
-      prisma.property.count({ where: { ...estateFilter, occupancyStatus: 'ARCHIVED' } })
+      prisma.property.groupBy({
+        by: ['occupancyStatus'],
+        where: estateFilter,
+        _count: { id: true }
+      })
     ]);
+
+    const getStatusCount = (status) => statusGroups.find(g => g.occupancyStatus === status)?._count?.id || 0;
+    const dbTotalUnits = statusGroups.reduce((acc, g) => acc + (g._count?.id || 0), 0);
+    const occupiedCount = getStatusCount('OCCUPIED');
+    const vacantCount = getStatusCount('VACANT');
+    const maintenanceCount = getStatusCount('UNDER_MAINTENANCE');
+    const archivedCount = getStatusCount('ARCHIVED');
 
     // KPI Metrics calculation
     const effectiveTotal = Math.max(sumEstateUnits, dbTotalUnits);

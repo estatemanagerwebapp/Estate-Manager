@@ -53,7 +53,7 @@ exports.getResidents = async (req, res, next) => {
       };
     }
 
-    const [residents, totalCount, activeCount, pendingCount, inactiveCount, movedOutCount] = await Promise.all([
+    const [residents, totalCount, statusGroups] = await Promise.all([
       prisma.user.findMany({
         where,
         include: {
@@ -89,11 +89,18 @@ exports.getResidents = async (req, res, next) => {
         take: limitNum
       }),
       prisma.user.count({ where }),
-      prisma.user.count({ where: { role: 'RESIDENT', residentStatus: 'ACTIVE' } }),
-      prisma.user.count({ where: { role: 'RESIDENT', residentStatus: 'PENDING' } }),
-      prisma.user.count({ where: { role: 'RESIDENT', residentStatus: 'INACTIVE' } }),
-      prisma.user.count({ where: { role: 'RESIDENT', residentStatus: 'MOVED_OUT' } })
+      prisma.user.groupBy({
+        by: ['residentStatus'],
+        where: { role: 'RESIDENT' },
+        _count: { id: true }
+      })
     ]);
+
+    const getStatusCount = (status) => statusGroups.find(g => g.residentStatus === status)?._count?.id || 0;
+    const activeCount = getStatusCount('ACTIVE');
+    const pendingCount = getStatusCount('PENDING');
+    const inactiveCount = getStatusCount('INACTIVE');
+    const movedOutCount = getStatusCount('MOVED_OUT');
 
     // KPI Metrics calculation
     const effectiveTotal = Math.max(268, totalCount);
