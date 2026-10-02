@@ -113,8 +113,8 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
     })
   });
 
-  const invoices = invoicesResponse?.data?.invoices || [];
-  const billingStats = invoicesResponse?.data?.stats || {
+  const invoices = invoicesResponse?.invoices || invoicesResponse?.data?.invoices || [];
+  const billingStats = invoicesResponse?.stats || invoicesResponse?.data?.stats || {
     totalInvoiced: 0,
     totalPaid: 0,
     totalOutstanding: 0,
@@ -123,7 +123,7 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
     pendingCount: 0,
     overdueCount: 0
   };
-  const invoicePagination = invoicesResponse?.data?.pagination || { page: 1, totalPages: 1, total: 0 };
+  const invoicePagination = invoicesResponse?.pagination || invoicesResponse?.data?.pagination || { page: 1, totalPages: 1, total: invoices.length };
 
   // Fetch Payments History
   const { 
@@ -155,7 +155,7 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
     refetch: refetchDues 
   } = useQuery({
     queryKey: ['finance-dues-schedules', estateFilter],
-    queryFn: () => duesService.getSchedules({
+    queryFn: () => duesService.getDuesKPIsAndSchedules({
       estateId: estateFilter !== 'ALL' ? estateFilter : undefined
     })
   });
@@ -172,10 +172,11 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
   // Fetch Unit Compliance Ledger
   const { 
     data: ledgerData, 
-    isLoading: ledgerLoading 
+    isLoading: ledgerLoading,
+    refetch: refetchLedger
   } = useQuery({
     queryKey: ['finance-dues-ledger', estateFilter, complianceStatusFilter, searchQuery, ledgerPage],
-    queryFn: () => duesService.getComplianceLedger({
+    queryFn: () => duesService.getUnitComplianceLedger({
       estateId: estateFilter !== 'ALL' ? estateFilter : undefined,
       status: complianceStatusFilter !== 'ALL' ? complianceStatusFilter : undefined,
       search: searchQuery || undefined,
@@ -185,8 +186,8 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
     enabled: activeTab === 'DUES' && duesSubTab === 'LEDGER'
   });
 
-  const ledgerItems = ledgerData?.units || [];
-  const ledgerPagination = ledgerData?.pagination || { page: 1, totalPages: 1, total: 0 };
+  const ledgerItems = ledgerData?.ledger || ledgerData?.units || [];
+  const ledgerPagination = ledgerData?.pagination || { page: 1, totalPages: 1, total: ledgerItems.length };
 
   // Combined Top KPI Metrics
   const combinedTotalInvoiced = billingStats.totalInvoiced || duesKpis.totalAssessed || 0;
