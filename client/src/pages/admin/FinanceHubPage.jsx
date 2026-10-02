@@ -1090,9 +1090,19 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
       <GenerateInvoiceModal
         isOpen={isGenerateInvoiceOpen}
         onClose={() => setIsGenerateInvoiceOpen(false)}
+        onSuccess={() => {
+          showToast('New invoice created successfully.');
+          setInvoiceStatusFilter('ALL');
+          setInvoicePage(1);
+          queryClient.invalidateQueries({ queryKey: ['finance-invoices'] });
+          refetchInvoices();
+        }}
         onCreated={() => {
           showToast('New invoice created successfully.');
+          setInvoiceStatusFilter('ALL');
+          setInvoicePage(1);
           queryClient.invalidateQueries({ queryKey: ['finance-invoices'] });
+          refetchInvoices();
         }}
         estates={estates}
       />
@@ -1122,6 +1132,7 @@ export const FinanceHubPage = ({ defaultTab = 'INVOICES' }) => {
           setSelectedInvoiceForPayment(null);
         }}
         invoice={selectedInvoiceForPayment}
+        onSuccess={handlePaymentRecorded}
         onPaymentRecorded={handlePaymentRecorded}
       />
 

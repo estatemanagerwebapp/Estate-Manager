@@ -5,7 +5,7 @@ import api from '../../services/api';
 import { billingService } from '../../services/billingService';
 import { formatNaira } from '../../utils/formatters';
 
-export const GenerateInvoiceModal = ({ isOpen, onClose, onSuccess }) => {
+export const GenerateInvoiceModal = ({ isOpen, onClose, onSuccess, onCreated }) => {
   const queryClient = useQueryClient();
 
   const [estateId, setEstateId] = useState('');
@@ -139,7 +139,11 @@ export const GenerateInvoiceModal = ({ isOpen, onClose, onSuccess }) => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
       queryClient.invalidateQueries({ queryKey: ['billing-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-dues-schedules'] });
       if (onSuccess) onSuccess(data);
+      if (onCreated) onCreated(data);
       onClose();
     },
     onError: (err) => {

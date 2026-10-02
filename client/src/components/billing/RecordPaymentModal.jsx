@@ -4,7 +4,7 @@ import { X, Check, CreditCard, Building, Calendar, AlertCircle } from 'lucide-re
 import { billingService } from '../../services/billingService';
 import { formatNaira } from '../../utils/formatters';
 
-export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess }) => {
+export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess, onPaymentRecorded }) => {
   const queryClient = useQueryClient();
 
   const remainingBalance = invoice ? Math.max(0, invoice.amount - (invoice.paidAmount || 0)) : 0;
@@ -50,7 +50,11 @@ export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess }) => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
       queryClient.invalidateQueries({ queryKey: ['billing-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-dues-schedules'] });
       if (onSuccess) onSuccess(data);
+      if (onPaymentRecorded) onPaymentRecorded(data);
       onClose();
     },
     onError: (err) => {

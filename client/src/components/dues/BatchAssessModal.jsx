@@ -14,13 +14,15 @@ import api from '../../services/api';
 import duesService from '../../services/duesService';
 import { formatNaira } from '../../utils/formatters';
 
-export const BatchAssessModal = ({ isOpen, onClose, onAssessed, defaultSchedule }) => {
+export const BatchAssessModal = ({ isOpen, onClose, onAssessed, defaultSchedule, schedule }) => {
   const [estateId, setEstateId] = useState('');
   const [scheduleTitle, setScheduleTitle] = useState('Estate Service Charge');
   const [amount, setAmount] = useState(50000);
   const [dueDate, setDueDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const targetSchedule = schedule || defaultSchedule;
 
   // Default dueDate to 30 days from now
   useEffect(() => {
@@ -29,14 +31,14 @@ export const BatchAssessModal = ({ isOpen, onClose, onAssessed, defaultSchedule 
     setDueDate(d.toISOString().split('T')[0]);
   }, []);
 
-  // Sync if defaultSchedule provided
+  // Sync if schedule provided
   useEffect(() => {
-    if (defaultSchedule) {
-      if (defaultSchedule.estateId) setEstateId(defaultSchedule.estateId);
-      if (defaultSchedule.title) setScheduleTitle(defaultSchedule.title);
-      if (defaultSchedule.amount) setAmount(defaultSchedule.amount);
+    if (targetSchedule) {
+      if (targetSchedule.estateId) setEstateId(targetSchedule.estateId);
+      if (targetSchedule.title) setScheduleTitle(targetSchedule.title);
+      if (targetSchedule.amount) setAmount(targetSchedule.amount);
     }
-  }, [defaultSchedule]);
+  }, [targetSchedule]);
 
   // Fetch estates
   const { data: estates = [] } = useQuery({
