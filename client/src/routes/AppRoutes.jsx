@@ -16,6 +16,7 @@ import { ResidentDetailsPage } from '../pages/admin/ResidentDetailsPage';
 import { AddResidentPage } from '../pages/admin/AddResidentPage';
 import { BillingHubPage } from '../pages/admin/BillingHubPage';
 import { GateSecurityHubPage } from '../pages/admin/GateSecurityHubPage';
+import { DuesAndFeesPage } from '../pages/admin/DuesAndFeesPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -107,7 +108,7 @@ export const AppRoutes = () => {
         <Route path="/admin/invoices" element={<BillingHubPage />} />
         <Route path="/admin/billing" element={<BillingHubPage />} />
         <Route path="/admin/payments" element={<BillingHubPage />} />
-        <Route path="/admin/dues" element={<BillingHubPage />} />
+        <Route path="/admin/dues" element={<DuesAndFeesPage />} />
 
         {/* Gate Access & Visitor Suite */}
         <Route path="/admin/gate-access" element={<GateSecurityHubPage />} />

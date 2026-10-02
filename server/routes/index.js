@@ -7,6 +7,7 @@ const estateRoutes = require('./estateRoutes');
 const codeRoutes = require('./codeRoutes');
 const gateRoutes = require('./gateRoutes');
 const billingRoutes = require('./billingRoutes');
+const duesRoutes = require('./duesRoutes');
 const complaintRoutes = require('./complaintRoutes');
 const propertyRoutes = require('./propertyRoutes');
 const residentRoutes = require('./residentRoutes');
@@ -31,6 +32,7 @@ router.use('/residents', residentRoutes);
 router.use('/codes', codeRoutes);
 router.use('/gate', gateRoutes);
 router.use('/billing', billingRoutes);
+router.use('/dues', duesRoutes);
 router.use('/complaints', complaintRoutes);
 router.use('/integrations/onboarding', onboardingRoutes);
 
