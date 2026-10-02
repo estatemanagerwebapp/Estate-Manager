@@ -34,6 +34,7 @@ router.use('/gate', gateRoutes);
 router.use('/billing', billingRoutes);
 router.use('/dues', duesRoutes);
 router.use('/complaints', complaintRoutes);
+router.use('/maintenance', complaintRoutes);
 router.use('/integrations/onboarding', onboardingRoutes);
 
 module.exports = router;

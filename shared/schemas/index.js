@@ -64,10 +64,15 @@ const propertySchema = z.object({
 // 6. Maintenance / Complaint Schema
 const createComplaintSchema = z.object({
   estateId: z.string().min(1, 'Estate ID is required'),
-  propertyId: z.string().min(1, 'Property ID is required'),
-  title: z.string().min(5, 'Title must be at least 5 characters'),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
-  priority: z.nativeEnum(COMPLAINT_PRIORITY).default(COMPLAINT_PRIORITY.MEDIUM),
+  propertyId: z.string().optional().nullable(),
+  residentId: z.string().optional().nullable(),
+  title: z.string().min(3, 'Title must be at least 3 characters'),
+  description: z.string().min(5, 'Description must be at least 5 characters'),
+  category: z.string().optional().nullable(),
+  priority: z.string().optional().default('MEDIUM'),
+  location: z.string().optional().nullable(),
+  estimatedCost: z.number().optional().nullable(),
+  dueDate: z.any().optional().nullable(),
   attachments: z.array(z.string()).optional()
 });
 

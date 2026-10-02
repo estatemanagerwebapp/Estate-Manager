@@ -18,6 +18,7 @@ import { BillingHubPage } from '../pages/admin/BillingHubPage';
 import { GateSecurityHubPage } from '../pages/admin/GateSecurityHubPage';
 import { DuesAndFeesPage } from '../pages/admin/DuesAndFeesPage';
 import { FinanceHubPage } from '../pages/admin/FinanceHubPage';
+import { MaintenanceHubPage } from '../pages/admin/MaintenanceHubPage';
 import { ResidentDashboard } from '../pages/resident/ResidentDashboard';
 import { GuardGateView } from '../pages/guard/GuardGateView';
 import { SuperAdminDashboard } from '../pages/super-admin/SuperAdminDashboard';
@@ -116,6 +117,10 @@ export const AppRoutes = () => {
         <Route path="/admin/gate-access" element={<GateSecurityHubPage />} />
         <Route path="/admin/gate" element={<GateSecurityHubPage />} />
         <Route path="/admin/visitors" element={<GateSecurityHubPage />} />
+
+        {/* Maintenance & Work Orders Suite */}
+        <Route path="/admin/maintenance" element={<MaintenanceHubPage />} />
+        <Route path="/admin/work-orders" element={<MaintenanceHubPage />} />
 
         {/* Persona sub-modules */}
         <Route path="/resident" element={<ResidentDashboard />} />

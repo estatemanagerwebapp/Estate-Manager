@@ -289,7 +289,15 @@ async function seedIfEmpty() {
       });
     }
 
-    console.log('Seeding completed successfully! 4 Estates, residents, 50 Invoices, Gate Logs, and Upcoming Dues created.');
+    // 9. Seed Maintenance Suite if empty
+    try {
+      const { seedMaintenance } = require('../prisma/seedMaintenance');
+      await seedMaintenance();
+    } catch (mErr) {
+      console.warn('Maintenance seed warning:', mErr.message);
+    }
+
+    console.log('Seeding completed successfully! 4 Estates, residents, 50 Invoices, Gate Logs, Upcoming Dues, and Maintenance Suite created.');
   } catch (err) {
     console.error('Error during seeding:', err);
   }
