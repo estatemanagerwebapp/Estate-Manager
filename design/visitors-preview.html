@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estate Manager — Visitors & Contractor Access Suite Preview</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#FF5A1F',
+            'primary-dark': '#E04810',
+            'primary-light': '#FFF0EB',
+            'primary-50': '#FFF6F2',
+          },
+          boxShadow: {
+            card: '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04)',
+            elevated: '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; }
+      .print-pass-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; }
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.08); }
+    }
+    .animate-pulse-subtle {
+      animation: pulse-subtle 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen">
+
+  <!-- TOP PROTOTYPE TOOLBAR -->
+  <header class="no-print bg-slate-900 text-white px-6 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-bold text-white text-sm shadow-sm">
+        EM
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold tracking-wide">Estate Manager &bull; Visitors & Contractor Access Suite</h1>
+        <p class="text-xs text-slate-400">Interactive Design Prototype (Zero Emojis &bull; Lucide Icons &bull; Enterprise Proptech)</p>
+      </div>
+    </div>
+
+    <!-- Quick Prototype Jump Bar -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-lg text-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-slate-300 font-medium">Live Prototype Mode</span>
+      </div>
+      <a href="maintenance-preview.html" class="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
+        Maintenance Suite
+      </a>
+      <a href="gate-preview.html" class="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
+        Gate Guard Terminal
+      </a>
+    </div>
+  </header>
+
+  <!-- MAIN WRAPPER -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+    <!-- 1. TOP HEADER & ACTIONS BAR -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-card">
+      <div>
+        <div className="flex items-center gap-2">
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary uppercase tracking-wider inline-block">
+            Access Control
+          </span>
+          <span class="text-xs text-slate-400 font-medium ml-2">Visitor Logistics & Security</span>
+        </div>
+        <h2 class="text-2xl font-bold text-slate-900 tracking-tight mt-1">
+          Visitors & Contractor Management
+        </h2>
+        <p class="text-sm text-slate-500 mt-0.5">
+          Real-time on-premises visitor roster, resident pass pre-clearance, artisan site permits, and security watchlists.
+        </p>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button
+          onclick="window.print()"
+          class="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs cursor-pointer"
+        >
+          <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i>
+          <span>Daily Roster PDF</span>
+        </button>
+
+        <button
+          onclick="openModal('quick-checkin-modal')"
+          class="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs cursor-pointer"
+        >
+          <i data-lucide="user-plus" class="w-4 h-4 text-slate-500"></i>
+          <span>Walk-in Check-In</span>
+        </button>
+
+        <button
+          onclick="openModal('watchlist-modal')"
+          class="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100 transition-colors shadow-xs cursor-pointer"
+        >
+          <i data-lucide="shield-alert" class="w-4 h-4 text-rose-600"></i>
+          <span>Flag Watchlist</span>
+        </button>
+
+        <button
+          onclick="openModal('preregister-modal')"
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-dark rounded-xl shadow-xs transition-colors cursor-pointer"
+        >
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>Issue Visitor Pass</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. KPI METRICS CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Currently On Site -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Currently On-Premises
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+            <i data-lucide="user-check" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-center gap-2.5">
+            <span class="text-3xl font-black text-slate-900 tracking-tight">18</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse-subtle"></span>
+          </div>
+          <div class="flex items-center gap-1.5 mt-1 text-xs text-slate-500">
+            <span class="font-semibold text-slate-700">12 Guests</span> &bull; 
+            <span class="font-semibold text-slate-700">4 Contractors</span> &bull; 
+            <span class="font-semibold text-slate-700">2 Deliveries</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Expected Today -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Expected Today
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+            <i data-lucide="clock" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="text-3xl font-black text-slate-900 tracking-tight">34</div>
+          <div class="flex items-center gap-1.5 mt-1 text-xs text-blue-600 font-medium">
+            <span>22 pre-registered by residents</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overstay & Duration Alerts -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Overstay Alerts
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="text-3xl font-black text-amber-600 tracking-tight">2</div>
+          <div class="flex items-center gap-1.5 mt-1 text-xs text-amber-600 font-medium">
+            <span>Duration exceeding 6 hours on site</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total Visitors This Month -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Processed (This Month)
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary">
+            <i data-lucide="car" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="text-3xl font-black text-slate-900 tracking-tight">1,482</div>
+          <div class="flex items-center gap-1.5 mt-1 text-xs text-slate-500">
+            <span class="font-semibold text-slate-700">74% vehicle entries</span> &bull; 
+            <span class="text-emerald-600 font-semibold">+14% vs last mo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. TABS NAVIGATION & FILTER BAR -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-card overflow-hidden">
+      <!-- Tabs Header -->
+      <div class="flex items-center justify-between border-b border-slate-100 px-6 pt-3">
+        <div class="flex space-x-8">
+          <button
+            onclick="switchTab('tab-live', this)"
+            class="tab-btn pb-4 px-1 text-sm font-semibold border-b-2 border-primary text-primary flex items-center gap-2 cursor-pointer"
+          >
+            <i data-lucide="radio" class="w-4 h-4"></i>
+            <span>Live On-Premises</span>
+            <span class="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary font-bold">18</span>
+          </button>
+
+          <button
+            onclick="switchTab('tab-passes', this)"
+            class="tab-btn pb-4 px-1 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 cursor-pointer"
+          >
+            <i data-lucide="qr-code" class="w-4 h-4"></i>
+            <span>Pre-Registered Passes</span>
+            <span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 font-bold">34</span>
+          </button>
+
+          <button
+            onclick="switchTab('tab-contractors', this)"
+            class="tab-btn pb-4 px-1 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 cursor-pointer"
+          >
+            <i data-lucide="wrench" class="w-4 h-4"></i>
+            <span>Artisans & Contractors</span>
+            <span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 font-bold">4</span>
+          </button>
+
+          <button
+            onclick="switchTab('tab-watchlist', this)"
+            class="tab-btn pb-4 px-1 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 cursor-pointer"
+          >
+            <i data-lucide="shield-alert" class="w-4 h-4"></i>
+            <span>Security Watchlist</span>
+            <span class="px-2 py-0.5 rounded-full text-xs bg-rose-50 text-rose-700 font-bold">3</span>
+          </button>
+        </div>
+
+        <button
+          onclick="showToast('Roster data refreshed from gate telemetry.')"
+          title="Refresh Data"
+          class="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer mb-2"
+        >
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="p-4 bg-slate-50/70 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <!-- Search Input -->
+        <div class="relative flex-1 min-w-[240px] max-w-md">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <input
+            type="text"
+            id="visitor-search"
+            placeholder="Search visitor name, phone, plate #, or host unit..."
+            class="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-xs"
+          />
+        </div>
+
+        <!-- Filter Dropdowns -->
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Estate Selector -->
+          <div class="relative">
+            <select class="pl-3 pr-8 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none shadow-xs cursor-pointer">
+              <option value="SUN-001">Sunrise Estate (SUN-001)</option>
+              <option value="MAP-002">Maple Residency (MAP-002)</option>
+              <option value="LAK-003">Lakeside Court (LAK-003)</option>
+              <option value="PIN-004">Pineview Estate (PIN-004)</option>
+            </select>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+          </div>
+
+          <!-- Category Selector -->
+          <div class="relative">
+            <select class="pl-3 pr-8 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none shadow-xs cursor-pointer">
+              <option value="ALL">All Categories</option>
+              <option value="GUEST">Personal Guest</option>
+              <option value="DELIVERY">Delivery & Courier</option>
+              <option value="CONTRACTOR">Contractor / Artisan</option>
+              <option value="CAB">Ride-Hailing (Uber/Bolt)</option>
+              <option value="EVENT">Event Pass</option>
+            </select>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+          </div>
+
+          <!-- Quick Date Filter -->
+          <div class="relative">
+            <select class="pl-3 pr-8 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none shadow-xs cursor-pointer">
+              <option value="TODAY">Today (02 Oct 2026)</option>
+              <option value="YESTERDAY">Yesterday</option>
+              <option value="WEEK">Last 7 Days</option>
+              <option value="MONTH">This Month</option>
+            </select>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. TAB CONTENTS -->
+      <!-- ========================================================================= -->
+      <!-- TAB 1: LIVE ON-PREMISES ROSTER -->
+      <!-- ========================================================================= -->
+      <div id="tab-live" class="tab-content overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <th class="py-3.5 pl-6 pr-3">Visitor & Photo</th>
+              <th class="py-3.5 px-3">Pass Type & Code</th>
+              <th class="py-3.5 px-3">Host Resident & Destination</th>
+              <th class="py-3.5 px-3">Vehicle Details</th>
+              <th class="py-3.5 px-3">Entry Time & Duration</th>
+              <th class="py-3.5 px-3">Status</th>
+              <th class="py-3.5 pr-6 pl-3 text-right">Gate Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 text-sm">
+            <!-- Row 1: Overstay Warning -->
+            <tr class="hover:bg-slate-50/60 transition-colors bg-amber-50/30">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden border border-slate-300">
+                    <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80" alt="Visitor" class="w-full h-full object-cover">
+                  </div>
+                  <div>
+                    <span class="font-semibold text-slate-900 block">Chief Olumide Benson</span>
+                    <span class="text-xs text-slate-500 font-mono">0803 555 1920</span>
+                  </div>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  <i data-lucide="user" class="w-3 h-3"></i>
+                  <span>Personal Guest</span>
+                </span>
+                <span class="text-xs font-mono text-slate-400 block mt-1">#GST-881923</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-800">Unit A1-02 (Court A)</div>
+                <div class="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <i data-lucide="home" class="w-3 h-3 text-slate-400"></i>
+                  <span>Host: Amaka Okafor</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <div class="flex items-center gap-1.5 font-semibold text-slate-800 font-mono text-xs">
+                  <i data-lucide="car" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>LND-892-AA</span>
+                </div>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Toyota Land Cruiser (Black)</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-medium text-slate-800 text-xs">09:14 AM</div>
+                <div class="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full mt-1">
+                  <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+                  <span>6h 34m (Overstay Risk)</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>On-Premises</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <button
+                  onclick="logDeparture('Chief Olumide Benson')"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1"
+                >
+                  <i data-lucide="log-out" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Check-Out</span>
+                </button>
+              </td>
+            </tr>
+
+            <!-- Row 2: Contractor on site -->
+            <tr class="hover:bg-slate-50/60 transition-colors">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden border border-slate-300">
+                    <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80" alt="Artisan" class="w-full h-full object-cover">
+                  </div>
+                  <div>
+                    <span class="font-semibold text-slate-900 block">Tunde Balogun (Electrician)</span>
+                    <span class="text-xs text-slate-500 font-mono">0803 456 7890</span>
+                  </div>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  <i data-lucide="wrench" class="w-3 h-3"></i>
+                  <span>Contractor Pass</span>
+                </span>
+                <span class="text-xs font-mono text-slate-400 block mt-1">#CTR-449120</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-800">Block C Streetlight Column #4</div>
+                <div class="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <i data-lucide="file-text" class="w-3 h-3 text-slate-400"></i>
+                  <span>Work Order: #TCK-2026-0884</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <div class="flex items-center gap-1.5 font-semibold text-slate-800 font-mono text-xs">
+                  <i data-lucide="truck" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>KJA-104-XY</span>
+                </div>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Hiace Service Van &bull; Tools Checked</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-medium text-slate-800 text-xs">11:30 AM</div>
+                <div class="text-[11px] text-slate-500 mt-0.5 font-mono">4h 18m on site</div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>On-Premises</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <button
+                  onclick="logDeparture('Tunde Balogun (Electrician)')"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1"
+                >
+                  <i data-lucide="log-out" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Check-Out</span>
+                </button>
+              </td>
+            </tr>
+
+            <!-- Row 3: Delivery -->
+            <tr class="hover:bg-slate-50/60 transition-colors">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden border border-slate-300">
+                    <img src="https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=100&auto=format&fit=crop&q=80" alt="Delivery Driver" class="w-full h-full object-cover">
+                  </div>
+                  <div>
+                    <span class="font-semibold text-slate-900 block">Jumia Logistics Rider</span>
+                    <span class="text-xs text-slate-500 font-mono">0814 200 9812</span>
+                  </div>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                  <i data-lucide="package" class="w-3 h-3"></i>
+                  <span>Delivery Pass</span>
+                </span>
+                <span class="text-xs font-mono text-slate-400 block mt-1">#DLV-902144</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-800">Unit B2-05 (Court B)</div>
+                <div class="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <i data-lucide="home" class="w-3 h-3 text-slate-400"></i>
+                  <span>Host: Daniel Musa</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <div class="flex items-center gap-1.5 font-semibold text-slate-800 font-mono text-xs">
+                  <i data-lucide="bike" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>EPE-491-QA</span>
+                </div>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Box Motorcycle</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-medium text-slate-800 text-xs">03:22 PM</div>
+                <div class="text-[11px] text-slate-500 mt-0.5 font-mono">26m on site</div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>On-Premises</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <button
+                  onclick="logDeparture('Jumia Logistics Rider')"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1"
+                >
+                  <i data-lucide="log-out" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Check-Out</span>
+                </button>
+              </td>
+            </tr>
+
+            <!-- Row 4: Event Guest -->
+            <tr class="hover:bg-slate-50/60 transition-colors">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 overflow-hidden border border-slate-300">
+                    <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" alt="Visitor" class="w-full h-full object-cover">
+                  </div>
+                  <div>
+                    <span class="font-semibold text-slate-900 block">Mrs. Folashade Adeyemi</span>
+                    <span class="text-xs text-slate-500 font-mono">0802 884 1029</span>
+                  </div>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  <i data-lucide="user" class="w-3 h-3"></i>
+                  <span>Personal Guest</span>
+                </span>
+                <span class="text-xs font-mono text-slate-400 block mt-1">#GST-772901</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-800">Unit C1-01 (Court C)</div>
+                <div class="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <i data-lucide="home" class="w-3 h-3 text-slate-400"></i>
+                  <span>Host: Chinedu Nwosu</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <div class="flex items-center gap-1.5 font-semibold text-slate-800 font-mono text-xs">
+                  <i data-lucide="car" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>GGE-331-FK</span>
+                </div>
+                <span class="text-[11px] text-slate-400 block mt-0.5">Honda Accord (Silver)</span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-medium text-slate-800 text-xs">02:45 PM</div>
+                <div class="text-[11px] text-slate-500 mt-0.5 font-mono">1h 03m on site</div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>On-Premises</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <button
+                  onclick="logDeparture('Mrs. Folashade Adeyemi')"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1"
+                >
+                  <i data-lucide="log-out" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Check-Out</span>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- TAB 2: PRE-REGISTERED PASSES LEDGER -->
+      <!-- ========================================================================= -->
+      <div id="tab-passes" class="tab-content hidden overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <th class="py-3.5 pl-6 pr-3">Pass PIN & QR</th>
+              <th class="py-3.5 px-3">Visitor Name & Phone</th>
+              <th class="py-3.5 px-3">Pass Category</th>
+              <th class="py-3.5 px-3">Host Unit & Resident</th>
+              <th class="py-3.5 px-3">Validity Window</th>
+              <th class="py-3.5 px-3">Status</th>
+              <th class="py-3.5 pr-6 pl-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 text-sm">
+            <!-- Pass 1 -->
+            <tr class="hover:bg-slate-50/60 transition-colors">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center text-primary cursor-pointer hover:bg-orange-100 transition-colors" onclick="previewPass('849-210', 'Dr. Kenneth Okafor', 'Unit A1-02', 'ACTIVE', 'GUEST')">
+                    <i data-lucide="qr-code" class="w-4 h-4"></i>
+                  </div>
+                  <span class="font-mono font-bold text-base text-slate-900">849-210</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="font-semibold text-slate-900 block">Dr. Kenneth Okafor</span>
+                <span class="text-xs text-slate-500 font-mono">0803 111 2233</span>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  <i data-lucide="user" class="w-3 h-3"></i>
+                  <span>Guest Pass (Single)</span>
+                </span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-800">Unit A1-02</div>
+                <span class="text-xs text-slate-400 block mt-0.5">Amaka Okafor</span>
+              </td>
+              <td class="py-4 px-3 text-xs">
+                <div class="font-semibold text-slate-800">Today &bull; 08:00 - 23:59</div>
+                <span class="text-emerald-600 block mt-0.5 font-medium">Valid for entry</span>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+                  <span>ACTIVE</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <div class="inline-flex items-center gap-1.5">
+                  <button
+                    onclick="previewPass('849-210', 'Dr. Kenneth Okafor', 'Unit A1-02', 'ACTIVE', 'GUEST')"
+                    class="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                  >
+                    View Pass
+                  </button>
+                  <button
+                    onclick="showToast('Pass #849-210 revoked successfully.')"
+                    class="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Revoke
+                  </button>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Pass 2: Contractor / Artisan -->
+            <tr class="hover:bg-slate-50/60 transition-colors">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center text-primary cursor-pointer hover:bg-orange-100 transition-colors" onclick="previewPass('918-042', 'AquaPure Filter Techs', 'Phase 2 Pump House', 'ACTIVE', 'CONTRACTOR')">
+                    <i data-lucide="qr-code" class="w-4 h-4"></i>
+                  </div>
+                  <span class="font-mono font-bold text-base text-slate-900">918-042</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="font-semibold text-slate-900 block">AquaPure Filter Techs (2 Staff)</span>
+                <span class="text-xs text-slate-500 font-mono">0803 999 1234</span>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  <i data-lucide="wrench" class="w-3 h-3"></i>
+                  <span>Artisan / Contractor</span>
+                </span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-800">Estate Water Facility</div>
+                <span class="text-xs text-slate-400 block mt-0.5">Facilities Management</span>
+              </td>
+              <td class="py-4 px-3 text-xs">
+                <div class="font-semibold text-slate-800">02 Oct - 04 Oct 2026</div>
+                <span class="text-slate-500 block mt-0.5">Multi-Day Site Permit</span>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+                  <span>ACTIVE</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <div class="inline-flex items-center gap-1.5">
+                  <button
+                    onclick="previewPass('918-042', 'AquaPure Filter Techs', 'Phase 2 Pump House', 'ACTIVE', 'CONTRACTOR')"
+                    class="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                  >
+                    View Pass
+                  </button>
+                  <button
+                    onclick="showToast('Site permit #918-042 revoked.')"
+                    class="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Revoke
+                  </button>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Pass 3: Used / Expired -->
+            <tr class="hover:bg-slate-50/60 transition-colors opacity-75">
+              <td class="py-4 pl-6 pr-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
+                    <i data-lucide="qr-code" class="w-4 h-4"></i>
+                  </div>
+                  <span class="font-mono font-bold text-base text-slate-500 line-through">402-991</span>
+                </div>
+              </td>
+              <td class="py-4 px-3">
+                <span class="font-semibold text-slate-700 block">DHL Express Courier</span>
+                <span class="text-xs text-slate-400 font-mono">0812 400 5000</span>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                  <i data-lucide="package" class="w-3 h-3"></i>
+                  <span>Delivery Pass</span>
+                </span>
+              </td>
+              <td class="py-4 px-3">
+                <div class="font-semibold text-slate-700">Unit B1-03</div>
+                <span class="text-xs text-slate-400 block mt-0.5">Fatima Bello</span>
+              </td>
+              <td class="py-4 px-3 text-xs">
+                <div class="font-medium text-slate-600">01 Oct 2026</div>
+                <span class="text-slate-400 block mt-0.5">Single Entry (Used)</span>
+              </td>
+              <td class="py-4 px-3">
+                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                  <span>USED</span>
+                </span>
+              </td>
+              <td class="py-4 pr-6 pl-3 text-right">
+                <span class="text-xs text-slate-400 italic">Archived</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- TAB 3: ARTISANS & CONTRACTORS ON SITE -->
+      <!-- ========================================================================= -->
+      <div id="tab-contractors" class="tab-content hidden p-6">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Contractor & Artisan Site Permits</h3>
+            <p class="text-xs text-slate-500">
+              Verified external technicians with declared tools and active work order authorization.
+            </p>
+          </div>
+          <button
+            onclick="openModal('preregister-modal')"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-dark rounded-xl transition-colors shadow-xs cursor-pointer"
+          >
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>Issue Contractor Permit</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Contractor Card 1 -->
+          <div class="p-5 rounded-xl border border-slate-200 hover:border-slate-300 transition-all bg-white shadow-xs">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-700 font-bold">
+                  TB
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-900 text-base">Tunde Balogun</h4>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
+                      Master Electrician
+                    </span>
+                    <span class="text-xs text-slate-400">&bull;</span>
+                    <span class="text-xs font-mono text-slate-500">0803 456 7890</span>
+                  </div>
+                </div>
+              </div>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                ACTIVE ON SITE
+              </span>
+            </div>
+
+            <div class="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-1.5">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Authorized Work:</span>
+                <span class="font-semibold text-slate-800">Streetlight Feeder Loop Ground Fault</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Work Order Ref:</span>
+                <span class="font-semibold text-primary font-mono">#TCK-2026-0884</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Gate Badge #:</span>
+                <span class="font-semibold text-slate-800 font-mono">GATE-PASS-B44</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Declared Equipment:</span>
+                <span class="font-medium text-slate-700">Digital Multimeter, Cable Crimper, Ladder</span>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span class="text-xs text-slate-400">Entered at: 11:30 AM via Main Gate</span>
+              <button
+                onclick="showToast('Gate inspection cleared for departure of Tunde Balogun.')"
+                class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Log Outbound Tools Check
+              </button>
+            </div>
+          </div>
+
+          <!-- Contractor Card 2 -->
+          <div class="p-5 rounded-xl border border-slate-200 hover:border-slate-300 transition-all bg-white shadow-xs">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-700 font-bold">
+                  EO
+                </div>
+                <div>
+                  <h4 class="font-bold text-slate-900 text-base">Emeka Obi</h4>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                      Licensed Plumber
+                    </span>
+                    <span class="text-xs text-slate-400">&bull;</span>
+                    <span class="text-xs font-mono text-slate-500">0802 345 6789</span>
+                  </div>
+                </div>
+              </div>
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                ACTIVE ON SITE
+              </span>
+            </div>
+
+            <div class="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-1.5">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Authorized Work:</span>
+                <span class="font-semibold text-slate-800">Court B Sewage Float Switch Inspection</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Work Order Ref:</span>
+                <span class="font-semibold text-primary font-mono">#TCK-2026-0860</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Gate Badge #:</span>
+                <span class="font-semibold text-slate-800 font-mono">GATE-PASS-B52</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Declared Equipment:</span>
+                <span class="font-medium text-slate-700">Submersible Pump Float, Pipe Wrenches</span>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span class="text-xs text-slate-400">Entered at: 01:15 PM via Service Gate</span>
+              <button
+                onclick="showToast('Gate inspection cleared for departure of Emeka Obi.')"
+                class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Log Outbound Tools Check
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- TAB 4: SECURITY WATCHLIST & BLACKLIST -->
+      <!-- ========================================================================= -->
+      <div id="tab-watchlist" class="tab-content hidden p-6">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Security Watchlist & Restriction Records</h3>
+            <p class="text-xs text-slate-500">
+              Flagged individuals and vehicle license plates restricted from automated gate entry.
+            </p>
+          </div>
+          <button
+            onclick="openModal('watchlist-modal')"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-xs cursor-pointer"
+          >
+            <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+            <span>Add Restricted Record</span>
+          </button>
+        </div>
+
+        <div class="space-y-3">
+          <!-- Record 1 -->
+          <div class="p-4 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0 mt-0.5">
+                <i data-lucide="alert-octagon" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="font-bold text-slate-900 text-sm">Vehicle Plate: KJA-990-BC (Silver Lexus RX350)</h4>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">RESTRICTED</span>
+                </div>
+                <p class="text-xs text-slate-600 mt-1 font-medium">
+                  Reason: Repeated tailgating and unauthorized property surveillance reported by Court A security patrol.
+                </p>
+                <div class="text-[11px] text-slate-400 mt-1">
+                  Flagged by Chief Security Officer on 24 Sep 2026 &bull; Automatic ANPR gate lockout active
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                onclick="showToast('Security dispatch notified of vehicle flag.')"
+                class="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Alert Guards
+              </button>
+              <button
+                onclick="showToast('Restriction record updated.')"
+                class="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+
+          <!-- Record 2 -->
+          <div class="p-4 rounded-xl border border-rose-200 bg-rose-50/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0 mt-0.5">
+                <i data-lucide="user-x" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="font-bold text-slate-900 text-sm">Individual: Ibrahim Alao (Ex-Contractor)</h4>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">DENY ACCESS</span>
+                </div>
+                <p class="text-xs text-slate-600 mt-1 font-medium">
+                  Reason: Terminated contract following missing copper inverter cabling at Court B generator bay.
+                </p>
+                <div class="text-[11px] text-slate-400 mt-1">
+                  Flagged by Facilities Admin on 18 Sep 2026 &bull; Photo broadcasted to all gate tablet terminals
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                onclick="showToast('Security dispatch notified of contractor blacklist.')"
+                class="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Alert Guards
+              </button>
+              <button
+                onclick="showToast('Restriction record updated.')"
+                class="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 1: PRE-REGISTER VISITOR / ISSUE ACCESS PASS -->
+  <!-- ========================================================================= -->
+  <div id="preregister-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 relative my-8">
+      <button
+        onclick="closeModal('preregister-modal')"
+        class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+      >
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary">
+          <i data-lucide="ticket" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-900">Issue Visitor Access Pass</h3>
+          <p class="text-xs text-slate-500">Generate 6-digit access code and QR badge for gate clearance</p>
+        </div>
+      </div>
+
+      <form onsubmit="handleIssuePass(event)" class="space-y-4">
+        <!-- Estate -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Estate</label>
+          <select required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+            <option value="SUN-001">Sunrise Estate (SUN-001)</option>
+            <option value="MAP-002">Maple Residency (MAP-002)</option>
+            <option value="LAK-003">Lakeside Court (LAK-003)</option>
+            <option value="PIN-004">Pineview Estate (PIN-004)</option>
+          </select>
+        </div>
+
+        <!-- Host Resident & Unit -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Host Resident</label>
+            <select required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+              <option value="Amaka Okafor">Amaka Okafor (A1-02)</option>
+              <option value="Daniel Musa">Daniel Musa (B2-05)</option>
+              <option value="Chinedu Nwosu">Chinedu Nwosu (C1-01)</option>
+              <option value="Fatima Bello">Fatima Bello (B1-03)</option>
+              <option value="Estate Facilities">Estate Facilities Management</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Pass Category</label>
+            <select required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+              <option value="GUEST">Personal Guest</option>
+              <option value="DELIVERY">Delivery / Courier</option>
+              <option value="CONTRACTOR">Contractor / Artisan</option>
+              <option value="CAB">Ride-Hailing (Bolt/Uber)</option>
+              <option value="EVENT">Event Guest Pass</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Visitor Name & Phone -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Visitor Full Name</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Babatunde Adeleke"
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Visitor Phone</label>
+            <input
+              type="tel"
+              required
+              placeholder="0803 123 4567"
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+        </div>
+
+        <!-- Vehicle Plate & Access Count -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Vehicle Plate # (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. LAG-402-XY"
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono uppercase"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Allowed Entries</label>
+            <select class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+              <option value="1">1 Entry (Single Use)</option>
+              <option value="2">2 Entries (Return Trip)</option>
+              <option value="5">Frequent Access (Up to 5 Uses)</option>
+              <option value="UNLIMITED">Multi-Day Work Permit</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Validity Expiry -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Valid Date</label>
+            <input
+              type="date"
+              required
+              value="2026-10-02"
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Valid Until (Time)</label>
+            <input
+              type="time"
+              required
+              value="23:59"
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+        </div>
+
+        <div class="pt-3 flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onclick="closeModal('preregister-modal')"
+            class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="px-5 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-dark rounded-xl transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
+          >
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>Generate Pass</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 2: DIGITAL PASS & QR BADGE PREVIEW -->
+  <!-- ========================================================================= -->
+  <div id="pass-preview-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-200 relative print-pass-card">
+      <button
+        onclick="closeModal('pass-preview-modal')"
+        class="no-print absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+      >
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <!-- Badge Header -->
+      <div class="text-center pb-4 border-b border-slate-100">
+        <div class="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white mx-auto font-bold shadow-sm">
+          EM
+        </div>
+        <h3 class="text-base font-bold text-slate-900 mt-2">Sunrise Estate</h3>
+        <p class="text-xs text-slate-400 font-medium">Digital Gate Access Pass</p>
+      </div>
+
+      <!-- Simulated QR Code -->
+      <div class="py-6 text-center">
+        <div class="w-36 h-36 mx-auto bg-slate-50 border-2 border-slate-800 rounded-2xl flex flex-col items-center justify-center p-3 relative shadow-inner">
+          <!-- Stylized QR Grid -->
+          <div class="grid grid-cols-4 gap-1.5 w-full h-full p-1 opacity-90">
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-200 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-200 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-200 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-200 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-200 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+            <div class="bg-slate-900 rounded-xs"></div>
+          </div>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span class="px-2 py-0.5 rounded bg-white text-[10px] font-bold text-primary shadow-xs border border-primary/20">
+              SCAN GATE
+            </span>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Access PIN</div>
+          <div id="preview-pass-pin" class="text-2xl font-black font-mono tracking-widest text-slate-900">
+            849-210
+          </div>
+        </div>
+      </div>
+
+      <!-- Visitor Details Breakdown -->
+      <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-2 text-xs">
+        <div class="flex justify-between">
+          <span class="text-slate-400">Visitor:</span>
+          <span id="preview-pass-name" class="font-bold text-slate-800">Dr. Kenneth Okafor</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">Destination:</span>
+          <span id="preview-pass-dest" class="font-semibold text-slate-800">Unit A1-02</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">Category:</span>
+          <span id="preview-pass-cat" class="font-semibold text-primary">Personal Guest</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">Valid Date:</span>
+          <span class="font-semibold text-slate-800">Today &bull; 02 Oct 2026</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="no-print mt-5 pt-3 border-t border-slate-100 flex items-center gap-2">
+        <button
+          onclick="window.print()"
+          class="flex-1 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+        >
+          <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+          <span>Print Pass</span>
+        </button>
+        <button
+          onclick="showToast('Pass link copied & shared via WhatsApp.'); closeModal('pass-preview-modal');"
+          class="flex-1 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+        >
+          <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+          <span>Share WhatsApp</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 3: INSTANT WALK-IN GATE CLEARANCE -->
+  <!-- ========================================================================= -->
+  <div id="quick-checkin-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 relative">
+      <button
+        onclick="closeModal('quick-checkin-modal')"
+        class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+      >
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+          <i data-lucide="user-check" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-900">Walk-In Gate Clearance</h3>
+          <p class="text-xs text-slate-500">Log arrival for visitor without prior pre-registration</p>
+        </div>
+      </div>
+
+      <form onsubmit="handleWalkinCheckin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Visitor Full Name</label>
+          <input
+            type="text"
+            required
+            placeholder="e.g. Pastor Paul Adeboye"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Visitor Phone Number</label>
+          <input
+            type="tel"
+            required
+            placeholder="0802 345 6789"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Destination Unit</label>
+            <select required class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+              <option value="A1-02">A1-02 (Amaka Okafor)</option>
+              <option value="B2-05">B2-05 (Daniel Musa)</option>
+              <option value="C1-01">C1-01 (Chinedu Nwosu)</option>
+              <option value="B1-03">B1-03 (Fatima Bello)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Vehicle License Plate</label>
+            <input
+              type="text"
+              placeholder="e.g. KSF-901-AA"
+              class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono uppercase"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Host Verification Method</label>
+          <select class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+            <option value="INTERCOM">Verified via Gate Intercom Call</option>
+            <option value="PHONE">Direct Mobile Phone Confirmation</option>
+            <option value="SECURITY">Security Supervisor Pre-Approval</option>
+          </select>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onclick="closeModal('quick-checkin-modal')"
+            class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="px-5 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-dark rounded-xl transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
+          >
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+            <span>Admit & Grant Entry</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 4: FLAG SECURITY WATCHLIST -->
+  <!-- ========================================================================= -->
+  <div id="watchlist-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 relative">
+      <button
+        onclick="closeModal('watchlist-modal')"
+        class="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+      >
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-9 h-9 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
+          <i data-lucide="shield-alert" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-900">Add to Security Watchlist</h3>
+          <p class="text-xs text-slate-500">Enforce gate denial for suspicious individuals or vehicles</p>
+        </div>
+      </div>
+
+      <form onsubmit="handleWatchlistFlag(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Target Subject</label>
+          <input
+            type="text"
+            required
+            placeholder="e.g. John Doe / Vehicle Plate KJA-112-XX"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Restriction Category</label>
+          <select class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
+            <option value="DENY_ENTRY">Deny Entry Automatically (Blacklist)</option>
+            <option value="INSPECT_VEHICLE">Mandatory Trunk & ID Inspection</option>
+            <option value="CALL_RESIDENT">Supervisor Approval Required</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Security Incident / Reason</label>
+          <textarea
+            rows="3"
+            required
+            placeholder="Describe incident, police ref #, or resident safety complaint..."
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+          ></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onclick="closeModal('watchlist-modal')"
+            class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="px-5 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
+          >
+            <i data-lucide="shield-alert" class="w-4 h-4"></i>
+            <span>Enforce Restriction</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- FLOATING ENTERPRISE TOAST ALERT -->
+  <div id="toast-alert" class="fixed bottom-6 right-6 z-50 hidden bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-elevated border border-slate-700 text-xs font-semibold flex items-center gap-2.5">
+    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
+    <span id="toast-message">Action processed successfully.</span>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Tab Switching
+    function switchTab(tabId, el) {
+      // Hide all contents
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+      // Remove active from all tabs
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('border-primary', 'text-primary');
+        btn.classList.add('border-transparent', 'text-slate-500');
+      });
+
+      // Show current tab
+      document.getElementById(tabId).classList.remove('hidden');
+      // Highlight current tab button
+      el.classList.remove('border-transparent', 'text-slate-500');
+      el.classList.add('border-primary', 'text-primary');
+    }
+
+    // Modal Control
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.remove('hidden');
+      }
+    }
+
+    function closeModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+    }
+
+    // Toast Alert
+    let toastTimeout = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast-alert');
+      const text = document.getElementById('toast-message');
+      text.textContent = msg;
+      toast.classList.remove('hidden');
+
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3500);
+    }
+
+    // Pass Preview Handler
+    function previewPass(pin, name, dest, status, cat) {
+      document.getElementById('preview-pass-pin').textContent = pin;
+      document.getElementById('preview-pass-name').textContent = name;
+      document.getElementById('preview-pass-dest').textContent = dest;
+      document.getElementById('preview-pass-cat').textContent = cat === 'CONTRACTOR' ? 'Contractor / Artisan' : 'Personal Guest';
+      openModal('pass-preview-modal');
+    }
+
+    // Form Submissions
+    function handleIssuePass(e) {
+      e.preventDefault();
+      closeModal('preregister-modal');
+      const pin = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(100 + Math.random() * 900)}`;
+      previewPass(pin, 'New Registered Visitor', 'Unit A1-02', 'ACTIVE', 'GUEST');
+      showToast(`Pass #${pin} generated successfully.`);
+    }
+
+    function handleWalkinCheckin(e) {
+      e.preventDefault();
+      closeModal('quick-checkin-modal');
+      showToast('Walk-in visitor admitted & entry logged at Main Gate.');
+    }
+
+    function handleWatchlistFlag(e) {
+      e.preventDefault();
+      closeModal('watchlist-modal');
+      showToast('Target flagged & broadcasted to security terminals.');
+    }
+
+    function logDeparture(name) {
+      showToast(`Departure logged: ${name} exited estate.`);
+    }
+  </script>
+</body>
+</html>
