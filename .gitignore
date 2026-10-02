@@ -83,3 +83,7 @@ build/
 # Cache
 .cache/
 .parcel-cache/
+
+# Screenshots
+Screenshot*.png
+*.png

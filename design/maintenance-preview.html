@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estate Manager — Maintenance & Work Orders Suite Preview</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#FF5A1F',
+            'primary-dark': '#E04810',
+            'primary-light': '#FFF0EB',
+            'primary-50': '#FFF6F2',
+          },
+          boxShadow: {
+            card: '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04)',
+            elevated: '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; }
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen">
+
+  <!-- TOP PROTOTYPE TOOLBAR -->
+  <header class="no-print bg-slate-900 text-white px-6 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-bold text-white text-sm">
+        EM
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold tracking-wide">Estate Manager &bull; Maintenance & Work Orders Suite</h1>
+        <p class="text-xs text-slate-400">Interactive Design Prototype (Zero Emojis &bull; Lucide Icons &bull; Enterprise Proptech)</p>
+      </div>
+    </div>
+
+    <!-- Quick Modal Triggers & Views -->
+    <div class="flex items-center gap-2">
+      <button 
+        onclick="openModal('create-ticket-modal')"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-dark text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+      >
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        <span>Log Maintenance</span>
+      </button>
+
+      <button 
+        onclick="openModal('assign-modal')"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
+      >
+        <i data-lucide="hard-hat" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Dispatch Artisan</span>
+      </button>
+
+      <button 
+        onclick="openModal('resolve-modal')"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
+      >
+        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>Resolve Ticket</span>
+      </button>
+
+      <div class="h-4 w-px bg-slate-700 mx-1"></div>
+
+      <span class="text-xs text-slate-400 font-mono">v1.0 Mockup</span>
+    </div>
+  </header>
+
+  <!-- MAIN WRAPPER WITH MOCK SIDEBAR & CONTENT -->
+  <div class="flex min-h-[calc(100vh-53px)]">
+    
+    <!-- MOCK SIDEBAR (COLLAPSED / PERSISTENT DESKTOP) -->
+    <aside class="w-64 bg-white border-r border-slate-200/80 p-4 hidden lg:flex flex-col justify-between shrink-0">
+      <div class="space-y-6">
+        <!-- Brand -->
+        <div class="flex items-center gap-2.5 px-2">
+          <div class="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-white shadow-sm shadow-primary/30">
+            <i data-lucide="building-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="text-base font-extrabold text-slate-900 tracking-tight leading-none">Estate<span class="text-primary">Pro</span></div>
+            <div class="text-[10px] text-slate-400 font-medium mt-0.5">Enterprise Hub</div>
+          </div>
+        </div>
+
+        <!-- Navigation Links -->
+        <nav class="space-y-1 text-xs font-semibold text-slate-600">
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="layout-dashboard" class="w-4 h-4 text-slate-400"></i>
+            <span>Dashboard</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="building" class="w-4 h-4 text-slate-400"></i>
+            <span>Estates</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="layers" class="w-4 h-4 text-slate-400"></i>
+            <span>Units & Properties</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="users" class="w-4 h-4 text-slate-400"></i>
+            <span>Residents</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="shield-check" class="w-4 h-4 text-slate-400"></i>
+            <span>Gate Access</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="receipt" class="w-4 h-4 text-slate-400"></i>
+            <span>Billing & Finance</span>
+          </a>
+          <!-- Active Item: Maintenance -->
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-white shadow-sm shadow-primary/25 font-bold">
+            <i data-lucide="wrench" class="w-4 h-4 text-white"></i>
+            <span>Maintenance</span>
+            <span class="ml-auto bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">18</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="user-check" class="w-4 h-4 text-slate-400"></i>
+            <span>Visitors</span>
+          </a>
+          <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+            <i data-lucide="briefcase" class="w-4 h-4 text-slate-400"></i>
+            <span>Staff</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- User card -->
+      <div class="pt-4 border-t border-slate-100 flex items-center gap-3 px-2">
+        <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs text-slate-700">
+          TJ
+        </div>
+        <div class="min-w-0">
+          <p class="text-xs font-bold text-slate-900 truncate">Tobi John</p>
+          <p class="text-[10px] text-slate-500 truncate">Estate Administrator</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CONTENT AREA -->
+    <main class="flex-1 p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
+
+      <!-- PAGE HEADER & ACTION CONTROLS -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Maintenance & Work Orders
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Track resident defect reports, dispatch certified artisans, manage generator & facility assets, and audit service costs.
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Compact Cost Toggle -->
+          <button 
+            id="toggle-currency-btn"
+            onclick="toggleCompactCurrency()"
+            class="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+            title="Toggle between exact and compact numbers"
+          >
+            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span id="currency-toggle-label">Figures: Exact (₦)</span>
+          </button>
+
+          <!-- Routine Asset Service Schedule -->
+          <button 
+            onclick="switchTab('PREVENTIVE')"
+            class="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-xs transition-all cursor-pointer"
+          >
+            <i data-lucide="calendar-clock" class="w-4 h-4 text-blue-600"></i>
+            <span>Asset Schedules</span>
+          </button>
+
+          <!-- Dispatch Artisan Button -->
+          <button 
+            onclick="openModal('assign-modal')"
+            class="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-xs transition-all cursor-pointer"
+          >
+            <i data-lucide="hard-hat" class="w-4 h-4 text-amber-500"></i>
+            <span>Dispatch Artisan</span>
+          </button>
+
+          <!-- Log Request Primary Button -->
+          <button 
+            onclick="openModal('create-ticket-modal')"
+            class="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark active:scale-98 text-white font-semibold text-xs shadow-sm shadow-primary/25 transition-all cursor-pointer"
+          >
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>New Work Order</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 MAINTENANCE KPI METRIC CARDS (Vertical Stack with 9-Figure Overflow Protection) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1: Active Tickets -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Work Orders</span>
+            <div class="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+              <i data-lucide="wrench" class="w-4 h-4 text-primary"></i>
+            </div>
+          </div>
+          <div class="mt-3 min-w-0">
+            <div class="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap">
+              18 Open Tickets
+            </div>
+            <p class="text-xs font-medium text-slate-500 mt-1 flex items-center gap-1.5">
+              <span class="text-primary font-bold">5 pending triage</span>
+              <span>&bull; 13 in progress</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Card 2: Critical Urgency -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Critical / High Severity</span>
+            <div class="w-9 h-9 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 group-hover:scale-105 transition-transform">
+              <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="mt-3 min-w-0">
+            <div class="text-2xl font-extrabold text-rose-600 tracking-tight tabular-nums whitespace-nowrap flex items-center gap-2">
+              <span>3 Urgent</span>
+              <span class="flex h-2.5 w-2.5 relative">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
+              </span>
+            </div>
+            <p class="text-xs font-semibold text-rose-600 mt-1">
+              Generator fault, Main pump outage
+            </p>
+          </div>
+        </div>
+
+        <!-- Card 3: Avg SLA Resolution -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Mean Resolution SLA</span>
+            <div class="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition-transform">
+              <i data-lucide="clock" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="mt-3 min-w-0">
+            <div class="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap">
+              4.2 Hours
+            </div>
+            <p class="text-xs font-semibold text-emerald-600 mt-1 flex items-center gap-1">
+              <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+              <span>92% closed within target SLA</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Card 4: Month Maintenance Spend -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-card flex flex-col justify-between group hover:border-slate-300 transition-all">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Maintenance Expense</span>
+            <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 group-hover:scale-105 transition-transform">
+              <i data-lucide="receipt" class="w-4 h-4"></i>
+            </div>
+          </div>
+          <div class="mt-3 min-w-0">
+            <div 
+              id="kpi-spend-display"
+              class="text-2xl font-extrabold text-slate-900 tracking-tight tabular-nums whitespace-nowrap overflow-hidden text-ellipsis"
+              title="Exact: ₦1,420,000.00"
+            >
+              ₦1,420,000
+            </div>
+            <p class="text-xs font-semibold text-blue-600 mt-1">
+              Oct 2026 Facility & Artisan Budget
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN TABBED WORKSPACE -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-card overflow-hidden">
+        
+        <!-- Segmented Navigation Bar -->
+        <div class="border-b border-slate-200 px-4 pt-3 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+          <div class="flex items-center gap-1.5">
+            <!-- Tab 1: Work Orders -->
+            <button
+              id="tab-btn-orders"
+              onclick="switchTab('ORDERS')"
+              class="flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-b-2 border-primary text-primary bg-white shadow-xs cursor-pointer"
+            >
+              <i data-lucide="wrench" class="w-4 h-4"></i>
+              <span>Active Work Orders</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-primary">18</span>
+            </button>
+
+            <!-- Tab 2: Preventive Schedules -->
+            <button
+              id="tab-btn-preventive"
+              onclick="switchTab('PREVENTIVE')"
+              class="flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer"
+            >
+              <i data-lucide="calendar-check" class="w-4 h-4"></i>
+              <span>Preventive Asset Schedules</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">5</span>
+            </button>
+
+            <!-- Tab 3: Artisan & Vendor Directory -->
+            <button
+              id="tab-btn-artisans"
+              onclick="switchTab('ARTISANS')"
+              class="flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer"
+            >
+              <i data-lucide="hard-hat" class="w-4 h-4"></i>
+              <span>Vetted Artisans & Contractors</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">12</span>
+            </button>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="flex items-center gap-2 pb-2">
+            <button 
+              onclick="alert('Refreshing live work orders...')"
+              class="p-2 rounded-xl text-slate-600 hover:text-slate-900 bg-white border border-slate-200 shadow-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              title="Refresh tickets"
+            >
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+            <button 
+              onclick="window.print()"
+              class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-xs cursor-pointer"
+            >
+              <i data-lucide="download" class="w-3.5 h-3.5 text-slate-500"></i>
+              <span>Export Audit Log</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- SINGLE-ROW ALIGNED FILTER BAR -->
+        <div class="p-4 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 bg-white">
+          <div class="flex flex-wrap items-center gap-2.5 flex-1 min-w-[300px]">
+            <!-- Search -->
+            <div class="relative flex-1 min-w-[200px] max-w-sm">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input 
+                type="text"
+                placeholder="Search ticket #, resident, artisan, issue..."
+                class="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-slate-400"
+              />
+            </div>
+
+            <!-- Estate Filter -->
+            <div class="relative">
+              <select class="appearance-none pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary font-medium text-slate-700 cursor-pointer">
+                <option value="ALL">All Estates</option>
+                <option value="SUN">Sunrise Estate</option>
+                <option value="MAP">Maple Residency</option>
+                <option value="LAK">Lakeside Court</option>
+                <option value="PIN">Pineview Estate</option>
+              </select>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            </div>
+
+            <!-- Category Filter -->
+            <div class="relative">
+              <select class="appearance-none pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary font-medium text-slate-700 cursor-pointer">
+                <option value="ALL">All Categories</option>
+                <option value="ELECTRICAL">Electrical & Power</option>
+                <option value="PLUMBING">Plumbing & Water</option>
+                <option value="GENERATOR">Generator Infrastructure</option>
+                <option value="CIVIL">Civil & Structural</option>
+                <option value="GATE">Gate Barrier & Security</option>
+                <option value="HVAC">Air Conditioning & HVAC</option>
+              </select>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            </div>
+
+            <!-- Priority Filter -->
+            <div class="relative">
+              <select class="appearance-none pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary font-medium text-slate-700 cursor-pointer">
+                <option value="ALL">All Severities</option>
+                <option value="CRITICAL">Critical Priority</option>
+                <option value="HIGH">High Priority</option>
+                <option value="MEDIUM">Medium Priority</option>
+                <option value="LOW">Low Priority</option>
+              </select>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            </div>
+          </div>
+
+          <!-- Status Segmented Control -->
+          <div class="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/60">
+            <button class="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-primary shadow-xs">All</button>
+            <button class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800">Pending (5)</button>
+            <button class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800">In Progress (8)</button>
+            <button class="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800">Resolved (24)</button>
+          </div>
+        </div>
+
+        <!-- ======================================================================= -->
+        <!-- TAB PANE 1: ACTIVE WORK ORDERS LEDGER                                  -->
+        <!-- ======================================================================= -->
+        <div id="pane-orders" class="block">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th class="py-3.5 px-4">Ticket # & Defect Title</th>
+                  <th class="py-3.5 px-4">Location / Unit</th>
+                  <th class="py-3.5 px-4">Category</th>
+                  <th class="py-3.5 px-4">Severity</th>
+                  <th class="py-3.5 px-4">Assigned Artisan / Vendor</th>
+                  <th class="py-3.5 px-4">Est. Cost</th>
+                  <th class="py-3.5 px-4">Status & SLA</th>
+                  <th class="py-3.5 px-4 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 text-xs">
+                
+                <!-- Ticket 1: Critical Generator -->
+                <tr class="hover:bg-slate-50/70 transition-colors bg-rose-50/20">
+                  <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-2">
+                      <span class="font-mono font-bold text-rose-700 text-xs">MNT-2026-081</span>
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">EMERGENCY</span>
+                    </div>
+                    <span class="font-bold text-slate-900 block text-xs mt-0.5">Central 500kVA Cat Generator Starter Motor Fault</span>
+                    <span class="text-[11px] text-slate-500">Estate-wide blackout during grid outage. Automatic transfer switch failing.</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="font-semibold text-slate-800 block">Sunrise Estate</span>
+                    <span class="text-[11px] text-slate-500">Central Utility Yard (Zone C)</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      <i data-lucide="zap" class="w-3 h-3 text-amber-600"></i>
+                      <span>Generator & Power</span>
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                      CRITICAL
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-2">
+                      <div class="w-7 h-7 rounded-lg bg-slate-800 text-white flex items-center justify-center font-bold text-[10px]">
+                        ME
+                      </div>
+                      <div>
+                        <span class="font-bold text-slate-900 block text-xs">Mantrac Energy Ltd</span>
+                        <span class="text-[10px] text-emerald-600 font-semibold">On-site troubleshooting</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td class="py-3.5 px-4 font-extrabold text-slate-900 tabular-nums">
+                    ₦280,000
+                  </td>
+
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                      IN PROGRESS
+                    </span>
+                    <span class="block text-[10px] text-rose-600 font-bold mt-0.5">SLA: 45 mins left</span>
+                  </td>
+
+                  <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button 
+                        onclick="openModal('resolve-modal')"
+                        class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Resolve
+                      </button>
+                      <button 
+                        onclick="alert('Viewing ticket details #MNT-2026-081')"
+                        class="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Details
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Ticket 2: Plumbing Resident Unit -->
+                <tr class="hover:bg-slate-50/70 transition-colors">
+                  <td class="py-3.5 px-4">
+                    <span class="font-mono font-bold text-slate-900 text-xs">MNT-2026-079</span>
+                    <span class="font-bold text-slate-900 block text-xs mt-0.5">Bathroom Pressure Booster Leaking</span>
+                    <span class="text-[11px] text-slate-500">Main shut-off valve weeping into floor slab. Resident: Amaka Okafor.</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="font-semibold text-slate-800 block">Sunrise Estate</span>
+                    <span class="text-[11px] text-slate-500">Unit A1-01 &bull; 3-Bed Flat</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                      <i data-lucide="droplet" class="w-3 h-3 text-blue-600"></i>
+                      <span>Plumbing</span>
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">
+                      HIGH
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-2">
+                      <div class="w-7 h-7 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">
+                        BP
+                      </div>
+                      <div>
+                        <span class="font-bold text-slate-900 block text-xs">Babajide Plumbing</span>
+                        <span class="text-[10px] text-slate-500">+234 803 445 1199</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td class="py-3.5 px-4 font-extrabold text-slate-900 tabular-nums">
+                    ₦35,000
+                  </td>
+
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      ASSIGNED
+                    </span>
+                    <span class="block text-[10px] text-slate-500 font-medium mt-0.5">Due today, 4:00 PM</span>
+                  </td>
+
+                  <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button 
+                        onclick="openModal('resolve-modal')"
+                        class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Resolve
+                      </button>
+                      <button 
+                        onclick="alert('Viewing ticket details #MNT-2026-079')"
+                        class="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Details
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Ticket 3: Gate Access Infrastructure -->
+                <tr class="hover:bg-slate-50/70 transition-colors">
+                  <td class="py-3.5 px-4">
+                    <span class="font-mono font-bold text-slate-900 text-xs">MNT-2026-078</span>
+                    <span class="font-bold text-slate-900 block text-xs mt-0.5">Exit Gate Motorised Boom Barrier Sensor Delay</span>
+                    <span class="text-[11px] text-slate-500">Vehicle exit boom barrier sensor not triggering automatic closing.</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="font-semibold text-slate-800 block">Maple Residency</span>
+                    <span class="text-[11px] text-slate-500">North Access Gate</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                      <i data-lucide="shield" class="w-3 h-3 text-purple-600"></i>
+                      <span>Security & Gates</span>
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                      MEDIUM
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-slate-400 italic">Unassigned</span>
+                      <button 
+                        onclick="openModal('assign-modal')"
+                        class="px-2 py-0.5 rounded-md bg-orange-50 hover:bg-orange-100 text-primary font-bold text-[10px]"
+                      >
+                        Dispatch
+                      </button>
+                    </div>
+                  </td>
+
+                  <td class="py-3.5 px-4 font-extrabold text-slate-900 tabular-nums">
+                    ₦45,000
+                  </td>
+
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                      PENDING TRIAGE
+                    </span>
+                    <span class="block text-[10px] text-slate-500 font-medium mt-0.5">Reported 2 hrs ago</span>
+                  </td>
+
+                  <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button 
+                        onclick="openModal('assign-modal')"
+                        class="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Assign
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Ticket 4: Streetlighting / Electrical -->
+                <tr class="hover:bg-slate-50/70 transition-colors">
+                  <td class="py-3.5 px-4">
+                    <span class="font-mono font-bold text-slate-900 text-xs">MNT-2026-075</span>
+                    <span class="font-bold text-slate-900 block text-xs mt-0.5">Solar Streetlight 8 & 9 LED Driver Replacement</span>
+                    <span class="text-[11px] text-slate-500">Street 4 cul-de-sac dark at night. Replaced 80W driver modules.</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="font-semibold text-slate-800 block">Lakeside Court</span>
+                    <span class="text-[11px] text-slate-500">Street 4 &bull; Common Area</span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      <i data-lucide="sun" class="w-3 h-3 text-amber-600"></i>
+                      <span>Electrical</span>
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                      LOW
+                    </span>
+                  </td>
+
+                  <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-2">
+                      <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px]">
+                        SS
+                      </div>
+                      <div>
+                        <span class="font-bold text-slate-900 block text-xs">Samson Shitta</span>
+                        <span class="text-[10px] text-slate-500">Internal Estate Electrician</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td class="py-3.5 px-4 font-extrabold text-slate-900 tabular-nums">
+                    ₦52,000
+                  </td>
+
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      RESOLVED
+                    </span>
+                    <span class="block text-[10px] text-emerald-700 font-medium mt-0.5">Verified & Signed off</span>
+                  </td>
+
+                  <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                    <button 
+                      onclick="alert('Ticket resolved with sign-off voucher.')"
+                      class="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-[11px] transition-colors cursor-pointer"
+                    >
+                      Audit Slip
+                    </button>
+                  </td>
+                </tr>
+
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Showing 4 of 18 active work orders</span>
+            <div class="flex items-center gap-2">
+              <button class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 font-medium cursor-pointer">Previous</button>
+              <button class="px-3 py-1.5 rounded-lg bg-primary text-white font-bold cursor-pointer">1</button>
+              <button class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 font-medium cursor-pointer">2</button>
+              <button class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 font-medium cursor-pointer">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================================= -->
+        <!-- TAB PANE 2: PREVENTIVE ASSET MAINTENANCE SCHEDULES                      -->
+        <!-- ======================================================================= -->
+        <div id="pane-preventive" class="hidden p-6">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Preventive Asset Schedules</h2>
+              <p class="text-xs text-slate-500">Automated servicing routines to protect heavy estate infrastructure and avoid catastrophic outages.</p>
+            </div>
+            <button 
+              onclick="alert('Open schedule new asset dialog')"
+              class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary-dark transition-all cursor-pointer"
+            >
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Schedule New Asset</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <!-- Asset 1: Central Generator -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-card hover:border-slate-300 transition-all p-5 flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-start justify-between">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                    250-Hour Interval
+                  </span>
+                  <span class="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                    Overdue by 18 hrs
+                  </span>
+                </div>
+
+                <div>
+                  <h3 class="text-base font-bold text-slate-900 group-hover:text-primary transition-colors">
+                    500kVA Caterpillar Generator
+                  </h3>
+                  <p class="text-xs text-slate-500 mt-0.5">Sunrise Estate &bull; Asset #GEN-CAT-500</p>
+                  <p class="text-xs text-slate-600 mt-2 leading-relaxed">
+                    Full synthetic oil change, primary/secondary diesel filter, air cleaner element, and battery voltage check.
+                  </p>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Vendor SLA</span>
+                    <span class="font-bold text-slate-800">Mantrac Energy</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Est. Cost</span>
+                    <span class="font-extrabold text-slate-900">₦340,000</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
+                <button 
+                  onclick="openModal('assign-modal')"
+                  class="flex-1 py-2 px-3 rounded-xl bg-orange-50 hover:bg-orange-100 text-primary font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                  <span>Trigger Service Run</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Asset 2: Water Treatment Plant -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-card hover:border-slate-300 transition-all p-5 flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-start justify-between">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                    Monthly Backwash
+                  </span>
+                  <span class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    Due in 6 Days
+                  </span>
+                </div>
+
+                <div>
+                  <h3 class="text-base font-bold text-slate-900 group-hover:text-primary transition-colors">
+                    Reverse Osmosis Water Purification
+                  </h3>
+                  <p class="text-xs text-slate-500 mt-0.5">Maple Residency &bull; Asset #WTR-RO-02</p>
+                  <p class="text-xs text-slate-600 mt-2 leading-relaxed">
+                    Activated carbon media backwash, manganese dioxide greensand replenishment, and chlorine doser test.
+                  </p>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Vendor SLA</span>
+                    <span class="font-bold text-slate-800">AquaClean Engineering</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Est. Cost</span>
+                    <span class="font-extrabold text-slate-900">₦120,000</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
+                <button 
+                  onclick="openModal('assign-modal')"
+                  class="flex-1 py-2 px-3 rounded-xl bg-orange-50 hover:bg-orange-100 text-primary font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                  <span>Trigger Service Run</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Asset 3: Perimeter Security Fence -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-card hover:border-slate-300 transition-all p-5 flex flex-col justify-between group">
+              <div class="space-y-3">
+                <div class="flex items-start justify-between">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                    Bi-Weekly Inspection
+                  </span>
+                  <span class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    Optimal
+                  </span>
+                </div>
+
+                <div>
+                  <h3 class="text-base font-bold text-slate-900 group-hover:text-primary transition-colors">
+                    Nemtek Electric Perimeter Fence
+                  </h3>
+                  <p class="text-xs text-slate-500 mt-0.5">Lakeside Court &bull; Asset #SEC-FNC-01</p>
+                  <p class="text-xs text-slate-600 mt-2 leading-relaxed">
+                    Check wire tension across 2.4km perimeter, test pulse energizer ground voltage, cut vegetation overhang.
+                  </p>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Vendor SLA</span>
+                    <span class="font-bold text-slate-800">Internal Security Team</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Est. Cost</span>
+                    <span class="font-extrabold text-slate-900">₦25,000</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
+                <button 
+                  onclick="openModal('assign-modal')"
+                  class="flex-1 py-2 px-3 rounded-xl bg-orange-50 hover:bg-orange-100 text-primary font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                  <span>Trigger Service Run</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ======================================================================= -->
+        <!-- TAB PANE 3: ARTISAN & VENDOR DIRECTORY                                   -->
+        <!-- ======================================================================= -->
+        <div id="pane-artisans" class="hidden p-6">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Vetted Artisan & Vendor Network</h2>
+              <p class="text-xs text-slate-500">Pre-screened contractors with verified security gate access clearance, rating, and estate SLA history.</p>
+            </div>
+            <button 
+              onclick="alert('Add new artisan dialog')"
+              class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary-dark transition-all cursor-pointer"
+            >
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Register Artisan</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <!-- Artisan 1 -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
+              <div>
+                <div class="flex items-start justify-between">
+                  <div class="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary font-bold text-sm">
+                    BP
+                  </div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    VERIFIED VENDOR
+                  </span>
+                </div>
+                <h3 class="font-bold text-slate-900 text-sm mt-3">Babajide Plumbing Services</h3>
+                <p class="text-xs text-slate-500">Lead Artisan: Babajide Alao &bull; 8 Yrs Experience</p>
+                
+                <div class="mt-3 flex items-center gap-3 text-xs text-slate-600">
+                  <span class="font-semibold text-slate-800">4.9 / 5.0 Rating</span>
+                  <span>&bull;</span>
+                  <span>48 Jobs Completed</span>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-xs text-slate-500 font-mono">+234 803 445 1199</span>
+                <button 
+                  onclick="openModal('assign-modal')"
+                  class="px-3 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-primary font-bold text-xs cursor-pointer"
+                >
+                  Dispatch
+                </button>
+              </div>
+            </div>
+
+            <!-- Artisan 2 -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
+              <div>
+                <div class="flex items-start justify-between">
+                  <div class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 font-bold text-sm">
+                    ME
+                  </div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    CORPORATE CONTRACTOR
+                  </span>
+                </div>
+                <h3 class="font-bold text-slate-900 text-sm mt-3">Mantrac Energy Engineering</h3>
+                <p class="text-xs text-slate-500">Power & Heavy Plant OEM Certified Engineers</p>
+                
+                <div class="mt-3 flex items-center gap-3 text-xs text-slate-600">
+                  <span class="font-semibold text-slate-800">5.0 / 5.0 Rating</span>
+                  <span>&bull;</span>
+                  <span>Annual SLA Contract</span>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-xs text-slate-500 font-mono">+234 800 228 3637</span>
+                <button 
+                  onclick="openModal('assign-modal')"
+                  class="px-3 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-primary font-bold text-xs cursor-pointer"
+                >
+                  Dispatch
+                </button>
+              </div>
+            </div>
+
+            <!-- Artisan 3 -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
+              <div>
+                <div class="flex items-start justify-between">
+                  <div class="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 font-bold text-sm">
+                    KS
+                  </div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    SECURITY SYSTEMS
+                  </span>
+                </div>
+                <h3 class="font-bold text-slate-900 text-sm mt-3">Kresta Security Automation</h3>
+                <p class="text-xs text-slate-500">Boom Barriers, CCTV & Access Turnstiles</p>
+                
+                <div class="mt-3 flex items-center gap-3 text-xs text-slate-600">
+                  <span class="font-semibold text-slate-800">4.8 / 5.0 Rating</span>
+                  <span>&bull;</span>
+                  <span>34 Jobs Completed</span>
+                </div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-xs text-slate-500 font-mono">+234 812 990 0411</span>
+                <button 
+                  onclick="openModal('assign-modal')"
+                  class="px-3 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-primary font-bold text-xs cursor-pointer"
+                >
+                  Dispatch
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 1: CREATE NEW WORK ORDER / LOG MAINTENANCE REQUEST                   -->
+  <!-- ========================================================================= -->
+  <div id="create-ticket-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 relative animate-in zoom-in-95 duration-200">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-primary">
+            <i data-lucide="wrench" class="w-5 h-5 text-primary"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Log Maintenance Work Order</h3>
+            <p class="text-xs text-slate-500">Record a resident defect or estate common facility breakdown</p>
+          </div>
+        </div>
+        <button onclick="closeModal('create-ticket-modal')" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form onsubmit="handleCreateTicket(event)" class="mt-5 space-y-4 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Estate Location <span class="text-rose-500">*</span></label>
+          <select required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+            <option value="SUN">Sunrise Estate (Plot 12, Lekki Phase 1)</option>
+            <option value="MAP">Maple Residency</option>
+            <option value="LAK">Lakeside Court</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Target Location / Unit <span class="text-rose-500">*</span></label>
+            <select required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+              <option value="COMMON">Common Facility / Estate-Wide</option>
+              <option value="A1-01">Unit A1-01 (Amaka Okafor)</option>
+              <option value="B2-04">Unit B2-04 (Chinedu Nwosu)</option>
+              <option value="C1-01">Unit C1-01 (Daniel Musa)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Category <span class="text-rose-500">*</span></label>
+            <select required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+              <option value="PLUMBING">Plumbing & Water Booster</option>
+              <option value="ELECTRICAL">Electrical & Streetlights</option>
+              <option value="GENERATOR">Generator & ATS Power</option>
+              <option value="GATE">Gate Security & Boom Barrier</option>
+              <option value="CIVIL">Civil Works & Masonry</option>
+              <option value="HVAC">Air Conditioning & HVAC</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Issue Title / Summary <span class="text-rose-500">*</span></label>
+          <input 
+            type="text" 
+            required 
+            placeholder="e.g. Water pump making grinding noise and low output pressure" 
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Detailed Description & Symptoms</label>
+          <textarea 
+            rows="3" 
+            placeholder="Provide specific details, location nuances, or access instructions..."
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+          ></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Severity / Urgency <span class="text-rose-500">*</span></label>
+            <select required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+              <option value="MEDIUM">Medium (Standard 24h SLA)</option>
+              <option value="CRITICAL">Critical (Immediate Emergency SLA)</option>
+              <option value="HIGH">High (Urgent 6h SLA)</option>
+              <option value="LOW">Low (Routine 72h SLA)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Estimated Cost (₦)</label>
+            <input 
+              type="number" 
+              placeholder="e.g. 45000" 
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <button 
+            type="button" 
+            onclick="closeModal('create-ticket-modal')"
+            class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-dark text-white font-semibold shadow-sm shadow-primary/30"
+          >
+            Create Work Order
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 2: DISPATCH / ASSIGN ARTISAN                                        -->
+  <!-- ========================================================================= -->
+  <div id="assign-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 relative animate-in zoom-in-95 duration-200">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+            <i data-lucide="hard-hat" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Dispatch Artisan / Contractor</h3>
+            <p class="text-xs text-slate-500">Assign certified contractor and issue automatic gate access clearance</p>
+          </div>
+        </div>
+        <button onclick="closeModal('assign-modal')" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form onsubmit="handleDispatch(event)" class="mt-5 space-y-4 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Select Work Order <span class="text-rose-500">*</span></label>
+          <select required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+            <option value="MNT-2026-078">MNT-2026-078 &bull; Boom Barrier Sensor Delay (Maple Residency)</option>
+            <option value="MNT-2026-081">MNT-2026-081 &bull; 500kVA Cat Generator Fault (Sunrise Estate)</option>
+            <option value="MNT-2026-079">MNT-2026-079 &bull; Bathroom Pressure Booster Leaking (Unit A1-01)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Assign Certified Artisan / Vendor <span class="text-rose-500">*</span></label>
+          <select required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+            <option value="KRESTA">Kresta Security Automation (SLA: 2 Hours)</option>
+            <option value="BABAJIDE">Babajide Plumbing Services (SLA: 3 Hours)</option>
+            <option value="MANTRAC">Mantrac Energy Engineering (SLA: 1 Hour)</option>
+            <option value="INTERNAL">Internal Estate Facility Team</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Dispatch Target Time</label>
+            <input 
+              type="datetime-local" 
+              required
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Budget Allocation (₦)</label>
+            <input 
+              type="number" 
+              value="45000"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div class="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 space-y-1">
+          <div class="font-bold flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4 text-amber-700"></i>
+            <span>Automated Gate Security Permit</span>
+          </div>
+          <p class="text-[11px] leading-relaxed">
+            Dispatching this work order will automatically generate a 24-hour contractor access pass with gate QR verification code sent via SMS to the artisan.
+          </p>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <button 
+            type="button" 
+            onclick="closeModal('assign-modal')"
+            class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-dark text-white font-semibold shadow-sm shadow-primary/30"
+          >
+            Dispatch & Notify Artisan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 3: RESOLVE & CLOSE WORK ORDER                                       -->
+  <!-- ========================================================================= -->
+  <div id="resolve-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 relative animate-in zoom-in-95 duration-200">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+            <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Resolve & Sign Off Work Order</h3>
+            <p class="text-xs text-slate-500">Record final resolution notes, actual parts cost, and audit verification</p>
+          </div>
+        </div>
+        <button onclick="closeModal('resolve-modal')" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form onsubmit="handleResolve(event)" class="mt-5 space-y-4 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Ticket to Resolve</label>
+          <input 
+            type="text" 
+            readonly 
+            value="MNT-2026-081 &bull; 500kVA Cat Generator Starter Motor Fault" 
+            class="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Resolution Summary <span class="text-rose-500">*</span></label>
+          <textarea 
+            rows="3" 
+            required
+            placeholder="Explain root cause, what parts were replaced, and testing performed..."
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+          >Replaced solenoid switch and starter relay on 500kVA Cat Generator. Tested load pickup for 45 minutes under full estate load; ATS responded within 8 seconds.</textarea>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Final Actual Invoiced Cost (₦) <span class="text-rose-500">*</span></label>
+            <input 
+              type="number" 
+              required
+              value="280000"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Billing Treatment</label>
+            <select class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:bg-white focus:ring-1 focus:ring-primary focus:outline-none">
+              <option value="SERVICE_CHARGE">Estate Service Charge Reserve</option>
+              <option value="RESIDENT_BILL">Bill Resident Directly</option>
+              <option value="CAPITAL_LEVY">Capital Expenditure Fund</option>
+              <option value="WARRANTY">OEM Warranty Claim (₦0)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          <button 
+            type="button" 
+            onclick="closeModal('resolve-modal')"
+            class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+          >
+            Mark Resolved & Archive
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SCRIPT FOR PROTOTYPE INTERACTIONS -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Tab switcher
+    function switchTab(tab) {
+      const ordersPane = document.getElementById('pane-orders');
+      const preventivePane = document.getElementById('pane-preventive');
+      const artisansPane = document.getElementById('pane-artisans');
+
+      const btnOrders = document.getElementById('tab-btn-orders');
+      const btnPreventive = document.getElementById('tab-btn-preventive');
+      const btnArtisans = document.getElementById('tab-btn-artisans');
+
+      // Hide all
+      ordersPane.classList.add('hidden');
+      preventivePane.classList.add('hidden');
+      artisansPane.classList.add('hidden');
+
+      // Reset button styles
+      [btnOrders, btnPreventive, btnArtisans].forEach(btn => {
+        btn.classList.remove('border-primary', 'text-primary', 'bg-white', 'shadow-xs');
+        btn.classList.add('border-transparent', 'text-slate-500');
+      });
+
+      if (tab === 'ORDERS') {
+        ordersPane.classList.remove('hidden');
+        btnOrders.classList.add('border-primary', 'text-primary', 'bg-white', 'shadow-xs');
+        btnOrders.classList.remove('border-transparent', 'text-slate-500');
+      } else if (tab === 'PREVENTIVE') {
+        preventivePane.classList.remove('hidden');
+        btnPreventive.classList.add('border-primary', 'text-primary', 'bg-white', 'shadow-xs');
+        btnPreventive.classList.remove('border-transparent', 'text-slate-500');
+      } else if (tab === 'ARTISANS') {
+        artisansPane.classList.remove('hidden');
+        btnArtisans.classList.add('border-primary', 'text-primary', 'bg-white', 'shadow-xs');
+        btnArtisans.classList.remove('border-transparent', 'text-slate-500');
+      }
+    }
+
+    // Modal controls
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    // Currency toggle simulation
+    let isCompact = false;
+    function toggleCompactCurrency() {
+      isCompact = !isCompact;
+      const display = document.getElementById('kpi-spend-display');
+      const label = document.getElementById('currency-toggle-label');
+      
+      if (isCompact) {
+        display.innerText = '₦1.42M';
+        label.innerText = 'Figures: Compact (₦M)';
+      } else {
+        display.innerText = '₦1,420,000';
+        label.innerText = 'Figures: Exact (₦)';
+      }
+    }
+
+    // Dummy submission alerts
+    function handleCreateTicket(e) {
+      e.preventDefault();
+      closeModal('create-ticket-modal');
+      alert('Work order created successfully! Dispatched to triage queue.');
+    }
+
+    function handleDispatch(e) {
+      e.preventDefault();
+      closeModal('assign-modal');
+      alert('Artisan dispatched! Gate security pass generated and SMS sent.');
+    }
+
+    function handleResolve(e) {
+      e.preventDefault();
+      closeModal('resolve-modal');
+      alert('Work order marked as RESOLVED. Verification audit record saved.');
+    }
+  </script>
+</body>
+</html>
