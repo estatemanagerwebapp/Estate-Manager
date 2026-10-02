@@ -98,30 +98,38 @@ export const MaintenanceHubPage = () => {
   });
 
   // 1. Fetch Estates
-  const { data: estates = [] } = useQuery({
-    queryKey: ['estates'],
+  const { data: estates = [], isLoading: estatesLoading } = useQuery({
+    queryKey: ['estates-list-maintenance'],
     queryFn: async () => {
       const res = await api.get('/estates');
-      return res.data?.data?.estates || [];
+      const list = res.data?.estates || res.estates || (Array.isArray(res.data) ? res.data : []);
+      return list;
     }
   });
 
   // Set default estateId when estates load
   useEffect(() => {
-    if (estates.length > 0 && !ticketForm.estateId) {
-      setTicketForm(prev => ({ ...prev, estateId: estates[0].id }));
-      setScheduleForm(prev => ({ ...prev, estateId: estates[0].id }));
-      setArtisanForm(prev => ({ ...prev, estateId: estates[0].id }));
+    if (estates.length > 0) {
+      if (!ticketForm.estateId) {
+        setTicketForm(prev => ({ ...prev, estateId: estates[0].id }));
+      }
+      if (!scheduleForm.estateId) {
+        setScheduleForm(prev => ({ ...prev, estateId: estates[0].id }));
+      }
+      if (!artisanForm.estateId) {
+        setArtisanForm(prev => ({ ...prev, estateId: estates[0].id }));
+      }
     }
   }, [estates]);
 
   // 2. Fetch Properties for the selected estate in ticketForm
-  const { data: properties = [] } = useQuery({
-    queryKey: ['properties', ticketForm.estateId],
+  const { data: properties = [], isLoading: propertiesLoading } = useQuery({
+    queryKey: ['properties-for-maintenance', ticketForm.estateId],
     queryFn: async () => {
       if (!ticketForm.estateId) return [];
-      const res = await api.get(`/properties?estateId=${ticketForm.estateId}`);
-      return res.data?.data?.properties || [];
+      const res = await api.get(`/properties?estateId=${ticketForm.estateId}&limit=100`);
+      const list = res.data?.properties || res.properties || (Array.isArray(res.data) ? res.data : []);
+      return list;
     },
     enabled: !!ticketForm.estateId
   });
@@ -240,6 +248,33 @@ export const MaintenanceHubPage = () => {
   });
 
   // Modal open helpers
+  const handleOpenCreateTicket = () => {
+    const defaultEstateId = ticketForm.estateId || (estates.length > 0 ? estates[0].id : '');
+    setTicketForm(prev => ({
+      ...prev,
+      estateId: defaultEstateId
+    }));
+    setIsCreateModalOpen(true);
+  };
+
+  const handleOpenSchedule = () => {
+    const defaultEstateId = scheduleForm.estateId || (estates.length > 0 ? estates[0].id : '');
+    setScheduleForm(prev => ({
+      ...prev,
+      estateId: defaultEstateId
+    }));
+    setIsScheduleModalOpen(true);
+  };
+
+  const handleOpenArtisan = () => {
+    const defaultEstateId = artisanForm.estateId || (estates.length > 0 ? estates[0].id : '');
+    setArtisanForm(prev => ({
+      ...prev,
+      estateId: defaultEstateId
+    }));
+    setIsArtisanModalOpen(true);
+  };
+
   const handleOpenAssign = (ticket) => {
     setActiveTicket(ticket);
     setAssignForm({
@@ -320,31 +355,31 @@ export const MaintenanceHubPage = () => {
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs"
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs cursor-pointer"
           >
             <Printer className="w-4 h-4 text-slate-500" />
             <span>Export / Print</span>
           </button>
 
           <button
-            onClick={() => setIsScheduleModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs"
+            onClick={handleOpenSchedule}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs cursor-pointer"
           >
             <Calendar className="w-4 h-4 text-slate-500" />
             <span>Schedule PM</span>
           </button>
 
           <button
-            onClick={() => setIsArtisanModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs"
+            onClick={handleOpenArtisan}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs cursor-pointer"
           >
             <UserCheck className="w-4 h-4 text-slate-500" />
             <span>Add Artisan</span>
           </button>
 
           <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-dark rounded-xl shadow-xs transition-colors"
+            onClick={handleOpenCreateTicket}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-dark rounded-xl shadow-xs transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Log Work Order</span>
@@ -597,8 +632,8 @@ export const MaintenanceHubPage = () => {
                   There are no maintenance requests matching your current filter criteria.
                 </p>
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-dark transition-colors shadow-xs"
+                  onClick={handleOpenCreateTicket}
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-dark transition-colors shadow-xs cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create Work Order</span>
@@ -967,13 +1002,19 @@ export const MaintenanceHubPage = () => {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Estate</label>
                 <select
                   required
-                  value={ticketForm.estateId}
-                  onChange={(e) => setTicketForm(prev => ({ ...prev, estateId: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  value={ticketForm.estateId || ''}
+                  onChange={(e) => setTicketForm(prev => ({ ...prev, estateId: e.target.value, propertyId: '' }))}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
                 >
-                  {estates.map(est => (
-                    <option key={est.id} value={est.id}>{est.name}</option>
-                  ))}
+                  {estates.length === 0 ? (
+                    <option value="">{estatesLoading ? 'Loading estates...' : 'No estates found'}</option>
+                  ) : (
+                    estates.map(est => (
+                      <option key={est.id} value={est.id}>
+                        {est.name} ({est.code || 'Estate'})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -1357,13 +1398,19 @@ export const MaintenanceHubPage = () => {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Estate</label>
                 <select
                   required
-                  value={scheduleForm.estateId}
+                  value={scheduleForm.estateId || ''}
                   onChange={(e) => setScheduleForm(prev => ({ ...prev, estateId: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
                 >
-                  {estates.map(est => (
-                    <option key={est.id} value={est.id}>{est.name}</option>
-                  ))}
+                  {estates.length === 0 ? (
+                    <option value="">{estatesLoading ? 'Loading estates...' : 'No estates found'}</option>
+                  ) : (
+                    estates.map(est => (
+                      <option key={est.id} value={est.id}>
+                        {est.name} ({est.code || 'Estate'})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
