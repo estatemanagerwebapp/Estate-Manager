@@ -18,4 +18,11 @@ router.get('/passes', requireRoles(ROLES.GUARD, ROLES.ESTATE_ADMIN, ROLES.SUPER_
 router.post('/passes', requireRoles(ROLES.ESTATE_ADMIN, ROLES.SUPER_ADMIN, ROLES.GUARD, ROLES.RESIDENT), gateController.createPass);
 router.patch('/passes/:id/revoke', requireRoles(ROLES.ESTATE_ADMIN, ROLES.SUPER_ADMIN, ROLES.GUARD, ROLES.RESIDENT), gateController.revokePass);
 
+// Visitor Departure Check-Out
+router.post('/checkout', requireRoles(ROLES.GUARD, ROLES.ESTATE_ADMIN, ROLES.SUPER_ADMIN), gateController.checkoutVisitor);
+
+// Security Watchlist
+router.get('/watchlist', requireRoles(ROLES.GUARD, ROLES.ESTATE_ADMIN, ROLES.SUPER_ADMIN, ROLES.AUDITOR), gateController.getWatchlist);
+router.post('/watchlist', requireRoles(ROLES.ESTATE_ADMIN, ROLES.SUPER_ADMIN, ROLES.GUARD), gateController.addToWatchlist);
+
 module.exports = router;

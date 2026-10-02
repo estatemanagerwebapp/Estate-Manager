@@ -11,7 +11,7 @@ export const gateService = {
     if (params.limit) searchParams.append('limit', params.limit);
 
     const res = await api.get(`/gate/logs?${searchParams.toString()}`);
-    return res.data;
+    return res.data || res;
   },
 
   // Guard verification request
@@ -27,17 +27,36 @@ export const gateService = {
     if (params.search && params.search.trim()) searchParams.append('search', params.search.trim());
 
     const res = await api.get(`/gate/passes?${searchParams.toString()}`);
-    return res.data?.passes || [];
+    return res.data?.passes || res.passes || (Array.isArray(res.data) ? res.data : []);
   },
 
   // Issue new visitor pass
   createGatePass: async (payload) => {
-    return await api.post('/gate/passes', payload);
+    const res = await api.post('/gate/passes', payload);
+    return res.data || res;
   },
 
   // Revoke pass
   revokeGatePass: async (id) => {
     return await api.patch(`/gate/passes/${id}/revoke`);
+  },
+
+  // Log departure checkout
+  checkoutVisitor: async (payload) => {
+    const res = await api.post('/gate/checkout', payload);
+    return res.data || res;
+  },
+
+  // Watchlist registry
+  getWatchlist: async () => {
+    const res = await api.get('/gate/watchlist');
+    return res.data?.watchlist || res.watchlist || [];
+  },
+
+  // Add to Watchlist
+  addToWatchlist: async (payload) => {
+    const res = await api.post('/gate/watchlist', payload);
+    return res.data || res;
   }
 };
 

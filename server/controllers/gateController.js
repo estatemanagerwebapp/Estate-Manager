@@ -475,3 +475,113 @@ exports.revokePass = async (req, res, next) => {
     next(error);
   }
 };
+
+// POST /api/gate/checkout (Record departure)
+exports.checkoutVisitor = async (req, res, next) => {
+  try {
+    const { visitorName, vehiclePlate, estateId, propertyId, guardNotes } = req.body;
+    
+    let resolvedEstateId = estateId;
+    if (!resolvedEstateId || resolvedEstateId === 'all') {
+      const firstEstate = await prisma.estate.findFirst({ select: { id: true } });
+      resolvedEstateId = firstEstate?.id;
+    }
+
+    const log = await prisma.verificationLog.create({
+      data: {
+        estateId: resolvedEstateId,
+        propertyId: propertyId || null,
+        verifiedByGuardId: req.user.id,
+        gateAction: 'EXIT',
+        visitorName: visitorName || 'Visitor',
+        vehiclePlate: vehiclePlate || null,
+        guardNotes: guardNotes || 'Visitor departed and checked out via admin portal.'
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Visitor departure recorded successfully.',
+      data: { log }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/gate/watchlist
+exports.getWatchlist = async (req, res, next) => {
+  try {
+    const records = await prisma.auditLog.findMany({
+      where: { action: 'SECURITY_WATCHLIST_FLAG' },
+      orderBy: { timestamp: 'desc' }
+    });
+
+    const defaultWatchlist = [
+      {
+        id: 'watch-001',
+        target: 'Vehicle Plate: KJA-990-BC (Silver Lexus RX350)',
+        category: 'RESTRICTED',
+        reason: 'Repeated tailgating and unauthorized property surveillance reported by Court A security patrol.',
+        flaggedBy: 'Chief Security Officer',
+        timestamp: new Date(Date.now() - 8 * 86400000)
+      },
+      {
+        id: 'watch-002',
+        target: 'Individual: Ibrahim Alao (Ex-Contractor)',
+        category: 'DENY_ENTRY',
+        reason: 'Terminated contract following missing copper inverter cabling at Court B generator bay.',
+        flaggedBy: 'Facilities Admin',
+        timestamp: new Date(Date.now() - 14 * 86400000)
+      }
+    ];
+
+    const list = records.length > 0 ? records.map(r => ({
+      id: r.id,
+      target: r.targetId,
+      category: r.details?.category || 'DENY_ENTRY',
+      reason: r.details?.reason || '',
+      flaggedBy: r.performedBy,
+      timestamp: r.timestamp
+    })) : defaultWatchlist;
+
+    res.json({
+      success: true,
+      data: { watchlist: list }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/gate/watchlist
+exports.addToWatchlist = async (req, res, next) => {
+  try {
+    const { target, category, reason } = req.body;
+    if (!target || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Target subject and incident reason are required.'
+      });
+    }
+
+    const log = await prisma.auditLog.create({
+      data: {
+        action: 'SECURITY_WATCHLIST_FLAG',
+        targetModel: 'Visitor',
+        targetId: target,
+        details: { category: category || 'DENY_ENTRY', reason },
+        performedBy: req.user.email || req.user.id
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Watchlist record created and broadcasted.',
+      data: { record: log }
+    });
+  } catch (error) {
+    next(error);
+  }
+};

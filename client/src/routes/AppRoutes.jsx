@@ -16,6 +16,7 @@ import { ResidentDetailsPage } from '../pages/admin/ResidentDetailsPage';
 import { AddResidentPage } from '../pages/admin/AddResidentPage';
 import { BillingHubPage } from '../pages/admin/BillingHubPage';
 import { GateSecurityHubPage } from '../pages/admin/GateSecurityHubPage';
+import { VisitorsHubPage } from '../pages/admin/VisitorsHubPage';
 import { DuesAndFeesPage } from '../pages/admin/DuesAndFeesPage';
 import { FinanceHubPage } from '../pages/admin/FinanceHubPage';
 import { MaintenanceHubPage } from '../pages/admin/MaintenanceHubPage';
@@ -116,7 +117,7 @@ export const AppRoutes = () => {
         {/* Gate Access & Visitor Suite */}
         <Route path="/admin/gate-access" element={<GateSecurityHubPage />} />
         <Route path="/admin/gate" element={<GateSecurityHubPage />} />
-        <Route path="/admin/visitors" element={<GateSecurityHubPage />} />
+        <Route path="/admin/visitors" element={<VisitorsHubPage />} />
 
         {/* Maintenance & Work Orders Suite */}
         <Route path="/admin/maintenance" element={<MaintenanceHubPage />} />
