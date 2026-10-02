@@ -1,9 +1,26 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { X, Printer, Download, ShieldCheck, CheckCircle2, Building, Calendar, CreditCard, ArrowLeft } from 'lucide-react';
 import { formatNaira, formatDate, formatDateTime, numberToWordsNaira } from '../../utils/formatters';
 
 export const PaymentReceiptModal = ({ isOpen, onClose, invoice, payment }) => {
   const receiptRef = useRef(null);
+
+  // Close on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen || !invoice) return null;
 
@@ -22,7 +39,6 @@ export const PaymentReceiptModal = ({ isOpen, onClose, invoice, payment }) => {
   };
 
   const handleDownload = () => {
-    // Standard trigger: invoke print dialog with save as PDF instructions
     window.print();
   };
 
@@ -52,16 +68,23 @@ export const PaymentReceiptModal = ({ isOpen, onClose, invoice, payment }) => {
     : 'Estate Property Unit';
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 print:p-0 print:bg-white print:static">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-4 sm:p-6 py-6 sm:py-10 print:p-0 print:bg-white print:static">
       
+      {/* Clickable Backdrop Overlay to Close */}
+      <div 
+        className="fixed inset-0 bg-transparent no-print cursor-pointer" 
+        onClick={onClose} 
+        aria-label="Close modal backdrop"
+      />
+
       {/* Container Card */}
-      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-elevated border border-slate-200 overflow-hidden flex flex-col my-8 print:my-0 print:shadow-none print:border-none print:w-full">
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-elevated border border-slate-200 overflow-hidden flex flex-col my-auto relative z-10 print:my-0 print:shadow-none print:border-none print:w-full">
         
-        {/* Modal Top Control Bar (Hidden when printing) */}
-        <div className="no-print bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
+        {/* Sticky Top Control Bar (Hidden when printing) */}
+        <div className="no-print sticky top-0 z-20 bg-slate-900 text-white px-6 py-3.5 flex items-center justify-between border-b border-slate-800 shadow-sm">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
-            <span className="text-sm font-semibold tracking-wide">Official PropTech Electronic Receipt</span>
+            <span className="text-xs sm:text-sm font-semibold tracking-wide">Official PropTech Electronic Receipt</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -84,15 +107,17 @@ export const PaymentReceiptModal = ({ isOpen, onClose, invoice, payment }) => {
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-colors ml-2 cursor-pointer"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600/90 hover:bg-rose-600 text-white transition-colors ml-1 cursor-pointer"
+              title="Close Receipt (Esc)"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
+              <span>Close</span>
             </button>
           </div>
         </div>
 
         {/* Printable Receipt Body */}
-        <div ref={receiptRef} className="p-8 sm:p-10 text-slate-900 bg-white relative">
+        <div ref={receiptRef} className="p-6 sm:p-10 text-slate-900 bg-white relative">
           
           {/* Subtle Watermark Badge */}
           <div className="absolute -right-8 -top-8 w-44 h-44 rounded-full bg-emerald-500/5 pointer-events-none" />
@@ -242,6 +267,30 @@ export const PaymentReceiptModal = ({ isOpen, onClose, invoice, payment }) => {
 
           </div>
 
+        </div>
+
+        {/* Bottom Control Bar */}
+        <div className="no-print bg-slate-50 px-6 py-4 border-t border-slate-200 flex items-center justify-between">
+          <div className="text-xs text-slate-500">
+            Press <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[11px]">Esc</kbd> or click outside to close
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+            >
+              Print Receipt
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition-colors cursor-pointer"
+            >
+              Close Receipt
+            </button>
+          </div>
         </div>
 
       </div>

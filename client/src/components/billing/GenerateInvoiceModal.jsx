@@ -178,12 +178,36 @@ export const GenerateInvoiceModal = ({ isOpen, onClose, onSuccess }) => {
     });
   };
 
+  // Close on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-4 sm:p-6 py-6 sm:py-10">
       
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-elevated border border-slate-200 overflow-hidden flex flex-col my-6">
+      {/* Clickable Backdrop to Close */}
+      <div 
+        className="fixed inset-0 bg-transparent cursor-pointer" 
+        onClick={onClose} 
+        aria-label="Close modal backdrop"
+      />
+
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-elevated border border-slate-200 overflow-hidden flex flex-col my-auto relative z-10">
         
         {/* Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
@@ -409,7 +433,7 @@ export const GenerateInvoiceModal = ({ isOpen, onClose, onSuccess }) => {
                         <input
                           type="number"
                           min="0"
-                          step="1000"
+                          step="any"
                           value={item.unitPrice}
                           onChange={(e) => handleItemChange(idx, 'unitPrice', e.target.value)}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-primary"

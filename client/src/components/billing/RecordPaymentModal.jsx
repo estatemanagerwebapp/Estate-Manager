@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Check, CreditCard, Building, Calendar, AlertCircle } from 'lucide-react';
 import { billingService } from '../../services/billingService';
@@ -7,16 +7,41 @@ import { formatNaira } from '../../utils/formatters';
 export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess }) => {
   const queryClient = useQueryClient();
 
-  if (!isOpen || !invoice) return null;
+  const remainingBalance = invoice ? Math.max(0, invoice.amount - (invoice.paidAmount || 0)) : 0;
 
-  const remainingBalance = Math.max(0, invoice.amount - (invoice.paidAmount || 0));
-
-  const [amount, setAmount] = useState(remainingBalance.toString());
+  const [amount, setAmount] = useState('');
   const [channel, setChannel] = useState('BANK_TRANSFER');
-  const [reference, setReference] = useState(() => `PAY-ZEN-${Date.now().toString().slice(-6)}`);
+  const [reference, setReference] = useState('');
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('Payment received via bank transfer teller verification.');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Synchronize default amount whenever modal opens with an invoice
+  useEffect(() => {
+    if (invoice) {
+      const bal = Math.max(0, invoice.amount - (invoice.paidAmount || 0));
+      setAmount(bal.toString());
+      setReference(`PAY-ZEN-${Date.now().toString().slice(-6)}`);
+      setErrorMsg('');
+    }
+  }, [invoice, isOpen]);
+
+  // Close on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen, onClose]);
 
   const recordMutation = useMutation({
     mutationFn: async (payload) => {
@@ -32,6 +57,8 @@ export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess }) => {
       setErrorMsg(err.message || 'Failed to record payment. Please verify inputs.');
     }
   });
+
+  if (!isOpen || !invoice) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -55,7 +82,14 @@ export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess }) => {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6">
       
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-elevated border border-slate-200 overflow-hidden flex flex-col my-6">
+      {/* Clickable Backdrop to Close */}
+      <div 
+        className="fixed inset-0 bg-transparent cursor-pointer" 
+        onClick={onClose} 
+        aria-label="Close modal backdrop"
+      />
+
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-elevated border border-slate-200 overflow-hidden flex flex-col my-6 relative z-10">
         
         {/* Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
@@ -120,8 +154,8 @@ export const RecordPaymentModal = ({ isOpen, onClose, invoice, onSuccess }) => {
             </label>
             <input
               type="number"
-              step="100"
-              min="1"
+              step="any"
+              min="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
