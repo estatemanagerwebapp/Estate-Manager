@@ -1,0 +1,109 @@
+{
+  "$comment": "Bootstrap defaults for a Silverstone Managers deployment. This file is read once, when an organization is provisioned. After provisioning, the database copy is authoritative and changes here do not affect a live organization.",
+  "schemaVersion": "1.0.0",
+  "organization": {
+    "name": "Silverstone Managers",
+    "slug": "silverstone",
+    "timezone": "Africa/Lagos",
+    "locale": "en-NG",
+    "currency": "NGN"
+  },
+  "branding": {
+    "primaryColor": "#FF5A1F",
+    "portalName": "Silverstone Resident Portal"
+  },
+  "assetModel": {
+    "types": [
+      {
+        "key": "house",
+        "label": "House",
+        "detailKind": "PROPERTY",
+        "requiresUnits": false,
+        "unitTypeKeys": [],
+        "active": true
+      },
+      {
+        "key": "apartment_block",
+        "label": "Apartment block",
+        "detailKind": "PROPERTY",
+        "requiresUnits": true,
+        "unitTypeKeys": [
+          "studio",
+          "one_bedroom",
+          "two_bedroom",
+          "three_bedroom",
+          "four_bedroom",
+          "penthouse"
+        ],
+        "defaultUnitTypeKey": "two_bedroom",
+        "active": true
+      },
+      {
+        "key": "land_plot",
+        "label": "Land plot",
+        "detailKind": "LAND_PARCEL",
+        "requiresUnits": false,
+        "unitTypeKeys": [],
+        "active": true
+      }
+    ],
+    "unitTypes": [
+      { "key": "studio", "label": "Studio", "bedrooms": 0, "active": true },
+      { "key": "one_bedroom", "label": "One bedroom", "bedrooms": 1, "active": true },
+      { "key": "two_bedroom", "label": "Two bedroom", "bedrooms": 2, "active": true },
+      { "key": "three_bedroom", "label": "Three bedroom", "bedrooms": 3, "active": true },
+      { "key": "four_bedroom", "label": "Four bedroom", "bedrooms": 4, "active": true },
+      { "key": "penthouse", "label": "Penthouse", "bedrooms": 4, "active": true },
+      { "key": "shop", "label": "Shop", "bedrooms": 0, "active": true },
+      { "key": "office", "label": "Office", "bedrooms": 0, "active": true }
+    ],
+    "allowMultipleAssetsPerResident": true,
+    "requireApprovalForAssignmentChanges": true
+  },
+  "modules": {
+    "estates": true,
+    "residents": true,
+    "properties": true,
+    "assignments": true,
+    "billing": true,
+    "payments": true,
+    "gateAccess": true,
+    "maintenance": true,
+    "power": false,
+    "pettyCash": false,
+    "facilities": false,
+    "shortlet": false
+  },
+  "fees": {
+    "registration": {
+      "amountKobo": 5000000,
+      "currency": "NGN",
+      "cadence": "ONE_OFF",
+      "refundable": false,
+      "description": "One-off resident registration fee"
+    }
+  },
+  "onboarding": {
+    "invitationCode": {
+      "length": 10,
+      "ttlMinutes": 1440,
+      "maxAttempts": 5,
+      "singleUse": true
+    },
+    "requireEmail": true,
+    "requireGovernmentId": true,
+    "requireNextOfKin": true,
+    "dependantsEnabled": true,
+    "maxDependants": 5,
+    "createAccountOnlyAfterVerifiedPayment": true
+  },
+  "payments": {
+    "provider": "NONE",
+    "environment": "TEST",
+    "serverControlledAmounts": true
+  },
+  "roles": {
+    "grants": []
+  },
+  "customFields": []
+}

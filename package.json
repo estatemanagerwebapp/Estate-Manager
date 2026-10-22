@@ -1,0 +1,53 @@
+{
+  "name": "silverstone-managers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Silverstone Managers — configurable estate management platform (modular monolith).",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w @silverstone/api",
+    "dev:web": "npm run dev -w @silverstone/web",
+    "build": "npm run build:packages && npm run build:api && npm run build:web",
+    "build:packages": "npm run build -w @silverstone/shared -w @silverstone/config-schema",
+    "build:api": "npm run build -w @silverstone/api",
+    "build:web": "npm run build -w @silverstone/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test --workspaces --if-present",
+    "test:watch": "npm run test:watch -w @silverstone/api",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema prisma/schema.prisma",
+    "prisma:format": "prisma format --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:status": "prisma migrate status --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.19.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.9.10",
+    "prisma": "6.19.3",
+    "tsx": "^4.20.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.72.0"
+  }
+}

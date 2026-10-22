@@ -1,0 +1,59 @@
+// Silverstone Managers — Phase 0 foundation schema.
+//
+// Deliberately minimal. The domain (estates, residents, users, assets,
+// assignments, invoices, payments, invitations, audit) arrives in later phases
+// with its own reviewed migrations. What exists here is only what the
+// foundation needs: an organization identity and a versioned configuration
+// document that becomes the source of truth once provisioned.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ConfigStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+/// One organization per deployment. No tenant column: the deployment *is* the
+/// organization.
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(160)
+  slug      String   @unique @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  configs OrganizationConfig[]
+
+  @@map("organizations")
+}
+
+/// Immutable, versioned configuration documents. A deployment may hold many
+/// versions; exactly one may be ACTIVE (enforced by a partial unique index in
+/// the initial migration, which Prisma cannot express declaratively).
+model OrganizationConfig {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  version        Int
+  status         ConfigStatus @default(DRAFT)
+  schemaVersion  String       @map("schema_version") @db.VarChar(20)
+  /// Validated organization configuration document (see @silverstone/config-schema).
+  payload        Json
+  createdBy      String?      @map("created_by") @db.VarChar(160)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  activatedAt    DateTime?    @map("activated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, version])
+  @@index([organizationId, status])
+  @@map("organization_configs")
+}
