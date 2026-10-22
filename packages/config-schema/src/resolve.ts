@@ -1,5 +1,41 @@
-import { OrganizationConfigError, assertSupportedConfigSchemaVersion, parseOrganizationConfig } from './parse.js';
-import { CONFIG_SCHEMA_VERSION, type OrganizationConfig } from './organization-config.schema.js';
+import {
+  OrganizationConfigError,
+  assertSupportedConfigSchemaVersion,
+  parseOrganizationConfig,
+} from './parse.js';
+import {
+  CONFIG_SCHEMA_VERSION,
+  type AssetModel,
+  type Branding,
+  type CustomField,
+  type FeesConfig,
+  type ModulesConfig,
+  type OnboardingConfig,
+  type OrganizationConfig,
+  type OrganizationIdentity,
+  type PaymentsConfig,
+  type RolesConfig,
+} from './organization-config.schema.js';
+
+/**
+ * A configuration document as stored in the database: the fully-defaulted
+ * output of the schema with the code-stamped `schemaVersion` attached. This
+ * concrete shape (not `Record<string, unknown>`) keeps callers — seed
+ * scripts, repositories, migrations — from losing property types when the
+ * payload is written to Prisma's `Json` column.
+ */
+export interface StoredConfigPayload {
+  schemaVersion: string;
+  organization: OrganizationIdentity;
+  branding: Branding;
+  assetModel: AssetModel;
+  modules: ModulesConfig;
+  fees: FeesConfig;
+  onboarding: OnboardingConfig;
+  payments: PaymentsConfig;
+  roles: RolesConfig;
+  customFields: CustomField[];
+}
 
 /** A row from the database's organization configuration table. */
 export interface StoredConfigRecord {
@@ -63,6 +99,17 @@ export function resolveOrganizationConfig({
  * Serialises a validated configuration for storage. `schemaVersion` is always
  * stamped by code, never trusted from the caller.
  */
-export function toStoredPayload(config: OrganizationConfig): Record<string, unknown> {
-  return { ...config, schemaVersion: CONFIG_SCHEMA_VERSION };
+export function toStoredPayload(config: OrganizationConfig): StoredConfigPayload {
+  return {
+    organization: config.organization,
+    branding: config.branding,
+    assetModel: config.assetModel,
+    modules: config.modules,
+    fees: config.fees,
+    onboarding: config.onboarding,
+    payments: config.payments,
+    roles: config.roles,
+    customFields: config.customFields,
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+  };
 }

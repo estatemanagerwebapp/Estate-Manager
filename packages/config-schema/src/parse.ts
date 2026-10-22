@@ -46,9 +46,7 @@ export function parseOrganizationConfig(input: unknown): OrganizationConfig {
 
 export function safeParseOrganizationConfig(
   input: unknown,
-):
-  | { success: true; config: OrganizationConfig }
-  | { success: false; issues: ConfigIssue[] } {
+): { success: true; config: OrganizationConfig } | { success: false; issues: ConfigIssue[] } {
   const result = OrganizationConfigSchema.safeParse(input);
   if (!result.success) {
     return { success: false, issues: toConfigIssues(result.error) };

@@ -42,15 +42,12 @@ export function loadBootstrapConfig(pathOverride?: string): OrganizationConfig {
   try {
     document = JSON.parse(raw);
   } catch (error) {
-    throw new OrganizationConfigError(
-      `Bootstrap configuration at ${found} is not valid JSON`,
-      [
-        {
-          path: '$file',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      ],
-    );
+    throw new OrganizationConfigError(`Bootstrap configuration at ${found} is not valid JSON`, [
+      {
+        path: '$file',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    ]);
   }
 
   const config = parseOrganizationConfig(document);

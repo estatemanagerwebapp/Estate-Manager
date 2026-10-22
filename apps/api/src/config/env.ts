@@ -1,41 +1,41 @@
+import { parse as parseDotenv } from 'dotenv';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { z } from 'zod';
+
 /**
  * Environment configuration.
  *
  * Every deployment-sensitive value enters the API through this module. The
  * process is fail-fast: an invalid or missing required variable aborts
- * startup with a readable, secret-free error. Tests override the raw
- * environment before importing application modules.
+ * startup with a readable, secret-free error.
+ *
+ * `.env` files are parsed into a plain object (never written to
+ * `process.env`), so tests can observe exactly which values are consumed and
+ * nothing leaks into the host process. Already-set process variables always
+ * win over file values.
  */
-import { config as loadDotenv } from 'dotenv';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { z } from 'zod';
 
-/**
- * Loads `.env` files without overriding already-set process variables,
- * so deployed values always win over committed templates.
- */
-function loadDotenvFiles(): void {
+function loadDotenvValues(): Record<string, string | undefined> {
   const candidates = [
     resolve(process.cwd(), '.env'),
     // `npm -w @silverstone/api` runs with the workspace as cwd.
     resolve(process.cwd(), '../../.env'),
   ];
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      loadDotenv({ path: candidate, override: false });
-      break;
+    if (!existsSync(candidate)) continue;
+    try {
+      const raw = readFileSync(candidate, 'utf8');
+      return parseDotenv(raw);
+    } catch {
+      // Unreadable file: treat as absent. Startup still validates the
+      // process environment; a broken .env is not fatal on its own.
     }
   }
+  return {};
 }
 
-export function loadDotenvForRuntime(): void {
-  loadDotenvFiles();
-}
-
-function isPostgresUrl(value: string): boolean {
-  return /^(?:postgres|postgresql):\/\/\S+/.test(value);
-}
+const postgresUrlPattern = /^(?:postgres|postgresql):\/\/\S+:\S+@\S+/;
 
 export const EnvSchema = z
   .object({
@@ -67,15 +67,9 @@ export const EnvSchema = z
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).default(900_000),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
 
-    DATABASE_URL: z.string().refine(isPostgresUrl, {
+    DATABASE_URL: z.string().refine((value) => postgresUrlPattern.test(value), {
       message: 'PostgreSQL URL must look like postgresql://user:password@host:port/dbname',
     }),
-    DIRECT_URL: z
-      .string()
-      .refine(isPostgresUrl, {
-        message: 'PostgreSQL URL must look like postgresql://user:password@host:port/dbname',
-      })
-      .optional(),
 
     ORGANIZATION_SLUG: z
       .string()
@@ -86,7 +80,9 @@ export const EnvSchema = z
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;
-    const origins = env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean);
+    const origins = env.CORS_ORIGINS.split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0);
     if (origins.length === 0) {
       ctx.addIssue({
         code: 'custom',
@@ -111,20 +107,27 @@ export interface Env extends ParsedEnv {
 }
 
 export class EnvironmentError extends Error {
+  override name = 'EnvironmentError';
   readonly issues: Array<{ variable: string; message: string }>;
 
   constructor(issues: Array<{ variable: string; message: string }>) {
     super(
-      `Environment configuration is invalid. Fix the following and restart:\n` +
+      'Environment configuration is invalid. Fix the following and restart:\n' +
         issues.map((issue) => `  - ${issue.variable}: ${issue.message}`).join('\n'),
     );
-    this.name = 'EnvironmentError';
     this.issues = issues;
   }
 }
 
-export function parseEnv(raw: NodeJS.ProcessEnv = process.env): Env {
-  const result = EnvSchema.safeParse(raw);
+export function parseEnv(raw: Record<string, string | undefined> = process.env): Env {
+  // File values fill in only where the host environment is silent.
+  const fromFile = loadDotenvValues();
+  const merged: Record<string, string | undefined> = { ...fromFile };
+  for (const [key, value] of Object.entries(raw)) {
+    if (value !== undefined) merged[key] = value;
+  }
+
+  const result = EnvSchema.safeParse(merged);
   if (!result.success) {
     const issues = result.error.issues.map((issue) => ({
       variable: issue.path.join('.') || '(environment)',
@@ -132,6 +135,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv = process.env): Env {
     }));
     throw new EnvironmentError(issues);
   }
+
   const parsed = result.data;
   const corsOrigins = parsed.CORS_ORIGINS.split(',')
     .map((origin) => origin.trim())
@@ -148,7 +152,7 @@ let cached: Env | undefined;
 /** Validated environment, parsed once for the process lifetime. */
 export function getEnv(): Env {
   if (!cached) {
-    cached = parseEnv();
+    cached = parseEnv(process.env as Record<string, string | undefined>);
   }
   return cached;
 }

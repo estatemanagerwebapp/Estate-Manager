@@ -3,13 +3,7 @@
  * with the permissions model in Phase 1; nothing here should be treated as an
  * authorization decision on its own.
  */
-export const ROLE_KEYS = [
-  'SUPER_ADMIN',
-  'ESTATE_ADMIN',
-  'GUARD',
-  'RESIDENT',
-  'AUDITOR',
-] as const;
+export const ROLE_KEYS = ['SUPER_ADMIN', 'ESTATE_ADMIN', 'GUARD', 'RESIDENT', 'AUDITOR'] as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[number];
 

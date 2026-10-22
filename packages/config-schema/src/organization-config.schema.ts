@@ -52,9 +52,22 @@ export const PAYMENT_ENVIRONMENTS = ['TEST', 'LIVE'] as const;
  * Zod's `.default()` returns the supplied value verbatim, so passing a partial
  * object would bypass nested defaults. Parsing first guarantees that the
  * default really is a complete, valid document.
+ *
+ * The helper is generic over the object shape so that nested property types
+ * are preserved in `z.output` (a concrete `ZodObject<Shape>` collapses to an
+ * index signature of `unknown` otherwise).
  */
-function defaulted(schema: z.ZodObject<z.ZodRawShape>, value: Record<string, unknown> = {}): z.ZodDefault<typeof schema> {
-  return schema.default(schema.parse(value));
+function defaulted<Shape extends z.ZodRawShape>(
+  schema: z.ZodObject<Shape>,
+  value: Record<string, unknown> = {},
+): z.ZodDefault<z.ZodObject<Shape>> {
+  // Parsed object output always satisfies the NoUndefined constraint that
+  // `.default()` accepts. The cast silences the generic variance while the
+  // `Shape` parameter preserves the concrete shape in the inferred output.
+  const applyDefault = schema.default.bind(schema) as unknown as (
+    def: z.output<z.ZodObject<Shape>>,
+  ) => z.ZodDefault<z.ZodObject<Shape>>;
+  return applyDefault(schema.parse(value));
 }
 
 const slug = (label: string) =>
@@ -318,7 +331,9 @@ export const OrganizationConfigSchema = z
     }
 
     const unitKeys = new Set<string>();
-    for (const [index, unitType] of ((config.assetModel?.unitTypes ?? []) as UnitType[]).entries()) {
+    for (const [index, unitType] of (
+      (config.assetModel?.unitTypes ?? []) as UnitType[]
+    ).entries()) {
       if (unitKeys.has(unitType.key)) {
         ctx.addIssue({
           code: 'custom',
@@ -408,7 +423,9 @@ export const OrganizationConfigSchema = z
     }
 
     const grantedRoles = new Set<string>();
-    for (const [index, grant] of ((config.roles?.grants ?? []) as z.output<typeof RoleGrantSchema>[]).entries()) {
+    for (const [index, grant] of (
+      (config.roles?.grants ?? []) as z.output<typeof RoleGrantSchema>[]
+    ).entries()) {
       if (grantedRoles.has(grant.role)) {
         ctx.addIssue({
           code: 'custom',
@@ -438,9 +455,12 @@ export type CustomField = z.output<typeof CustomFieldSchema>;
 export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
 export type ConfigEntityKind = (typeof CONFIG_ENTITY_KINDS)[number];
 export type Fee = z.output<typeof FeeSchema>;
+export type FeesConfig = z.output<typeof FeesSchema>;
 export type ModulesConfig = z.output<typeof ModulesSchema>;
 export type OnboardingConfig = z.output<typeof OnboardingSchema>;
 export type PaymentsConfig = z.output<typeof PaymentsSchema>;
+export type RolesConfig = z.output<typeof RolesSchema>;
+export type AssetModel = z.output<typeof AssetModelSchema>;
 
 /** Re-exported so consumers can validate module keys against configuration. */
 export { MODULE_KEYS };

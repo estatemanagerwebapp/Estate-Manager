@@ -11,13 +11,20 @@ import { ZodError } from 'zod';
 import { AppError, NotFoundError, ValidationError, isAppError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 
-function requestIdFor(req: Request, res: Response): string {
-  return res.header('x-request-id') ?? (res.locals as { requestId?: string }).requestId ?? 'unknown';
+function requestIdFor(res: Response): string {
+  // Read the header set by the request-id middleware before the handler
+  // runs; the getter/setter collision on `res.header` makes direct access
+  // type-ambiguous, so go through the Node-level getter instead.
+  const value = (
+    res as unknown as { getHeader: (name: string) => string | string[] | undefined }
+  ).getHeader('x-request-id');
+  const flat = Array.isArray(value) ? value[0] : value;
+  return typeof flat === 'string' ? flat : 'unknown';
 }
 
 export function notFoundHandler(req: Request, res: Response, _next: NextFunction): void {
   const error = new NotFoundError(`No route for ${req.method} ${req.originalUrl}`);
-  res.status(404).json(error.toBody(requestIdFor(req, res)));
+  res.status(404).json(error.toBody(requestIdFor(res)));
 }
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
@@ -27,7 +34,7 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
-  const requestId = requestIdFor(req, res);
+  const requestId = requestIdFor(res);
 
   if (isAppError(err)) {
     res.status(err.statusCode).json(err.toBody(requestId));
@@ -59,12 +66,19 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
-  const status = err instanceof Error && isStatusError(err) ? err.status : 500;
+  const status =
+    err instanceof Error && isStatusError(err)
+      ? ((err as Error & { status?: unknown }).status as number)
+      : 500;
   logger.error(
     { err, requestId, method: req.method, path: req.originalUrl },
     status === 500 ? 'unhandled error' : 'request error',
   );
-  const error = new AppError(status, status === 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST', status === 500 ? 'An unexpected error occurred' : 'Bad request');
+  const error = new AppError(
+    status,
+    status === 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST',
+    status === 500 ? 'An unexpected error occurred' : 'Bad request',
+  );
   res.status(status).json(error.toBody(requestId));
 }
 

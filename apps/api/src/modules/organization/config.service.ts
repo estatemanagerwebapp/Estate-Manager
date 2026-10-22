@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import {
   OrganizationConfigError,
   assertSupportedConfigSchemaVersion,
@@ -6,9 +6,26 @@ import {
   toStoredPayload,
   type OrganizationConfig,
   type ResolvedOrganizationConfig,
+  type StoredConfigPayload,
   type StoredConfigRecord,
 } from '@silverstone/config-schema';
 import { AppError } from '../../lib/errors.js';
+
+interface CreatedConfigRow {
+  version: number;
+  schemaVersion: string;
+  payload: Prisma.JsonValue;
+  activatedAt: Date | null;
+}
+
+function rowToStoredRecord(row: CreatedConfigRow): StoredConfigRecord {
+  return {
+    version: row.version,
+    schemaVersion: row.schemaVersion,
+    payload: row.payload,
+    activatedAt: row.activatedAt,
+  };
+}
 
 /**
  * Data access for organization configuration documents.
@@ -37,7 +54,7 @@ export class PrismaOrganizationConfigRepository {
     return {
       version: record.version,
       schemaVersion: record.schemaVersion,
-      payload: record.payload as unknown,
+      payload: record.payload as Prisma.JsonValue,
       activatedAt: record.activatedAt,
     };
   }
@@ -53,9 +70,9 @@ export class PrismaOrganizationConfigRepository {
     config: OrganizationConfig;
     createdBy?: string;
   }): Promise<StoredConfigRecord> {
-    const payload = toStoredPayload(input.config);
+    const payload: StoredConfigPayload = toStoredPayload(input.config);
 
-    const record = await this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const organization = await tx.organization.upsert({
         where: { slug: input.organizationSlug },
         update: { name: input.config.organization.name },
@@ -79,19 +96,14 @@ export class PrismaOrganizationConfigRepository {
           version: (latest?.version ?? 0) + 1,
           status: 'ACTIVE',
           schemaVersion: payload.schemaVersion,
-          payload: payload as Prisma.InputJsonValue,
+          payload: payload as unknown as Prisma.InputJsonValue,
           createdBy: input.createdBy ?? null,
           activatedAt: new Date(),
         },
       });
     });
 
-    return {
-      version: record.version,
-      schemaVersion: record.schemaVersion,
-      payload: record.payload as unknown,
-      activatedAt: record.activatedAt,
-    };
+    return rowToStoredRecord(created);
   }
 }
 
@@ -99,7 +111,7 @@ function isPrismaError(error: unknown): boolean {
   return (
     typeof error === 'object' &&
     error !== null &&
-    (error as { name?: string }).name?.startsWith('PrismaClient')
+    String((error as { name?: unknown }).name ?? '').startsWith('PrismaClient')
   );
 }
 
@@ -142,10 +154,15 @@ export class OrganizationConfigService {
         config = parseOrganizationConfig(stored.payload);
       } catch (error) {
         if (error instanceof OrganizationConfigError) {
-          throw new AppError(503, 'CONFIG_INVALID', 'The active organization configuration is invalid', {
-            cause: error,
-            details: error.issues,
-          });
+          throw new AppError(
+            503,
+            'CONFIG_INVALID',
+            'The active organization configuration is invalid',
+            {
+              cause: error,
+              details: error.issues,
+            },
+          );
         }
         throw error;
       }

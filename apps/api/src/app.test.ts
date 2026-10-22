@@ -55,11 +55,10 @@ describe('security and error envelopes', () => {
   });
 
   it('rate-limits non-health routes with the RATE_LIMITED envelope', async () => {
-    const app = createApp({ checkDatabase: async () => {} });
-    // Test env sets RATE_LIMIT_MAX=1000; hit /system/info (no config service → 404 is fine)
-    // until the limiter trips. Use a scratch path via a low-limit override:
-    // instead, directly assert the 429 body shape with a small-limit app.
-    const tiny = createAppWithLimit(3);
+    const tiny = createApp({
+      checkDatabase: async () => {},
+      rateLimitMax: 3,
+    });
     for (let i = 0; i < 3; i += 1) {
       await request(tiny).get('/api/v1/probe');
     }
@@ -68,13 +67,3 @@ describe('security and error envelopes', () => {
     expect(limited.body.error.code).toBe('RATE_LIMITED');
   });
 });
-
-function createAppWithLimit(limit: number) {
-  process.env.RATE_LIMIT_MAX = String(limit);
-  // Rebuild env cache for the new limit.
-  const { resetEnvForTests } = envModule;
-  resetEnvForTests();
-  return createApp({ checkDatabase: async () => {} });
-}
-
-import * as envModule from './config/env.js';

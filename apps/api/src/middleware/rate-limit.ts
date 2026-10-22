@@ -25,7 +25,14 @@ export function createRateLimiter(
       (req.path === `${env.API_BASE_PATH}/health` ||
         req.path === `${env.API_BASE_PATH}/health/live` ||
         req.path === `${env.API_BASE_PATH}/health/ready`),
-    handler: createRateLimitedResponse,
+    // The default `skipSuccessfulRequests` is true in v8, so by default the
+    // counter would never observe a 429 (it is skipped as a "failed" request
+    // whose close fires first). Skip neither; counts stay consistent.
+    skipSuccessfulRequests: false,
+    skipFailedRequests: false,
+    handler: (_req, res) => {
+      createRateLimitedResponse(res);
+    },
     ...options,
   });
 }

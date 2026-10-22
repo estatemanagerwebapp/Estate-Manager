@@ -5,13 +5,13 @@
  * bootstrap location, organization identity) is injected through this
  * factory so `createApp` stays a pure function of its options.
  */
-import { getPrismaClient } from '../lib/prisma.js';
-import { loadBootstrapConfig } from '../modules/organization/bootstrap.js';
+import { getEnv } from './config/env.js';
+import { getPrismaClient } from './lib/prisma.js';
+import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
 import {
   PrismaOrganizationConfigRepository,
   OrganizationConfigService,
-} from '../modules/organization/config.service.js';
-import { getEnv } from '../config/env.js';
+} from './modules/organization/config.service.js';
 
 export interface AppDependencies {
   checkDatabase: () => Promise<void>;

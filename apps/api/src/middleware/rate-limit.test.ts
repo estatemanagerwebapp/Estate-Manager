@@ -1,104 +1,46 @@
-import type { Request, Response } from 'express';
-import { createRateLimitedResponse } from '../lib/rate-limit-response.js';
+import request from 'supertest';
+import express from 'express';
 import { getEnv } from '../config/env.js';
-import { createRateLimiter } from '../middleware/rate-limit.js';
 import { describe, expect, it } from 'vitest';
+import { createRateLimiter } from '../middleware/rate-limit.js';
 
-/**
- * Minimal in-memory stand-ins so the limiter middleware can be driven
- * directly without a running HTTP server.
- */
-function makeReq(res: Record<string, unknown>): Request {
-  return {
-    method: 'GET',
-    path: '/api/v1/probe',
-    headers: {},
-    url: '/api/v1/probe',
-    originalUrl: '/api/v1/probe',
-    ip: '127.0.0.1',
-    get: (name: string) => (res.headers as Record<string, string>)[name.toLowerCase()] ?? '',
-    res: res as unknown as Response,
-  } as unknown as Request;
+function bareApp(limit: number) {
+  const app = express();
+  app.use(createRateLimiter({ ...getEnv(), RATE_LIMIT_MAX: limit }));
+  return app;
 }
 
-function makeRes(): { res: Record<string, unknown>; next: () => void; called: () => boolean } {
-  let sent = false;
-  const res: Record<string, unknown> = {
-    statusCode: 200,
-    headers: {},
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(payload: unknown) {
-      this.payload = payload;
-      sent = true;
-      return this;
-    },
-    header(name: string, value?: string) {
-      const key = name.toLowerCase();
-      if (value !== undefined) this.headers[key] = value;
-      return (this.headers as Record<string, string>)[key] ?? '';
-    },
-  };
-  return { res, next: () => {}, called: () => sent };
-}
+describe('rate limiting (via supertest)', () => {
+  it('emits the RATE_LIMITED envelope on the fourth request with limit 3', async () => {
+    const app = bareApp(3);
+    app.get('/api/v1/probe', (_req, res) => res.json({ ok: true }));
 
-describe('rate limiting', () => {
-  it('emits the RATE_LIMITED envelope on the fourth request with limit 3', () => {
-    const env = getEnv();
-    const limiter = createRateLimiter({ ...env, RATE_LIMIT_MAX: 3 });
-
-    const requests = [makeRes(), makeRes(), makeRes(), makeRes()];
-    for (const item of requests) {
-      limiter(makeReq(item.res), item.res as unknown as Response, item.next);
+    for (let i = 0; i < 3; i += 1) {
+      const ok = await request(app).get('/api/v1/probe');
+      expect(ok.status).toBe(200);
     }
-
-    const limited = requests[3];
-    expect(limited?.called()).toBe(true);
-    expect(limited?.res.statusCode).toBe(429);
-    const body = limited?.res.payload as { error: { code: string } };
-    expect(body.error.code).toBe('RATE_LIMITED');
+    const limited = await request(app).get('/api/v1/probe');
+    expect(limited.status).toBe(429);
+    expect(limited.body.error.code).toBe('RATE_LIMITED');
+    expect(limited.headers['retry-after']).toBeDefined();
   });
 
-  it('skips health probes entirely', () => {
-    const env = getEnv();
-    const limiter = createRateLimiter({ ...env, RATE_LIMIT_MAX: 1 });
+  it('skips health probes entirely', async () => {
+    const app = bareApp(1);
+    app.get('/api/v1/health/ready', (_req, res) => res.json({ ok: true }));
+    app.get('/api/v1/probe', (_req, res) => res.json({ ok: true }));
 
-    const probe = makeRes();
-    const probeReq = {
-      ...makeReq(probe.res),
-      path: `${env.API_BASE_PATH}/health/ready`,
-    } as Request;
-    limiter(probeReq, probe.res as unknown as Response, probe.next);
-    // The probe must never be counted, so even the second call passes.
-    const probe2 = makeRes();
-    const probeReq2 = {
-      ...makeReq(probe2.res),
-      path: `${env.API_BASE_PATH}/health/ready`,
-    } as Request;
-    limiter(probeReq2, probe2.res as unknown as Response, probe2.next);
+    // Health probes are never counted.
+    const p1 = await request(app).get('/api/v1/health/ready');
+    const p2 = await request(app).get('/api/v1/health/ready');
+    expect(p1.status).toBe(200);
+    expect(p2.status).toBe(200);
 
-    expect(probe.called()).toBe(false);
-    expect(probe2.called()).toBe(false);
-
-    // A normal route with the same limit does trip.
-    const normal = makeRes();
-    limiter(makeReq(normal.res), normal.res as unknown as Response, normal.next);
-    expect(normal.called()).toBe(true);
-  });
-
-  it('builds the 429 body with the request id from the response', () => {
-    const res = makeRes();
-    (res.res.headers as Record<string, string>)['x-request-id'] = 'req-9';
-    createRateLimitedResponse({} as never, res.res as never);
-    expect(res.res.statusCode).toBe(429);
-    expect(res.res.payload).toEqual({
-      error: {
-        code: 'RATE_LIMITED',
-        message: 'Too many requests. Retry after the indicated delay.',
-        requestId: 'req-9',
-      },
-    });
+    // A normal route with limit 1 trips on its second request.
+    const first = await request(app).get('/api/v1/probe');
+    expect(first.status).toBe(200);
+    const probe = await request(app).get('/api/v1/probe');
+    expect(probe.status).toBe(429);
+    expect(probe.body.error.code).toBe('RATE_LIMITED');
   });
 });

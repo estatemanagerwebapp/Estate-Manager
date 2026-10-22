@@ -11,10 +11,7 @@ import { ValidationError } from '../lib/errors.js';
  * Phase 1+ replaces this with parameterised per-route schemas; the mechanism
  * is already in place so route handlers stay free of validation code.
  */
-export function validate(schema: {
-  body?: ZodTypeAny;
-  query?: ZodTypeAny;
-}): RequestHandler {
+export function validate(schema: { body?: ZodTypeAny; query?: ZodTypeAny }): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const details: Array<{ path: string; message: string }> = [];
 

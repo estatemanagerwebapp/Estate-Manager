@@ -9,10 +9,12 @@
 import type { ErrorCode, FieldError } from '@silverstone/shared';
 
 export class AppError extends Error {
+  override readonly cause: unknown;
   readonly statusCode: number;
   readonly code: ErrorCode;
   readonly details?: FieldError[];
-  readonly cause?: unknown;
+
+  override name = 'AppError';
 
   constructor(
     statusCode: number,
@@ -21,7 +23,6 @@ export class AppError extends Error {
     options?: { details?: FieldError[]; cause?: unknown },
   ) {
     super(message, { cause: options?.cause });
-    this.name = 'AppError';
     this.statusCode = statusCode;
     this.code = code;
     this.details = options?.details;
@@ -42,23 +43,26 @@ export class AppError extends Error {
 
 /** 400 with structured field errors, typically from Zod validation. */
 export class ValidationError extends AppError {
+  override name = 'ValidationError';
+
   constructor(details: FieldError[]) {
     super(400, 'VALIDATION_ERROR', 'Request validation failed', { details });
-    this.name = 'ValidationError';
   }
 }
 
 export class NotFoundError extends AppError {
+  override name = 'NotFoundError';
+
   constructor(message = 'Resource not found') {
     super(404, 'NOT_FOUND', message);
-    this.name = 'NotFoundError';
   }
 }
 
 export class DatabaseUnavailableError extends AppError {
+  override name = 'DatabaseUnavailableError';
+
   constructor(cause?: unknown) {
     super(503, 'DATABASE_UNAVAILABLE', 'The database is not available', { cause });
-    this.name = 'DatabaseUnavailableError';
   }
 }
 
@@ -71,6 +75,6 @@ export function isDatabaseUnavailable(error: unknown): boolean {
   return (
     typeof error === 'object' &&
     error !== null &&
-    (error as { name?: string }).name?.startsWith('PrismaClient')
+    String((error as { name?: unknown }).name ?? '').startsWith('PrismaClient')
   );
 }

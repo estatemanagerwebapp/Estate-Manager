@@ -9,8 +9,8 @@
  * Run with: npm run db:seed
  */
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { PrismaClient, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import {
   OrganizationConfigError,
   parseOrganizationConfig,
@@ -21,10 +21,7 @@ import {
 const prisma = new PrismaClient();
 
 function loadBootstrapConfig(): OrganizationConfig {
-  const raw = readFileSync(
-    resolve(process.cwd(), '../../config/organization.default.json'),
-    'utf8',
-  );
+  const raw = readFileSync(new URL('../config/organization.default.json', import.meta.url), 'utf8');
   const document: unknown = JSON.parse(raw);
   try {
     return parseOrganizationConfig(document);

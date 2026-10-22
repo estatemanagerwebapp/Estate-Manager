@@ -1,9 +1,8 @@
+import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { parseOrganizationConfig } from '@silverstone/config-schema';
-import {
-  OrganizationConfigService,
-} from './modules/organization/config.service.js';
+import { OrganizationConfigService } from './modules/organization/config.service.js';
 
 const validConfig = () =>
   parseOrganizationConfig({
@@ -36,9 +35,9 @@ describe('system endpoints', () => {
       configService: service,
     });
 
-    const response = await app.inject('GET', '/api/v1/system/info');
-    expect(response.statusCode).toBe(200);
-    expect(response.json().data).toMatchObject({
+    const response = await request(app).get('/api/v1/system/info');
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
       organization: { name: 'Silverstone Managers', slug: 'silverstone' },
       config: { source: 'database', version: 2 },
     });
@@ -64,9 +63,9 @@ describe('system endpoints', () => {
       configService: service,
     });
 
-    const response = await app.inject('GET', '/api/v1/system/info');
-    expect(response.statusCode).toBe(200);
-    expect(response.json().data.config.source).toBe('bootstrap');
-    expect(response.json().data.config.version).toBe(0);
+    const response = await request(app).get('/api/v1/system/info');
+    expect(response.status).toBe(200);
+    expect(response.body.data.config.source).toBe('bootstrap');
+    expect(response.body.data.config.version).toBe(0);
   });
 });

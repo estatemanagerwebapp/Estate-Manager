@@ -27,18 +27,21 @@ export {
   buildBaselineConfig,
 } from './organization-config.schema.js';
 export type {
+  AssetModel,
   AssetType,
   Branding,
   ConfigEntityKind,
   CustomField,
   CustomFieldType,
   Fee,
+  FeesConfig,
   ModulesConfig,
   OnboardingConfig,
   OrganizationConfig,
   OrganizationConfigInput,
   OrganizationIdentity,
   PaymentsConfig,
+  RolesConfig,
   UnitType,
 } from './organization-config.schema.js';
 
@@ -52,4 +55,9 @@ export {
 export type { ConfigIssue } from './parse.js';
 
 export { resolveOrganizationConfig, toStoredPayload } from './resolve.js';
-export type { ResolvedOrganizationConfig, ResolveConfigInput, StoredConfigRecord } from './resolve.js';
+export type {
+  ResolvedOrganizationConfig,
+  ResolveConfigInput,
+  StoredConfigPayload,
+  StoredConfigRecord,
+} from './resolve.js';
