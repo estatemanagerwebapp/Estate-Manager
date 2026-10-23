@@ -1,0 +1,174 @@
+import type { PrismaClient } from '@prisma/client';
+import { ROLE_KEYS, isRoleKey, ACCOUNT_STATUSES } from '@silverstone/shared';
+
+/**
+ * Data access for staff users. Prisma types stop at this boundary; callers
+ * receive plain domain shapes so services never import `@prisma/client`
+ * (ADR-0001 layered boundaries).
+ */
+
+export interface UserRecord {
+  id: string;
+  organizationId: string;
+  email: string;
+  passwordHash: string;
+  role: string;
+  status: string;
+  lastPasswordChangedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateUserInput {
+  organizationId: string;
+  email: string;
+  passwordHash: string;
+  role: string;
+  status?: string;
+}
+
+export interface UserQuery {
+  organizationId: string;
+  /** Optional role/status filters for the admin list. */
+  role?: string;
+  status?: string;
+  /** Case-insensitive email prefix search (admin convenience). */
+  emailContains?: string;
+}
+
+export class PrismaUserRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async findByEmail(organizationId: string, email: string): Promise<UserRecord | null> {
+    const normalized = email.toLowerCase();
+    const row = await this.prisma.user.findFirst({
+      where: { organizationId, email: normalized },
+    });
+    return row ? toUserRecord(row) : null;
+  }
+
+  async findById(organizationId: string, userId: string): Promise<UserRecord | null> {
+    const row = await this.prisma.user.findFirst({
+      where: { id: userId, organizationId },
+    });
+    return row ? toUserRecord(row) : null;
+  }
+
+  async list(query: UserQuery): Promise<UserRecord[]> {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        organizationId: query.organizationId,
+        ...(query.role ? { role: query.role } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.emailContains ? { email: { contains: query.emailContains.toLowerCase() } } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(toUserRecord);
+  }
+
+  async create(input: CreateUserInput): Promise<UserRecord> {
+    const row = await this.prisma.user.create({
+      data: {
+        organizationId: input.organizationId,
+        email: input.email.toLowerCase(),
+        passwordHash: input.passwordHash,
+        role: input.role,
+        status: input.status ?? 'ACTIVE',
+        lastPasswordChangedAt: new Date(),
+      },
+    });
+    return toUserRecord(row);
+  }
+
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, lastPasswordChangedAt: new Date() },
+    });
+  }
+
+  async updateStatus(userId: string, status: string): Promise<void> {
+    assertStatus(status);
+    await this.prisma.user.update({ where: { id: userId }, data: { status } });
+  }
+
+  async updateRole(userId: string, role: string): Promise<void> {
+    assertRole(role);
+    await this.prisma.user.update({ where: { id: userId }, data: { role } });
+  }
+
+  async countByRole(organizationId: string, role: string): Promise<number> {
+    assertRole(role);
+    return this.prisma.user.count({ where: { organizationId, role } });
+  }
+
+  async countAll(organizationId: string): Promise<number> {
+    return this.prisma.user.count({ where: { organizationId } });
+  }
+
+  async hasSuperAdmin(organizationId: string): Promise<boolean> {
+    const count = await this.prisma.user.count({
+      where: { organizationId, role: 'SUPER_ADMIN' },
+    });
+    return count > 0;
+  }
+
+  /** True when the user is the organization's last active SUPER_ADMIN —
+   *  used to prevent the last gatekeeper from being locked out. */
+  async isLastActiveSuperAdmin(organizationId: string, userId: string): Promise<boolean> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true, role: true, status: true },
+    });
+    if (!row || row.organizationId !== organizationId) return false;
+    if (row.role !== 'SUPER_ADMIN' || row.status !== 'ACTIVE') return false;
+    const peers = await this.prisma.user.count({
+      where: {
+        organizationId,
+        role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
+        id: { not: userId },
+      },
+    });
+    return peers === 0;
+  }
+}
+
+export function assertRole(role: string): void {
+  if (!isRoleKey(role)) {
+    throw new Error(`Unknown role "${role}". Expected one of ${ROLE_KEYS.join(', ')}`);
+  }
+}
+
+export function assertStatus(status: string): void {
+  if (!(ACCOUNT_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(`Unknown status "${status}". Expected one of ${ACCOUNT_STATUSES.join(', ')}`);
+  }
+}
+
+type PrismaUserRow = {
+  id: string;
+  organizationId: string;
+  email: string;
+  passwordHash: string;
+  role: string;
+  status: string;
+  lastPasswordChangedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function toUserRecord(row: PrismaUserRow): UserRecord {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    email: row.email,
+    passwordHash: row.passwordHash,
+    role: row.role,
+    status: row.status,
+    lastPasswordChangedAt: row.lastPasswordChangedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}

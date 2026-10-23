@@ -58,6 +58,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/silverstone
+      SILVERSTONE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/silverstone_test
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +81,12 @@ jobs:
 
       - name: Verify the seed is idempotent
         run: npm run db:seed
+
+      - name: Create the test database
+        run: psql "postgresql://postgres:postgres@localhost:5432" -c 'CREATE DATABASE silverstone_test'
+
+      - name: Run the Phase 1 integration suite against the test database
+        run: npm test -w @silverstone/api
 
       - name: Boot the API and probe readiness
         run: |

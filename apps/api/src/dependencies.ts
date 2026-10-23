@@ -12,15 +12,34 @@ import {
   PrismaOrganizationConfigRepository,
   OrganizationConfigService,
 } from './modules/organization/config.service.js';
+import { createEmailAdapter } from './modules/auth/email-adapter-factory.js';
+import { PrismaUserRepository } from './modules/auth/user-repository.js';
+import { PrismaSessionRepository } from './modules/auth/session-repository.js';
+import { PrismaPasswordResetRepository } from './modules/auth/reset-token-repository.js';
+import { PrismaAuditRepository } from './modules/audit/audit-repository.js';
+import { PermissionResolver } from './modules/auth/permission-resolver.js';
+import { AuthService } from './modules/auth/auth.service.js';
+import { UserService } from './modules/auth/user.service.js';
 
 export interface AppDependencies {
   checkDatabase: () => Promise<void>;
   configService: OrganizationConfigService;
+  /** Phase 1 auth wiring, ready to pass into `createApp({ auth })`. */
+  auth: {
+    authService: AuthService;
+    userService: UserService;
+    sessions: PrismaSessionRepository;
+    permissions: PermissionResolver;
+  };
+  /** Resolved at startup: the organization's database id. */
+  organizationId: string;
 }
 
-export function createAppDependencies(): AppDependencies {
+export async function createAppDependencies(): Promise<AppDependencies> {
   const env = getEnv();
   const prisma = getPrismaClient();
+
+  // Organization configuration (Phase 0).
   const repository = new PrismaOrganizationConfigRepository(prisma);
   const configService = new OrganizationConfigService(
     repository,
@@ -28,10 +47,77 @@ export function createAppDependencies(): AppDependencies {
     env.ORGANIZATION_SLUG,
   );
 
+  // Phase 1 — identity, sessions, audit, email.
+  const users = new PrismaUserRepository(prisma);
+  const sessions = new PrismaSessionRepository(prisma);
+  const resetTokens = new PrismaPasswordResetRepository(prisma);
+  const audit = new PrismaAuditRepository(prisma);
+
+  const permissions = new PermissionResolver(() => loadOrganizationGrants(configService));
+
+  const email = createEmailAdapter(env);
+
+  const authService = new AuthService(
+    users,
+    sessions,
+    resetTokens,
+    audit,
+    permissions,
+    email,
+    env.SESSION_LIFETIME_DAYS,
+    env.RESET_TOKEN_TTL_MINUTES,
+    env.WEB_BASE_URL,
+  );
+
+  const userService = new UserService(users, sessions, audit, permissions);
+
   return {
     checkDatabase: async () => {
       await prisma.$queryRaw`SELECT 1`;
     },
     configService,
+    auth: {
+      authService,
+      userService,
+      sessions,
+      permissions,
+    },
+    organizationId: await resolveOrganizationId(prisma, configService),
   };
+}
+
+/**
+ * Resolves the organization grants from the live config, falling back to an
+ * empty list (baseline permissions only) when the deployment is unprovisioned.
+ */
+async function loadOrganizationGrants(
+  configService: OrganizationConfigService,
+): Promise<readonly { role: string; permissions: readonly string[] }[]> {
+  try {
+    const resolved = await configService.resolve();
+    return resolved.config.roles.grants.map((grant) => ({
+      role: grant.role,
+      permissions: grant.permissions,
+    }));
+  } catch {
+    // Config unavailable: fall back to baseline permissions. Authorization
+    // fails closed to the documented default (shared catalogue).
+    return [];
+  }
+}
+
+/**
+ * Resolves the organization's database id from its slug. The Organization row
+ * is created by the seed step (Phase 0) and is stable across config versions.
+ */
+async function resolveOrganizationId(
+  prisma: ReturnType<typeof getPrismaClient>,
+  configService: OrganizationConfigService,
+): Promise<string> {
+  const resolved = await configService.resolve();
+  const org = await prisma.organization.findUnique({
+    where: { slug: resolved.config.organization.slug },
+    select: { id: true },
+  });
+  return org?.id ?? '';
 }

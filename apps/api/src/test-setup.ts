@@ -14,10 +14,16 @@ const TEST_ENV: Record<string, string> = {
   LOG_LEVEL: 'silent',
   RATE_LIMIT_WINDOW_MS: '60000',
   RATE_LIMIT_MAX: '1000',
-  DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+  DATABASE_URL:
+    process.env.SILVERSTONE_TEST_DATABASE_URL ??
+    'postgresql://postgres:postgres@localhost:5432/silverstone_test',
   ORGANIZATION_SLUG: 'test_org',
   SHUTDOWN_TIMEOUT_MS: '5000',
   SILVERSTONE_CONFIG_FILE: '../../config/organization.default.json',
+  SESSION_LIFETIME_DAYS: '7',
+  WEB_BASE_URL: 'http://localhost:5173',
+  RESET_TOKEN_TTL_MINUTES: '60',
+  EMAIL_PROVIDER: 'mock',
 };
 
 for (const [key, value] of Object.entries(TEST_ENV)) {

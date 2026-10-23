@@ -22,6 +22,7 @@ export const PERMISSIONS = [
   'maintenance.manage',
   'maintenance.read',
   'audit.read',
+  'user.manage',
   'portal.access.self',
 ] as const;
 
@@ -44,6 +45,13 @@ const AUDITOR_PERMISSIONS: Permission[] = [
 ];
 
 /**
+ * Deployment-level account administration (create/suspend/reassign roles).
+ * Granted to SUPER_ADMIN and ESTATE_ADMIN, denied to AUDITOR (read-only),
+ * GUARD and RESIDENT by the baselines below.
+ */
+const USER_ADMIN_PERMISSIONS: readonly Permission[] = ['user.manage'];
+
+/**
  * Baseline role → permission map.
  *
  * This is a *default* only: deployments may narrow or extend it through
@@ -52,7 +60,7 @@ const AUDITOR_PERMISSIONS: Permission[] = [
  */
 export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
   SUPER_ADMIN: ALL_PERMISSIONS,
-  ESTATE_ADMIN: ADMIN_PERMISSIONS,
+  ESTATE_ADMIN: [...ADMIN_PERMISSIONS, ...USER_ADMIN_PERMISSIONS],
   GUARD: ['gate.manage', 'gate.read', 'resident.read'],
   RESIDENT: ['portal.access.self'],
   AUDITOR: AUDITOR_PERMISSIONS,

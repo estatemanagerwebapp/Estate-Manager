@@ -2,12 +2,26 @@
 
 ## Schema
 
-`prisma/schema.prisma` defines the minimal Phase 0 models:
+`prisma/schema.prisma` defines the Phase 0 models plus the Phase 1
+identity surface:
 
 - `Organization` — one row per deployment (the deployment _is_ the
   organization; no tenant column).
 - `OrganizationConfig` — versioned configuration documents. One row per
   version, per organization. Status: `DRAFT` / `ACTIVE` / `ARCHIVED`.
+- `User` — staff accounts, scoped per organization
+  (`@@unique([organizationId, email])`); stores `role` / `status` as
+  plain `VARCHAR(20)` mirroring the shared `ROLE_KEYS` /
+  `ACCOUNT_STATUSES`, plus the Argon2id (or PBKDF2) password hash.
+- `Session` — one row per live sign-in; `expiresAt` is `NULL` when the
+  session was revoked. The opaque cookie value is the row's primary key.
+- `PasswordResetToken` — stores only the **SHA-256 hash** of the
+  plaintext reset token; a single-active-token policy (one unconsumed
+  token per user) and a `consumedAt` timestamp.
+- `AuditEvent` — append-only security log (insert-only from
+  application code). `eventType` / `outcome` are Prisma enums with
+  underscored values; the wire contract uses dotted names and the
+  translation lives in `modules/audit/audit-repository.ts`.
 
 ### Partial unique index
 
@@ -32,10 +46,16 @@ npm run db:migrate       # prisma migrate dev (creates new migration files in de
 npm run db:status        # prisma migrate status
 ```
 
-The current migration set contains only the init migration
-(`20261022120000_init`). Later phases add migrations for domain entities;
-each one is reviewed before it enters the repo. No destructive migrations
-(`DROP`, irreversible `ALTER`) are accepted without an ADR.
+The current migration set contains the init migration
+(`20261022120000_init`) and the identity migration
+(`20261023091817_add_identity`). Later phases add migrations for domain
+entities; each one is reviewed before it enters the repo. No destructive
+migrations (`DROP`, irreversible `ALTER`) are accepted without an ADR.
+
+The integration test suite (`apps/api/src/auth-flow.test.ts`) runs
+against a dedicated `silverstone_test` database (see
+`docs/development.md`) so it never touches development or production
+rows.
 
 ## Seed
 

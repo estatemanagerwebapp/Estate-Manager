@@ -7,10 +7,14 @@ import { disconnectPrisma } from './lib/prisma.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
-  const deps = createAppDependencies();
+  const deps = await createAppDependencies();
   const app = createApp({
     checkDatabase: deps.checkDatabase,
     configService: deps.configService,
+    auth: {
+      ...deps.auth,
+      organizationId: deps.organizationId,
+    },
   });
 
   const server = http.createServer(app);

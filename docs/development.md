@@ -77,3 +77,33 @@ npm run check        # the full gate: format, lint, typecheck, test, build
 Unit tests (shared, config-schema, api middleware/app) run without a
 database. The API tests inject a fake `checkDatabase` and a fake repository
 into `createApp`, so no live Postgres is required to run the suite.
+
+### Phase 1 integration tests (auth flow)
+
+`apps/api/src/auth-flow.test.ts` exercises the real auth routes against
+real Prisma repositories, so it needs a live database. It reads
+`SILVERSTONE_TEST_DATABASE_URL` (default:
+`postgresql://postgres:postgres@localhost:5432/silverstone_test`) — a
+separate database from development so the suites never share rows:
+
+```sh
+docker exec silverstone-pg psql -U postgres -c 'CREATE DATABASE silverstone_test'
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/silverstone_test" \
+  npm run db:deploy
+SILVERSTONE_TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/silverstone_test" \
+  npm test -w @silverstone/api
+```
+
+The suite creates a dedicated test organization per run and cleans up
+after itself; it is safe to run repeatedly against the same database.
+
+## First administrator
+
+After the seed, create the first `SUPER_ADMIN`:
+
+```sh
+ADMIN_EMAIL=ops@example.com ADMIN_PASSWORD='…' npm run bootstrap:admin -w @silverstone/api
+```
+
+The command is idempotent (a no-op when a super admin already exists) and
+never logs or echoes the password. See `docs/adr/0005-auth-sessions.md`.

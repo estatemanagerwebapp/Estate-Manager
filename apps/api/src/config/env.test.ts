@@ -16,6 +16,8 @@ describe('parseEnv', () => {
     DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
     ORGANIZATION_SLUG: 'silverstone',
     SHUTDOWN_TIMEOUT_MS: '5000',
+    WEB_BASE_URL: 'http://localhost:5173',
+    EMAIL_PROVIDER: 'mock',
   };
 
   it('parses a fully-specified development environment', () => {
@@ -35,9 +37,12 @@ describe('parseEnv', () => {
     expect(env.corsOrigins).toEqual(['http://a.example', 'http://b.example']);
   });
 
-  it('rejects a missing database URL', () => {
-    const { DATABASE_URL: _drop, ...rest } = base;
-    expect(() => parseEnv(rest as NodeJS.ProcessEnv)).toThrow(/DATABASE_URL/);
+  it('rejects an invalid database URL', () => {
+    // A malformed value (rather than omission) wins over any .env or
+    // process.env fallback, so the required-check is exercised reliably.
+    expect(() =>
+      parseEnv({ ...base, DATABASE_URL: 'not-a-postgres-url' } as NodeJS.ProcessEnv),
+    ).toThrow(/PostgreSQL URL/);
   });
 
   it('rejects non-postgres database URLs', () => {

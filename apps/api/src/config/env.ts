@@ -77,6 +77,47 @@ export const EnvSchema = z
       .default('silverstone'),
 
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(10_000),
+
+    // --- Phase 1 — Authentication --------------------------------------------
+    /** Session lifetime in days (7 days is the default). */
+    SESSION_LIFETIME_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+
+    /**
+     * The base URL of the web console, used to build absolute reset links in
+     * password-reset emails. Must be an http(s) URL.
+     */
+    WEB_BASE_URL: z
+      .string()
+      .url()
+      .refine((value) => /^https?:/i.test(value), 'Must be an http or https URL')
+      .default('http://localhost:5173'),
+
+    /** Reset-token lifetime in minutes. */
+    RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+
+    // --- Phase 1 — Email delivery ---------------------------------------------
+    /**
+     * Which email adapter to use: `console` logs messages locally (no real
+     * delivery), `resend` posts to the Resend API, `mock` is for tests.
+     * Tests override the adapter through DI and never rely on this value.
+     */
+    EMAIL_PROVIDER: z.enum(['console', 'resend', 'mock']).default('console'),
+
+    /** Resend API key (required only when `EMAIL_PROVIDER=resend`). */
+    RESEND_API_KEY: z.string().optional(),
+
+    /** Reply-to / sender address for outbound email. Defaults to a
+     *  deployment-local address so the default does not impersonate. */
+    EMAIL_FROM: z.string().default('Silverstone Managers <noreply@silverstone.local>'),
+  })
+  .superRefine((env, ctx) => {
+    if (env.EMAIL_PROVIDER === 'resend' && !env.RESEND_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RESEND_API_KEY'],
+        message: 'EMAIL_PROVIDER=resend requires RESEND_API_KEY',
+      });
+    }
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;

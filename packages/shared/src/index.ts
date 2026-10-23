@@ -31,6 +31,31 @@ export {
 } from './modules.js';
 export type { ModuleFlags, ModuleKey } from './modules.js';
 
+export {
+  ACCOUNT_STATUSES,
+  AUDIT_EVENT_TYPES,
+  PASSWORD_POLICY,
+  validatePasswordPolicy,
+} from './auth-contract.js';
+export type {
+  AccountStatus,
+  AuditEventDto,
+  AuditEventType,
+  ChangePasswordResponse,
+  ForgotPasswordResponse,
+  LoginResponse,
+  LogoutResponse,
+  MeResponse,
+  PasswordPolicy,
+  ResetPasswordResponse,
+  SetUserRoleResponse,
+  SetUserStatusResponse,
+  UserDetailResponse,
+  UserDto,
+  UserListResponse,
+  UserListItemDto,
+} from './auth-contract.js';
+
 export { ERROR_CODES } from './api-contract.js';
 export type {
   ApiErrorBody,

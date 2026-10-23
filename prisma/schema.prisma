@@ -1,18 +1,21 @@
-// Silverstone Managers — Phase 0 foundation schema.
+// Silverstone Managers — Phase 0 foundation + Phase 1 identity.
 //
-// Deliberately minimal. The domain (estates, residents, users, assets,
-// assignments, invoices, payments, invitations, audit) arrives in later phases
-// with its own reviewed migrations. What exists here is only what the
-// foundation needs: an organization identity and a versioned configuration
-// document that becomes the source of truth once provisioned.
+// Phase 0 ships the organization identity and a versioned configuration
+// document that becomes the source of truth once provisioned. Phase 1 adds
+// the identity surface: staff users, http-only session cookies, hashed
+// password-reset tokens and an append-only security audit log.
+//
+// The wider estate domain (estates, residents, assets, assignments, invoices,
+// payments, invitations) arrives in later phases with its own reviewed
+// migrations.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum ConfigStatus {
@@ -31,6 +34,7 @@ model Organization {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   configs OrganizationConfig[]
+  users   User[]
 
   @@map("organizations")
 }
@@ -55,4 +59,121 @@ model OrganizationConfig {
   @@unique([organizationId, version])
   @@index([organizationId, status])
   @@map("organization_configs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 — Identity, authentication, RBAC and audit.
+// ---------------------------------------------------------------------------
+
+/// Staff identities. This is *not* the Resident model: resident accounts
+/// arrive with the resident domain in a later phase and are separated from
+/// staff users by design. Role and status values mirror `ROLE_KEYS` /
+/// `ACCOUNT_STATUSES` from `@silverstone/shared`; they are plain strings so
+/// the database can evolve independently of the Prisma enum.
+model User {
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  /// Normalized lowercase email; enforced unique per deployment.
+  email                 String    @db.VarChar(255)
+  passwordHash          String    @map("password_hash") @db.VarChar(255)
+  role                  String    @db.VarChar(20)
+  status                String    @default("ACTIVE") @db.VarChar(20)
+  lastPasswordChangedAt DateTime? @map("last_password_changed_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions     Session[]
+  resetTokens  PasswordResetToken[]
+  auditEvents  AuditEvent[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId, role])
+  @@index([organizationId, status])
+  @@map("users")
+}
+
+/// HttpOnly-cookie session. The cookie carries an opaque session id; the row
+/// holds the expiration and revocation state. A null `expiresAt` marks a
+/// revoked session (logout / password change / account suspension).
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Null means the session has been revoked.
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Hashed password-reset tokens: a cryptographically random secret is never
+/// stored in plaintext; only its SHA-256 hash is kept, so a database leak
+/// does not leak reusable reset credentials.
+model PasswordResetToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  /// SHA-256 hash of the random token.
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  /// Set when the token is consumed; single-use.
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+/// Append-only security audit log. Rows are never updated or deleted by
+/// application code; the only writes are insert.
+model AuditEvent {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  /// The acting user; null for system-level actions (bootstrap, seed).
+  actorId        String?           @map("actor_id") @db.Uuid
+  eventType      AuditEventType
+  /// Which entity was affected; null when the event has no target.
+  targetType     String?           @map("target_type") @db.VarChar(40)
+  targetId       String?           @map("target_id") @db.Uuid
+  requestId      String?           @map("request_id") @db.VarChar(64)
+  outcome        AuditEventOutcome
+  /// Redacted, non-secret context. Never stores passwords, tokens, reset
+  /// links or full request bodies.
+  metadata       Json              @default("{}")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, eventType, createdAt])
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@map("audit_events")
+}
+
+/// Outcome of an audited action. Values are `success` / `failure` to match
+/// the `AuditEventDto` wire contract in `@silverstone/shared`; Prisma keeps
+/// the stored value as-is (Postgres enums are case-sensitive).
+enum AuditEventOutcome {
+  success
+  failure
+}
+
+enum AuditEventType {
+  login_succeeded
+  login_failed
+  logout
+  password_changed
+  password_reset_requested
+  password_reset_completed
+  account_suspended
+  account_reactivated
+  account_disabled
+  user_role_changed
+  admin_bootstrap
 }

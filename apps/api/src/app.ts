@@ -7,6 +7,7 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
 import { createSystemRouter } from './modules/system/system.routes.js';
+import { createAuthRouter, type AuthRouteOptions } from './modules/auth/auth.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -17,6 +18,12 @@ export interface AppOptions {
    */
   checkDatabase?: () => Promise<void>;
   configService?: OrganizationConfigService;
+  /**
+   * Phase 1 auth wiring. When present, the `/auth` router (login, logout,
+   * me, change-password, forgot-password, reset-password, and the admin
+   * user-management endpoints) is mounted on the versioned router.
+   */
+  auth?: AuthRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -31,8 +38,7 @@ export function createApp(options: AppOptions = {}): Express {
   // Security headers.
   app.use(helmet());
 
-  // Explicit CORS allowlist; credentials supported for cookie-based sessions
-  // in later phases.
+  // Explicit CORS allowlist; credentials supported for cookie-based sessions.
   app.use(
     cors({
       origin: env.corsOrigins,
@@ -46,7 +52,6 @@ export function createApp(options: AppOptions = {}): Express {
   app.use(requestIdMiddleware());
 
   // Rate limiting (skip health probes so orchestrators are not throttled).
-  app.set('trust proxy', env.TRUST_PROXY);
   app.use(
     env.API_BASE_PATH,
     createRateLimiter({ ...env, RATE_LIMIT_MAX: options.rateLimitMax ?? env.RATE_LIMIT_MAX }),
@@ -58,6 +63,7 @@ export function createApp(options: AppOptions = {}): Express {
   const router = createVersionedRoutes({
     checkDatabase: options.checkDatabase,
     configService: options.configService,
+    auth: options.auth,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -74,9 +80,10 @@ export function createApp(options: AppOptions = {}): Express {
 function createVersionedRoutes(options: {
   checkDatabase?: () => Promise<void>;
   configService?: OrganizationConfigService;
+  auth?: AuthRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
-  const { checkDatabase, configService } = options;
+  const { checkDatabase, configService, auth } = options;
 
   router.use(
     '/health',
@@ -93,6 +100,10 @@ function createVersionedRoutes(options: {
 
   if (configService) {
     router.use('/system', createSystemRouter(configService));
+  }
+
+  if (auth) {
+    router.use('/auth', createAuthRouter(auth));
   }
 
   return router;
