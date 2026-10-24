@@ -14,6 +14,7 @@ import {
   type OrganizationConfig,
   type OrganizationIdentity,
   type PaymentsConfig,
+  type PropertyOptions,
   type RolesConfig,
 } from './organization-config.schema.js';
 
@@ -29,6 +30,7 @@ export interface StoredConfigPayload {
   organization: OrganizationIdentity;
   branding: Branding;
   assetModel: AssetModel;
+  propertyOptions: PropertyOptions;
   modules: ModulesConfig;
   fees: FeesConfig;
   onboarding: OnboardingConfig;
@@ -104,6 +106,7 @@ export function toStoredPayload(config: OrganizationConfig): StoredConfigPayload
     organization: config.organization,
     branding: config.branding,
     assetModel: config.assetModel,
+    propertyOptions: config.propertyOptions,
     modules: config.modules,
     fees: config.fees,
     onboarding: config.onboarding,

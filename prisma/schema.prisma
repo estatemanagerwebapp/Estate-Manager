@@ -35,6 +35,7 @@ model Organization {
 
   configs OrganizationConfig[]
   users   User[]
+  estates Estate[]
 
   @@map("organizations")
 }
@@ -156,6 +157,139 @@ model AuditEvent {
   @@map("audit_events")
 }
 
+// ---------------------------------------------------------------------------
+// Phase 2 — Estate management, property registry and bulk import.
+//
+// The property registry is the concrete realization of the approved asset
+// architecture: configuration-driven asset types (`assetModel.types`) with
+// stable identity. A property's `identifier` is a human-facing registration
+// code derived at create time from configured address components; it is NOT a
+// substitute for the stable UUID `id` used by relationships.
+// ---------------------------------------------------------------------------
+
+/// A managed community or development. The natural duplicate-detection key
+/// is the organization-scoped slug.
+model Estate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Lowercase slug; unique per organization. Used as `{estate_slug}` in
+  /// identifier templates. Changing a slug does NOT rewrite existing property
+  /// identifiers (they were derived at create time and are immutable).
+  slug           String   @db.VarChar(64)
+  name           String   @db.VarChar(160)
+  /// Free-text location/description. Not part of the identifier.
+  address        String?  @db.VarChar(500)
+  status         String   @default("ACTIVE") @db.VarChar(20)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  properties    Property[]
+  importBatches ImportBatch[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+  @@map("estates")
+}
+
+/// A registered physical property (asset): building, unit, or land parcel.
+/// `typeKey` references a configured asset type; `parentPropertyId` models
+/// unit-in-building relationships with depth-1 (no unit-in-unit).
+model Property {
+  id                String   @id @default(uuid()) @db.Uuid
+  estateId          String   @map("estate_id") @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  /// Canonical registration identifier, derived at create time from the
+  /// configured identifier template + address components. Immutable.
+  identifier        String   @db.VarChar(200)
+  /// Config asset type key, validated against the organization configuration
+  /// at write time. Plain string so the database can evolve independently.
+  typeKey           String   @map("type_key") @db.VarChar(48)
+  /// For a unit property: the configured unit type key from the parent's
+  /// permitted unit types. Null for top-level properties.
+  unitTypeKey       String?  @map("unit_type_key") @db.VarChar(48)
+  /// Parent property for unit-in-building relationships. Depth 1: a
+  /// property that has a parent cannot itself have children.
+  parentPropertyId  String?  @map("parent_property_id") @db.Uuid
+  /// Structured address component values, keyed by configured component key.
+  /// Leading zeros are preserved (string values, never coerced to numbers).
+  addressComponents Json     @default("{}") @map("address_components")
+  status            String   @default("ACTIVE") @db.VarChar(20)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  estate          Estate     @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  parentProperty  Property?  @relation("propertyHierarchy", fields: [parentPropertyId], references: [id], onDelete: SetNull)
+  childProperties Property[] @relation("propertyHierarchy")
+
+  /// The canonical identifier is unique within its estate. This is the
+  /// backstop for all identifier-collision handling: the application pre-checks
+  /// and reports a friendly 409, and the database constraint guarantees no
+  /// duplicate is ever written even under a race.
+  @@unique([estateId, identifier])
+  @@index([organizationId, status])
+  @@index([estateId, typeKey])
+  @@index([parentPropertyId])
+  @@map("properties")
+}
+
+/// A bulk-import submission. One row per uploaded workbook.
+///
+/// Lifecycle: `PREVIEWED` (uploaded + validated, no property records written)
+/// -> `COMMITTED` (explicit commit created the valid rows) or
+/// `COMMIT_FAILED` (transaction aborted; re-validate then retry).
+/// `FAILED` marks a batch whose parsing itself blew up mid-write.
+///
+/// The `fingerprint` (SHA-256 of the raw file bytes) is the idempotency key:
+/// re-uploading the same file re-uses the open batch instead of creating a
+/// duplicate, and a committed fingerprint is rejected with the existing batch id.
+model ImportBatch {
+  id             String      @id @default(uuid()) @db.Uuid
+  estateId       String      @map("estate_id") @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  filename       String      @db.VarChar(255)
+  /// SHA-256 hex of the uploaded file contents.
+  fingerprint    String      @unique @db.VarChar(64)
+  status         String      @default("PREVIEWED") @db.VarChar(20)
+  /// The organization configuration version pinned at upload time. The
+  /// commit endpoint refuses to commit when the active config has advanced
+  /// past this version (config drift), forcing a re-validation.
+  configVersion  Int         @map("config_version")
+  /// Aggregated counts, updated at parse and at commit.
+  counts         Json        @default("{}") @map("counts")
+  uploadedById   String      @map("uploaded_by_id") @db.Uuid
+  uploadedAt     DateTime    @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  committedAt    DateTime?   @map("committed_at") @db.Timestamptz(6)
+  rows           ImportRow[]
+
+  estate Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
+
+  @@index([estateId, status])
+  @@map("import_batches")
+}
+
+/// One worksheet row's import result. Persisted so invalid rows stay visible
+/// after valid rows are committed, and so a failed commit can be retried.
+model ImportRow {
+  id         String  @id @default(uuid()) @db.Uuid
+  batchId    String  @map("batch_id") @db.Uuid
+  /// 1-based data row number in the worksheet (the header is row 0).
+  rowNumber  Int     @map("row_number")
+  status     String  @default("VALID") @db.VarChar(24)
+  /// Structured error reasons (human-readable, redacted — never the full
+  /// uploaded spreadsheet contents).
+  errors     Json    @default("[]")
+  /// Set when the row resulted in a created property (status CREATED).
+  propertyId String? @map("property_id") @db.Uuid
+  /// Redacted data snapshot of the row for review. Never full resident PII.
+  data       Json    @default("{}") @map("row_data")
+
+  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, status])
+  @@map("import_rows")
+}
+
 /// Outcome of an audited action. Values are `success` / `failure` to match
 /// the `AuditEventDto` wire contract in `@silverstone/shared`; Prisma keeps
 /// the stored value as-is (Postgres enums are case-sensitive).
@@ -176,4 +310,15 @@ enum AuditEventType {
   account_disabled
   user_role_changed
   admin_bootstrap
+  // Phase 2 — estate / property / import audit events.
+  estate_created
+  estate_updated
+  estate_status_changed
+  property_created
+  property_updated
+  property_status_changed
+  import_previewed
+  import_completed
+  import_commit_failed
+  property_options_updated
 }

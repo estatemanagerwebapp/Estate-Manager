@@ -20,6 +20,14 @@ import { PrismaAuditRepository } from './modules/audit/audit-repository.js';
 import { PermissionResolver } from './modules/auth/permission-resolver.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { UserService } from './modules/auth/user.service.js';
+import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
+import { EstateService } from './modules/estates/estate.service.js';
+import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
+import { PropertyService } from './modules/properties/property.service.js';
+import { PrismaImportRepository } from './modules/imports/import-repository.js';
+import { ImportService } from './modules/imports/import.service.js';
+import { PropertyOptionsService } from './modules/organization/property-options.service.js';
+import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 
 export interface AppDependencies {
   checkDatabase: () => Promise<void>;
@@ -33,6 +41,16 @@ export interface AppDependencies {
   };
   /** Resolved at startup: the organization's database id. */
   organizationId: string;
+  /** Phase 2 — estate management. */
+  estateService: EstateService;
+  /** Phase 2 — property registry. */
+  propertyService: PropertyService;
+  /** Phase 2 — bulk import. */
+  importService: ImportService;
+  /** Phase 2 — property options (read + update with optimistic concurrency). */
+  propertyOptionsService: PropertyOptionsService;
+  /** Loads the resolved configuration (asset types + property options + version). */
+  loadConfig: () => Promise<PropertyConfigSnapshot>;
 }
 
 export async function createAppDependencies(): Promise<AppDependencies> {
@@ -71,6 +89,39 @@ export async function createAppDependencies(): Promise<AppDependencies> {
 
   const userService = new UserService(users, sessions, audit, permissions);
 
+  // Phase 2 — estate management, property registry and bulk import.
+  const estates = new PrismaEstateRepository(prisma);
+  const estateService = new EstateService(estates, audit);
+
+  const properties = new PrismaPropertyRepository(prisma);
+  const propertyService = new PropertyService(properties, estates, audit);
+
+  const importRepo = new PrismaImportRepository(prisma);
+  const importService = new ImportService(importRepo, estates, properties, audit, prisma);
+
+  /**
+   * Loads the resolved organization configuration (asset types + property
+   * options + active version) at request time. The property and import
+   * services depend on it for type-key validation and identifier derivation.
+   */
+  const loadConfig = async (): Promise<PropertyConfigSnapshot> => {
+    const resolved = await configService.resolve();
+    return {
+      assetTypes: resolved.config.assetModel.types,
+      unitTypes: resolved.config.assetModel.unitTypes,
+      propertyOptions: resolved.config.propertyOptions,
+      configVersion: resolved.version,
+    };
+  };
+
+  const propertyOptionsService = new PropertyOptionsService(
+    configService,
+    repository,
+    audit,
+    loadConfig,
+    env.ORGANIZATION_SLUG,
+  );
+
   return {
     checkDatabase: async () => {
       await prisma.$queryRaw`SELECT 1`;
@@ -83,6 +134,11 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       permissions,
     },
     organizationId: await resolveOrganizationId(prisma, configService),
+    estateService,
+    propertyService,
+    importService,
+    propertyOptionsService,
+    loadConfig,
   };
 }
 

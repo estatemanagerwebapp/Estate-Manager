@@ -15,6 +15,32 @@ async function main(): Promise<void> {
       ...deps.auth,
       organizationId: deps.organizationId,
     },
+    estates: {
+      estateService: deps.estateService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+    },
+    properties: {
+      propertyService: deps.propertyService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      loadConfig: deps.loadConfig,
+    },
+    imports: {
+      importService: deps.importService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      loadConfig: deps.loadConfig,
+    },
+    propertyOptions: {
+      propertyOptionsService: deps.propertyOptionsService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+    },
   });
 
   const server = http.createServer(app);

@@ -48,17 +48,63 @@
       }
     ],
     "unitTypes": [
-      { "key": "studio", "label": "Studio", "bedrooms": 0, "active": true },
-      { "key": "one_bedroom", "label": "One bedroom", "bedrooms": 1, "active": true },
-      { "key": "two_bedroom", "label": "Two bedroom", "bedrooms": 2, "active": true },
-      { "key": "three_bedroom", "label": "Three bedroom", "bedrooms": 3, "active": true },
-      { "key": "four_bedroom", "label": "Four bedroom", "bedrooms": 4, "active": true },
-      { "key": "penthouse", "label": "Penthouse", "bedrooms": 4, "active": true },
-      { "key": "shop", "label": "Shop", "bedrooms": 0, "active": true },
-      { "key": "office", "label": "Office", "bedrooms": 0, "active": true }
+      {
+        "key": "studio",
+        "label": "Studio",
+        "bedrooms": 0,
+        "active": true
+      },
+      {
+        "key": "one_bedroom",
+        "label": "One bedroom",
+        "bedrooms": 1,
+        "active": true
+      },
+      {
+        "key": "two_bedroom",
+        "label": "Two bedroom",
+        "bedrooms": 2,
+        "active": true
+      },
+      {
+        "key": "three_bedroom",
+        "label": "Three bedroom",
+        "bedrooms": 3,
+        "active": true
+      },
+      {
+        "key": "four_bedroom",
+        "label": "Four bedroom",
+        "bedrooms": 4,
+        "active": true
+      },
+      {
+        "key": "penthouse",
+        "label": "Penthouse",
+        "bedrooms": 4,
+        "active": true
+      },
+      {
+        "key": "shop",
+        "label": "Shop",
+        "bedrooms": 0,
+        "active": true
+      },
+      {
+        "key": "office",
+        "label": "Office",
+        "bedrooms": 0,
+        "active": true
+      }
     ],
     "allowMultipleAssetsPerResident": true,
     "requireApprovalForAssignmentChanges": true
+  },
+  "propertyOptions": {
+    "addressComponents": [],
+    "identifierTemplate": "{estate_slug}",
+    "identifierMax": 120,
+    "$comment": "Address structure is deliberately not configured: no Silverstone convention is assumed. An administrator configures address components and the identifier template per deployment. Until a template that can render a unique, complete identifier exists, property creation is unavailable."
   },
   "modules": {
     "estates": true,

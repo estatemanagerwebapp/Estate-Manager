@@ -28,13 +28,24 @@ const AUDIT_EVENT_DB_MAP = {
   'account.disabled': 'account_disabled',
   'user.role_changed': 'user_role_changed',
   'admin.bootstrap': 'admin_bootstrap',
+  // Phase 2 — estate / property / import events.
+  'estate.created': 'estate_created',
+  'estate.updated': 'estate_updated',
+  'estate.status_changed': 'estate_status_changed',
+  'property.created': 'property_created',
+  'property.updated': 'property_updated',
+  'property.status_changed': 'property_status_changed',
+  'import.previewed': 'import_previewed',
+  'import.completed': 'import_completed',
+  'import.commit_failed': 'import_commit_failed',
+  'propertyOptions.updated': 'property_options_updated',
 } as const;
 
 export interface RecordAuditEventInput {
   organizationId: string;
   actorId: string | null;
   eventType: AuditEventType;
-  targetType: 'user' | 'session' | 'organization' | null;
+  targetType: 'user' | 'session' | 'organization' | 'estate' | 'property' | 'import' | null;
   targetId: string | null;
   requestId: string | null;
   outcome: 'success' | 'failure';

@@ -86,6 +86,17 @@ export const AUDIT_EVENT_TYPES = [
   'account.disabled',
   'user.role_changed',
   'admin.bootstrap',
+  // Phase 2 — estate / property / import events.
+  'estate.created',
+  'estate.updated',
+  'estate.status_changed',
+  'property.created',
+  'property.updated',
+  'property.status_changed',
+  'import.previewed',
+  'import.completed',
+  'import.commit_failed',
+  'propertyOptions.updated',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -97,7 +108,7 @@ export interface AuditEventDto {
   id: string;
   eventType: AuditEventType;
   actorId: string | null;
-  targetType: 'user' | 'session' | 'organization' | null;
+  targetType: 'user' | 'session' | 'organization' | 'estate' | 'property' | 'import' | null;
   targetId: string | null;
   requestId: string | null;
   outcome: 'success' | 'failure';

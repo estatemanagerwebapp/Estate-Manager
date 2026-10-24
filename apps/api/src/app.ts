@@ -8,6 +8,14 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
 import { createSystemRouter } from './modules/system/system.routes.js';
 import { createAuthRouter, type AuthRouteOptions } from './modules/auth/auth.routes.js';
+import { createEstateRouter, type EstateRouteOptions } from './modules/estates/estate.routes.js';
+import { createPropertyRouter, type PropertyRouteOptions } from './modules/properties/property.routes.js';
+import {
+  createImportEstateRouter,
+  createImportBatchRouter,
+  type ImportRouteOptions,
+} from './modules/imports/import.routes.js';
+import { createPropertyOptionsRouter, type PropertyOptionsRouteOptions } from './modules/organization/property-options.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -24,6 +32,14 @@ export interface AppOptions {
    * user-management endpoints) is mounted on the versioned router.
    */
   auth?: AuthRouteOptions;
+  /** Phase 2 estate wiring. */
+  estates?: EstateRouteOptions;
+  /** Phase 2 property registry wiring. */
+  properties?: PropertyRouteOptions;
+  /** Phase 2 bulk import wiring. */
+  imports?: ImportRouteOptions;
+  /** Phase 2 property options wiring. */
+  propertyOptions?: PropertyOptionsRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -64,6 +80,10 @@ export function createApp(options: AppOptions = {}): Express {
     checkDatabase: options.checkDatabase,
     configService: options.configService,
     auth: options.auth,
+    estates: options.estates,
+    properties: options.properties,
+    imports: options.imports,
+    propertyOptions: options.propertyOptions,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -81,9 +101,13 @@ function createVersionedRoutes(options: {
   checkDatabase?: () => Promise<void>;
   configService?: OrganizationConfigService;
   auth?: AuthRouteOptions;
+  estates?: EstateRouteOptions;
+  properties?: PropertyRouteOptions;
+  imports?: ImportRouteOptions;
+  propertyOptions?: PropertyOptionsRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
-  const { checkDatabase, configService, auth } = options;
+  const { checkDatabase, configService, auth, estates, properties, imports, propertyOptions } = options;
 
   router.use(
     '/health',
@@ -104,6 +128,27 @@ function createVersionedRoutes(options: {
 
   if (auth) {
     router.use('/auth', createAuthRouter(auth));
+  }
+
+  if (estates) {
+    router.use('/estates', createEstateRouter(estates));
+  }
+
+  if (properties) {
+    router.use('/properties', createPropertyRouter(properties));
+  }
+
+  if (imports) {
+    // Estate-scoped import routes (upload, list, template) live under
+    // /estates/:estateId/imports, so mount under /estates.
+    router.use('/estates', createImportEstateRouter(imports));
+    // Batch-level routes (detail, commit) live under /imports/:batchId,
+    // so they never collide with the estate router's /:estateId routes.
+    router.use('/imports', createImportBatchRouter(imports));
+  }
+
+  if (propertyOptions) {
+    router.use('/property-options', createPropertyOptionsRouter(propertyOptions));
   }
 
   return router;

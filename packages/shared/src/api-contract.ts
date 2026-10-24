@@ -19,6 +19,8 @@ export const ERROR_CODES = [
   'CONFIG_INVALID',
   'CONFIG_NOT_PROVISIONED',
   'INTERNAL_ERROR',
+  'IMPORT_INVALID_FILE',
+  'IMPORT_REJECTED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

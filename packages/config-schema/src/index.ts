@@ -2,6 +2,7 @@ export {
   ASSET_DETAIL_KINDS,
   AssetModelSchema,
   AssetTypeSchema,
+  AddressComponentSchema,
   BrandingSchema,
   CONFIG_ENTITY_KINDS,
   CONFIG_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ export {
   PAYMENT_ENVIRONMENTS,
   PAYMENT_PROVIDERS,
   PaymentsSchema,
+  PropertyOptionsSchema,
   RoleGrantSchema,
   RolesSchema,
   SUPPORTED_CONFIG_SCHEMA_MAJOR,
@@ -27,6 +29,7 @@ export {
   buildBaselineConfig,
 } from './organization-config.schema.js';
 export type {
+  AddressComponent,
   AssetModel,
   AssetType,
   Branding,
@@ -41,6 +44,7 @@ export type {
   OrganizationConfigInput,
   OrganizationIdentity,
   PaymentsConfig,
+  PropertyOptions,
   RolesConfig,
   UnitType,
 } from './organization-config.schema.js';

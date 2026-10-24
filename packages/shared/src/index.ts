@@ -67,3 +67,36 @@ export type {
   LivenessResponse,
   SystemInfo,
 } from './api-contract.js';
+
+export {
+  ESTATE_STATUSES,
+  PROPERTY_STATUSES,
+  IMPORT_BATCH_STATUSES,
+  PHASE2_AUDIT_EVENT_TYPES,
+} from './property-contract.js';
+export type {
+  AddressComponents,
+  CreateEstateInput,
+  CreatePropertyInput,
+  EstateDetailResponse,
+  EstateDto,
+  EstateListResponse,
+  EstateStatus,
+  ImportBatchDto,
+  ImportBatchStatus,
+  ImportCommitResponse,
+  ImportPreviewResponse,
+  ImportRowDto,
+  ImportRowStatus,
+  ImportTemplateInfo,
+  PropertyDetailResponse,
+  PropertyDto,
+  PropertyListResponse,
+  PropertyOptionsView,
+  PropertyStatus,
+  Phase2AuditEventType,
+  SetEstateStatusResponse,
+  UpdateEstateInput,
+  UpdatePropertyInput,
+  UpdatePropertyOptionsRequest,
+} from './property-contract.js';
