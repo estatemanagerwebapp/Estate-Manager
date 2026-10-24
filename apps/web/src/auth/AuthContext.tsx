@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -34,30 +35,38 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserDto | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped on every explicit login/logout so the initial /me probe (which
+  // fires on mount) cannot overwrite a session the user established while
+  // the probe was still in flight.
+  const sessionVersion = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const startedAt = sessionVersion.current;
     api
       .me()
       .then((body) => {
-        if (!cancelled) setUser(body.user);
+        // A login/logout happened after this probe started: its result is
+        // stale — do not clobber the new session state.
+        if (sessionVersion.current === startedAt) setUser(body.user);
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         // 401 / no session → anonymous. Any other failure is treated the
         // same so a broken API never blocks the login screen.
-        if (!cancelled) setUser(null);
-        void error;
+        if (sessionVersion.current === startedAt) setUser(null);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        // `loading` only means "initial session probe is in flight" — clear
+        // it unconditionally. Gating it on the version (as a previous
+        // revision did) left `loading` stuck at true whenever a login
+        // happened before the probe settled, which made `RequireGuest`
+        // refuse to redirect and stranded signed-in users on /login.
+        setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const body = await api.login(email, password);
+    sessionVersion.current += 1;
     setUser(body.user);
     return body;
   }, []);
@@ -69,10 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The session may already be gone; still clear local state.
       void error;
     }
+    sessionVersion.current += 1;
     setUser(null);
   }, []);
 
-  const clear = useCallback(() => setUser(null), []);
+  const clear = useCallback(() => {
+    sessionVersion.current += 1;
+    setUser(null);
+  }, []);
 
   const value = useMemo<AuthState>(
     () => ({ loading, user, login, logout, clear }),

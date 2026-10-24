@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { ToastProvider } from './toast/Toast';
 import { RequireGuest, RequireAuth, RequirePermission } from './auth/RouteGuards';
 import { AppShell } from './components/AppShell';
 import { FoundationPage } from './pages/FoundationPage';
@@ -21,61 +22,63 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          {/* Unauthenticated */}
-          <Route
-            path="/login"
-            element={
-              <RequireGuest>
-                <LoginPage />
-              </RequireGuest>
-            }
-          />
-          <Route
-            path="/forgot-password"
-            element={
-              <RequireGuest>
-                <ForgotPasswordPage />
-              </RequireGuest>
-            }
-          />
-          <Route
-            path="/reset-password"
-            element={
-              <RequireGuest>
-                <ResetPasswordPage />
-              </RequireGuest>
-            }
-          />
-
-          {/* Authenticated */}
-          <Route
-            element={
-              <RequireAuth>
-                <AppShell />
-              </RequireAuth>
-            }
-          >
-            <Route path="/app" element={<OverviewPage />} />
+      <ToastProvider>
+        <AuthProvider>
+          <Routes>
+            {/* Unauthenticated */}
             <Route
-              path="/app/users"
+              path="/login"
               element={
-                <RequirePermission permission="user.manage">
-                  <UsersPage />
-                </RequirePermission>
+                <RequireGuest>
+                  <LoginPage />
+                </RequireGuest>
               }
             />
-            <Route path="/app/account" element={<AccountPage />} />
-          </Route>
+            <Route
+              path="/forgot-password"
+              element={
+                <RequireGuest>
+                  <ForgotPasswordPage />
+                </RequireGuest>
+              }
+            />
+            <Route
+              path="/reset-password"
+              element={
+                <RequireGuest>
+                  <ResetPasswordPage />
+                </RequireGuest>
+              }
+            />
 
-          {/* Root: signed-in operators land on the overview; anonymous
-              visitors get the Phase 0 foundation landing. */}
-          <Route index element={<RootRedirect />} />
-          <Route path="/foundation" element={<FoundationPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
+            {/* Authenticated */}
+            <Route
+              element={
+                <RequireAuth>
+                  <AppShell />
+                </RequireAuth>
+              }
+            >
+              <Route path="/app" element={<OverviewPage />} />
+              <Route
+                path="/app/users"
+                element={
+                  <RequirePermission permission="user.manage">
+                    <UsersPage />
+                  </RequirePermission>
+                }
+              />
+              <Route path="/app/account" element={<AccountPage />} />
+            </Route>
+
+            {/* Root: signed-in operators land on the overview; anonymous
+                visitors get the Phase 0 foundation landing. */}
+            <Route index element={<RootRedirect />} />
+            <Route path="/foundation" element={<FoundationPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 );

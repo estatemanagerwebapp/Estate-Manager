@@ -10,6 +10,7 @@ import type {
   SetUserStatusResponse,
   SetUserRoleResponse,
   ApiErrorBody,
+  ApiSuccessBody,
 } from '@silverstone/shared';
 
 /**
@@ -18,8 +19,14 @@ import type {
  * on cross-origin requests in development (Vite proxy keeps them
  * same-origin, but the flag makes intent explicit and future-proof).
  *
+ * Every successful API response is an `ApiSuccessBody<T>` envelope: the
+ * payload lives under `data`. This client unwraps it, so `request<T>()`
+ * resolves to the payload itself — callers never see the envelope.
+ *
  * Errors are thrown as `ApiRequestError` with a stable `code` so calling
- * code can branch on it without parsing the message.
+ * code can branch on it without parsing the message. `NETWORK_ERROR`
+ * means the request never completed (proxy down, CORS, browser blocked
+ * it); other codes come from the server's error envelope.
  */
 
 export class ApiRequestError extends Error {
@@ -34,16 +41,32 @@ export class ApiRequestError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      credentials: 'include',
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...init.headers,
+      },
+    });
+  } catch (error) {
+    // Network-level failure: the request never completed. Re-throw as an
+    // ApiRequestError so callers can distinguish "server unreachable" from
+    // a 4xx/5xx response, and the reason survives to the UI for diagnosis.
+    const cause =
+      error instanceof Error
+        ? [error.message, error.cause instanceof Error ? error.cause.message : undefined]
+            .filter(Boolean)
+            .join(' — ')
+        : String(error);
+    throw new ApiRequestError('NETWORK_ERROR', `Request to ${path} failed: ${cause}`, undefined);
+  }
 
-  const body = (await response.json().catch(() => ({}))) as T & Partial<ApiErrorBody>;
+  const body = (await response.json().catch(() => ({}))) as
+    | Partial<ApiSuccessBody<unknown>>
+    | Partial<ApiErrorBody>;
 
   if (!response.ok) {
     const error = (body as Partial<ApiErrorBody>).error;
@@ -54,7 +77,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     );
   }
 
-  return body as T;
+  // Unwrap the `{ data }` envelope; the method's generic `T` is the payload.
+  return (body as Partial<ApiSuccessBody<T>>).data as T;
 }
 
 export interface UserFilter {

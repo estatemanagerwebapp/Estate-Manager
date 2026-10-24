@@ -1,23 +1,21 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Building2, MailWarning, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import { useToast } from '../toast/Toast';
 import { ApiRequestError } from '../api/client';
 
 /**
- * Login screen. Success → `/app`. Failures map to one of two copy lines:
- * a generic credentials error (the server never says *why*) and a rate-limit
- * message that tells the operator to wait.
+ * Login screen. On success the session is set in `AuthContext`, which makes
+ * the `RequireGuest` wrapper around this page redirect the operator to
+ * `/app` — the page itself performs no navigation so there is no race.
+ * Failures map to one of two copy lines: a generic credentials error (the
+ * server never says *why*) and a rate-limit message that tells the operator
+ * to wait.
  */
 export function LoginPage() {
   const { login } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const redirectTo =
-    (location.state as { from?: string } | null)?.from &&
-    (location.state as { from: string }).from.startsWith('/app')
-      ? (location.state as { from: string }).from
-      : '/app';
+  const toast = useToast();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,17 +30,36 @@ export function LoginPage() {
     setError(null);
     setNotice(null);
     try {
-      await login(email, password);
-      navigate(redirectTo, { replace: true });
+      const body = await login(email, password);
+      // `login` set the user in AuthContext; the RequireGuest wrapper now
+      // redirects to /app. No manual navigate here (avoids the v7 race
+      // where two simultaneous redirects wiped the form / stranded the
+      // operator on this page). The toast confirms the auth itself worked
+      // so a broken redirect is visible as "signed in but stayed on this
+      // page" rather than silent.
+      toast.success(`Signed in as ${body.user.email}. Redirecting to dashboard…`);
     } catch (err) {
       if (err instanceof ApiRequestError) {
         if (err.code === 'RATE_LIMITED') {
           setError('Too many sign-in attempts. Wait a moment and try again.');
+          toast.error('Rate limited — wait a moment before trying again.');
         } else {
           setError('Incorrect email or password.');
+          toast.error('Sign-in failed — check your credentials.');
         }
       } else {
+        // Non-ApiRequestError or a NETWORK_ERROR from the fetch client: the
+        // request never completed. Surface the underlying reason so an
+        // operator can diagnose (stale tab, wrong port, CORS, proxy down).
+        const reason =
+          err instanceof ApiRequestError && err.code === 'NETWORK_ERROR'
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        console.error('[silverstone] login network failure:', reason);
         setError('Could not reach the server. Check your connection and try again.');
+        toast.error(`Could not reach the server — ${reason}`, 8000);
       }
     } finally {
       setSubmitting(false);
