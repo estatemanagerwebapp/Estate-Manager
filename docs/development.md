@@ -16,7 +16,10 @@ devDependencies to the root `node_modules`.
 
 ## Database (per session)
 
-A disposable container keeps each session clean:
+A disposable container keeps each session clean — this is what CI uses
+(see `.github/workflows/ci.yml`). Local development now defaults to the
+Supabase project instead (see `docs/database.md` → Supabase); keep the
+docker container only when you want a fully offline/local database.
 
 ```sh
 docker run -d --name silverstone-pg \

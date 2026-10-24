@@ -57,6 +57,34 @@ against a dedicated `silverstone_test` database (see
 `docs/development.md`) so it never touches development or production
 rows.
 
+### Supabase
+
+Development currently runs against a Supabase project (pooler, **session**
+mode, port 5432) — the same schema, Prisma as the only data-access layer,
+so the backend is Postgres-agnostic by design.
+
+```sh
+# In .env (gitignored), DATABASE_URL is the Supabase session-pooler URI:
+postgresql://postgres.<ref>:<password>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
+```
+
+- **Session, not transaction, pooler.** Prisma keeps pooled connections
+  open between requests; transaction mode (port 6543) breaks that.
+- **URL-encode pooler passwords containing special characters** for both
+  the app and the Prisma CLI. The Supabase console hands you the raw
+  password; when pasting into `.env`, encode it:
+  `node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" '<pw>'`
+  An unencoded special character makes `prisma migrate deploy` fail with
+  P1001 "Can't reach database server" even though `psql` succeeds — the
+  CLI parses the URL, psql does not.
+- **Boot after the tables exist.** If the API starts while its database
+  has no tables yet (fresh Supabase, pre-migration), Prisma latches onto
+  that broken state and later reports `Inconsistent column data … UUID`
+  on the first real query. `prisma migrate deploy` + `db:seed` first,
+  then (re)start the API.
+- CI still uses a local docker `postgres:16-alpine` container
+  (`.github/workflows/ci.yml`), so Supabase is not a CI dependency.
+
 ## Seed
 
 ```sh
