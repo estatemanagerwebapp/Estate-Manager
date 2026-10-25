@@ -197,6 +197,8 @@ export interface ImportBatchDto {
     skippedCollision: number;
     failed: number;
   };
+  /** Rows identified as generated samples from the legacy workbook template. */
+  legacySampleRows: number;
   uploadedById: string;
   uploadedAt: string;
   committedAt: string | null;
@@ -226,7 +228,7 @@ export interface ImportRowDto {
 
 export interface ImportPreviewResponse {
   batch: ImportBatchDto;
-  /** Row-level results, capped for preview; the full set is persisted. */
+  /** Row-level results for every parsed row (at most the 5,000-row workbook limit). */
   rows: ImportRowDto[];
   /** When true, the active config has changed since this batch was validated. */
   configDrift: boolean;

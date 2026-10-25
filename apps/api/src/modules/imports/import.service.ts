@@ -7,6 +7,7 @@ import type {
   ImportBatchRecord,
   ImportRowRecord,
 } from './import-repository.js';
+import { DuplicateImportRowError } from './import-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import { parseWorkbook, type ParsedImportRow } from './excel-parser.js';
 import { deriveIdentifier } from '../../lib/property-identifier.js';
@@ -174,11 +175,22 @@ export class ImportService {
         data: {
           type: row.raw['type'] ?? '',
           __identifier: identifier,
+          ...(row.legacySampleCandidate ? { __legacySampleCandidate: true } : {}),
           ...row.raw,
         },
       };
     });
-    await this.imports.createRows(rowInputs);
+    try {
+      await this.imports.createRows(rowInputs);
+    } catch (error) {
+      // Rows and their batch are one logical preview unit. A row-number
+      // uniqueness conflict must not leave an empty/retryable batch behind.
+      await this.imports.deleteBatch(batch.id);
+      if (error instanceof DuplicateImportRowError) {
+        throw new AppError(409, 'CONFLICT', error.message, { cause: error });
+      }
+      throw error;
+    }
 
     // Re-fetch to get the created row ids (createMany does not return ids).
     const batchRows = await this.imports.rowsForBatch(batch.id);
@@ -231,6 +243,7 @@ export class ImportService {
     context: ImportServiceContext,
     batchId: string,
     activeConfigVersion: number,
+    confirmLegacySampleRows = false,
   ): Promise<ImportCommitResponse> {
     const batch = await this.imports.findById(batchId, context.organizationId);
     if (!batch) {
@@ -270,6 +283,16 @@ export class ImportService {
     }
 
     const batchRows = await this.imports.rowsForBatch(batchId);
+    const legacySampleRows = batchRows.filter(
+      (row) => row.data['__legacySampleCandidate'] === true,
+    );
+    if (legacySampleRows.length > 0 && !confirmLegacySampleRows) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        `This legacy template contains ${legacySampleRows.length} sample-like row(s) at worksheet row(s) ${legacySampleRows.map((row) => row.rowNumber).join(', ')}. Review them and explicitly confirm before committing.`,
+      );
+    }
     const validRows = batchRows.filter((row) => row.status === 'VALID');
     const collisionRows = batchRows.filter((row) => row.status === 'COLLISION');
 
@@ -569,6 +592,7 @@ function toBatchDto(
       failed: counts.failed ?? 0,
     },
     uploadedById: batch.uploadedById,
+    legacySampleRows: rows.filter((row) => row.data['__legacySampleCandidate'] === true).length,
     uploadedAt: batch.uploadedAt.toISOString(),
     committedAt: batch.committedAt?.toISOString() ?? null,
   };

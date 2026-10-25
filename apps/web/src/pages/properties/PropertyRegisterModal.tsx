@@ -44,8 +44,12 @@ export function PropertyRegisterModal({
   function isRequired(componentKey: string): boolean {
     const component = components.find((component) => component.key === componentKey);
     if (!component) return false;
-    return component.requiredForLabels.includes(
-      view?.assetTypes.find((type) => type.key === typeKey)?.label ?? typeKey,
+    if (component.notApplicableFor.includes(typeKey)) return false;
+    return (
+      component.requiredForLabels.length === 0 ||
+      component.requiredForLabels.includes(
+        view?.assetTypes.find((type) => type.key === typeKey)?.label ?? typeKey,
+      )
     );
   }
 
@@ -58,6 +62,29 @@ export function PropertyRegisterModal({
     setSubmitting(true);
     setError(null);
     setFieldErrors({});
+    const localErrors: Record<string, string> = {};
+    for (const component of components) {
+      const value = (values[component.key] ?? '').trim();
+      if (isRequired(component.key) && !value) {
+        localErrors[component.key] = 'This field is required.';
+      } else if (value.length > component.maxLength) {
+        localErrors[component.key] = `Use ${component.maxLength} characters or fewer.`;
+      } else if (value && component.pattern) {
+        try {
+          if (!new RegExp(component.pattern).test(value)) {
+            localErrors[component.key] = 'Value does not match the required format.';
+          }
+        } catch {
+          localErrors[component.key] = 'This field has an invalid configured format.';
+        }
+      }
+    }
+    if (Object.keys(localErrors).length) {
+      setFieldErrors(localErrors);
+      setError('Fix the highlighted fields and try again.');
+      setSubmitting(false);
+      return;
+    }
     try {
       const addressComponents: Record<string, string> = {};
       for (const [key, value] of Object.entries(values)) {
@@ -155,7 +182,7 @@ export function PropertyRegisterModal({
                 onChange={(event) =>
                   setValues((current) => ({ ...current, [component.key]: event.target.value }))
                 }
-                maxLength={255}
+                maxLength={component.maxLength}
                 required={required && view?.identifierConfigured !== false}
                 placeholder={component.key}
               />

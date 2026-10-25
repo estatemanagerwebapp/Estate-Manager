@@ -378,6 +378,71 @@ describe('property CRUD (integration)', () => {
     expect(property.typeKey).toBe('apartment_block');
   });
 
+  it('enforces required, pattern, and not-applicable rules through the API', async () => {
+    const estate = await createTestEstate();
+    const configRepo = new PrismaOrganizationConfigRepository(prisma);
+    const configService = new OrganizationConfigService(
+      configRepo,
+      loadBootstrapConfig,
+      'test_org',
+    );
+    const resolved = await configService.resolve();
+    const baseConfig = resolved.config;
+    const updateOptions = async (notApplicableFor: string[], identifierTemplate: string) => {
+      await configRepo.createRecord({
+        organizationSlug: 'test_org',
+        config: {
+          ...baseConfig,
+          propertyOptions: {
+            ...baseConfig.propertyOptions,
+            addressComponents: [
+              {
+                key: 'block',
+                label: 'Block',
+                requiredFor: ['apartment_block'],
+                notApplicableFor,
+                pattern: '0-9',
+                maxLength: 8,
+              },
+            ],
+            identifierTemplate,
+            identifierMax: 120,
+          },
+        } as never,
+      });
+    };
+
+    await updateOptions([], '{estate_slug}-{block}');
+    const missing = await authed()
+      .post('/api/v1/properties')
+      .send({
+        estateId: estate.id,
+        typeKey: 'apartment_block',
+      })
+      .expect(400);
+    expect(missing.body.error.details[0].path).toBe('addressComponents.block');
+    const invalidPattern = await authed()
+      .post('/api/v1/properties')
+      .send({
+        estateId: estate.id,
+        typeKey: 'apartment_block',
+        addressComponents: { block: 'bad' },
+      })
+      .expect(400);
+    expect(invalidPattern.body.error.details[0].path).toBe('addressComponents.block');
+
+    await updateOptions(['apartment_block'], '{estate_slug}');
+    await authed()
+      .post('/api/v1/properties')
+      .send({
+        estateId: estate.id,
+        typeKey: 'apartment_block',
+      })
+      .expect(201);
+
+    await configRepo.createRecord({ organizationSlug: 'test_org', config: baseConfig as never });
+  });
+
   it('returns 409 when the identifier collides with an existing property', async () => {
     const estate = await createTestEstate();
     const configRepo = new PrismaOrganizationConfigRepository(prisma);
@@ -666,6 +731,29 @@ describe('property-options optimistic concurrency (integration)', () => {
     expect(res.body.data.identifierTemplate).toBe('{estate_slug}-{block}');
     expect(res.body.data.configVersion).toBe(resolved.version + 1);
   });
+
+  it('accepts property-options values up to the canonical template limit', async () => {
+    const configRepo = new PrismaOrganizationConfigRepository(prisma);
+    const configService = new OrganizationConfigService(
+      configRepo,
+      loadBootstrapConfig,
+      'test_org',
+    );
+    const resolved = await configService.resolve();
+    const identifierTemplate = `{estate_slug}${'x'.repeat(130)}`;
+    const response = await authed()
+      .put('/api/v1/property-options')
+      .send({
+        baseVersion: resolved.version,
+        propertyOptions: {
+          addressComponents: [],
+          identifierTemplate,
+          identifierMax: 150,
+        },
+      })
+      .expect(200);
+    expect(response.body.data.identifierTemplate).toBe(identifierTemplate);
+  });
 });
 
 // =============================================================================
@@ -813,6 +901,58 @@ describe('import flow (integration)', () => {
     const properties = await authed().get(`/api/v1/properties?estateId=${estateId}`);
     expect(properties.status).toBe(200);
     expect(properties.body.data.properties).toHaveLength(1);
+  });
+
+  it('requires API confirmation before a recognizable legacy sample row can commit', async () => {
+    const { estateId } = await seedImportConfig();
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Properties');
+    sheet.addRow(['type', 'block', 'unit']);
+    sheet.addRow(['apartment_block', 'sample_block', 'sample_1']);
+    const instructions = workbook.addWorksheet('Instructions');
+    instructions.addRow(['Instructions']);
+    instructions.addRow([
+      'One property per row. The "type" column must be a configured asset type key. Address component values must satisfy the configured format. The identifier is derived from the configured template at import time.',
+    ]);
+    const bytes = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+    const preview = await uploadWorkbook(estateId, bytes, 'legacy-sample.xlsx').expect(201);
+    const batchId = preview.body.data.batch.id as string;
+    expect(preview.body.data.batch.legacySampleRows).toBe(1);
+
+    await authed().post(`/api/v1/imports/${batchId}/commit`).expect(409);
+    const commit = await authed()
+      .post(`/api/v1/imports/${batchId}/commit`)
+      .send({ confirmLegacySampleRows: true })
+      .expect(200);
+    expect(commit.body.data.createdPropertyIds).toHaveLength(1);
+  });
+
+  it('enforces unique worksheet row numbers within each import batch', async () => {
+    const { estateId } = await seedImportConfig();
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Properties');
+    sheet.addRow(['type', 'block', 'unit']);
+    const suffix = uniqueSuffix().slice(0, 6);
+    sheet.addRow(['apartment_block', suffix, '01']);
+    const bytes = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+    const preview = await uploadWorkbook(estateId, bytes, 'unique-row.xlsx').expect(201);
+    const stored = await prisma.importRow.findFirstOrThrow({
+      where: { batchId: preview.body.data.batch.id },
+    });
+    const repository = new PrismaImportRepository(prisma);
+    await expect(
+      repository.createRows([
+        {
+          batchId: stored.batchId,
+          rowNumber: stored.rowNumber,
+          status: 'VALID',
+          errors: [],
+          data: {},
+        },
+      ]),
+    ).rejects.toThrow('unique within a batch');
   });
 
   it('returns 404 for commit on an unknown batch', async () => {

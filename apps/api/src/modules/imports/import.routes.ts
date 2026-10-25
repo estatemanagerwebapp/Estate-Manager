@@ -242,12 +242,19 @@ export function createImportBatchRouter(options: ImportRouteOptions): Router {
     h.authGuard,
     h.managePermission,
     h.asyncWrap(async (req, res) => {
+      const body = z
+        .object({ confirmLegacySampleRows: z.boolean().optional() })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'Invalid import commit request');
+      }
       const context = h.makeContext(req, res);
       const config = await h.loadConfig();
       const response = await h.importService.commit(
         context,
         h.param(req, 'batchId'),
         config.configVersion,
+        body.data.confirmLegacySampleRows ?? false,
       );
       res.status(200).json({ data: response });
     }),

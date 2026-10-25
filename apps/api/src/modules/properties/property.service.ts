@@ -107,6 +107,7 @@ export class PropertyService {
 
     const typeKey = assertConfiguredTypeKey(config, input.typeKey);
     const addressComponents = input.addressComponents ?? {};
+    validateAddressComponents(config, typeKey, addressComponents);
 
     // Hierarchy validation (depth-1, parent type supports units, unit type allowed).
     let parentRecord: PropertyRecord | null = null;
@@ -273,6 +274,49 @@ export class PropertyService {
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
+  }
+}
+
+/** Enforce the configured property-field contract at the API boundary. */
+export function validateAddressComponents(
+  config: PropertyConfigSnapshot,
+  typeKey: string,
+  values: Record<string, string>,
+): void {
+  const components = config.propertyOptions.addressComponents;
+  const configuredKeys = new Set(components.map((component) => component.key));
+  const rejectField = (key: string, message: string): never => {
+    throw new AppError(400, 'VALIDATION_ERROR', message, {
+      details: [{ path: `addressComponents.${key}`, message }],
+    });
+  };
+  for (const key of Object.keys(values)) {
+    if (!configuredKeys.has(key)) {
+      rejectField(key, `Unknown address component "${key}"`);
+    }
+    if (typeof values[key] !== 'string') {
+      rejectField(key, `Address component "${key}" must be text`);
+    }
+  }
+  for (const component of components) {
+    const value = values[component.key]?.trim() ?? '';
+    const notApplicable = component.notApplicableFor.includes(typeKey);
+    const required = !notApplicable &&
+      (component.requiredFor.length === 0 || component.requiredFor.includes(typeKey));
+    if (required && value === '') {
+      rejectField(component.key, `Address component "${component.label}" is required`);
+    }
+    if (value === '') continue;
+    if (value.length > component.maxLength) {
+      rejectField(component.key, `Address component "${component.label}" exceeds ${component.maxLength} characters`);
+    }
+    if (component.pattern) {
+      let matches = false;
+      try { matches = new RegExp(component.pattern).test(value); } catch { /* invalid config is surfaced below */ }
+      if (!matches) {
+        rejectField(component.key, `Address component "${component.label}" does not match the required format`);
+      }
+    }
   }
 }
 

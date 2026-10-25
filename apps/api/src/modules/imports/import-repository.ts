@@ -1,5 +1,12 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 
+export class DuplicateImportRowError extends Error {
+  constructor() {
+    super('Import row numbers must be unique within a batch');
+    this.name = 'DuplicateImportRowError';
+  }
+}
+
 /**
  * Data access for bulk import batches and rows. Prisma types stop at this
  * boundary (ADR-0001).
@@ -94,16 +101,28 @@ export class PrismaImportRepository {
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       const rowNumbers = chunk.map((row) => row.rowNumber);
-      await this.prisma.importRow.createMany({
-        data: chunk.map((row) => ({
-          batchId: row.batchId,
-          rowNumber: row.rowNumber,
-          status: row.status,
-          errors: row.errors as Prisma.InputJsonValue,
-          data: row.data as Prisma.InputJsonValue,
-        })),
-        skipDuplicates: false,
-      });
+      try {
+        await this.prisma.importRow.createMany({
+          data: chunk.map((row) => ({
+            batchId: row.batchId,
+            rowNumber: row.rowNumber,
+            status: row.status,
+            errors: row.errors as Prisma.InputJsonValue,
+            data: row.data as Prisma.InputJsonValue,
+          })),
+          skipDuplicates: false,
+        });
+      } catch (error) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'code' in error &&
+          (error as { code?: unknown }).code === 'P2002'
+        ) {
+          throw new DuplicateImportRowError();
+        }
+        throw error;
+      }
       // createMany does not return the ids; fetch them back for the batch.
       // The row numbers are unique per batch, so this lookup is deterministic.
       const fetched = await this.prisma.importRow.findMany({
@@ -114,6 +133,10 @@ export class PrismaImportRepository {
       }
     }
     return result;
+  }
+
+  async deleteBatch(batchId: string): Promise<void> {
+    await this.prisma.importBatch.delete({ where: { id: batchId } });
   }
 
   async findBatchByFingerprint(

@@ -6,6 +6,7 @@ import {
 } from 'express';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
 import { z } from 'zod';
+import { PropertyOptionsSchema } from '@silverstone/config-schema';
 import { AppError } from '../../lib/errors.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
@@ -79,24 +80,7 @@ export function createPropertyOptionsRouter(options: PropertyOptionsRouteOptions
       const body = z
         .object({
           baseVersion: z.number().int().min(0),
-          propertyOptions: z
-            .object({
-              addressComponents: z
-                .array(
-                  z.object({
-                    key: z.string().min(1).max(48),
-                    label: z.string().min(1).max(120),
-                    requiredFor: z.array(z.string()).default([]),
-                    notApplicableFor: z.array(z.string()).default([]),
-                    pattern: z.string().max(200).nullable().optional(),
-                    maxLength: z.number().int().min(1).max(255),
-                  }),
-                )
-                .default([]),
-              identifierTemplate: z.string().min(1).max(120),
-              identifierMax: z.number().int().min(1).max(255),
-            })
-            .strict(),
+          propertyOptions: PropertyOptionsSchema,
         })
         .safeParse(req.body ?? {});
       if (!body.success) {

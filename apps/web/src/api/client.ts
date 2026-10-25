@@ -351,9 +351,10 @@ export const api = {
    * terminal state or when config drift means the active config has advanced
    * past the batch's pinned `configVersion`.
    */
-  commitImport: (batchId: string) =>
+  commitImport: (batchId: string, confirmLegacySampleRows = false) =>
     request<ImportCommitResponse>(`/api/v1/imports/${encodeURIComponent(batchId)}/commit`, {
       method: 'POST',
+      body: JSON.stringify({ confirmLegacySampleRows }),
     }),
 
   /**

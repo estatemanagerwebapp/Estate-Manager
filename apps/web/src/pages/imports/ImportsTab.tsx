@@ -114,16 +114,20 @@ export function ImportsTab({
   }
 
   async function handleCommit(batch: ImportBatchDto) {
+    const legacyWarning =
+      batch.legacySampleRows > 0
+        ? ` This older template contains ${batch.legacySampleRows} sample-like row(s). Review those rows carefully; confirmation will import every valid row, including them.`
+        : '';
     const ok = await confirm({
       title: `Commit ${batch.filename}?`,
-      body: `Creates ${batch.counts.valid} properties in one transaction. This action cannot be undone from the UI.`,
+      body: `Creates ${batch.counts.valid} properties in one transaction. This action cannot be undone from the UI.${legacyWarning}`,
       danger: true,
     });
     if (!ok) return;
     setCommitting(true);
     setError(null);
     try {
-      const result = await api.commitImport(batch.id);
+      const result = await api.commitImport(batch.id, batch.legacySampleRows > 0);
       toast.success(`Committed ${result.createdPropertyIds.length} properties.`);
       setSelected(null);
       void load();

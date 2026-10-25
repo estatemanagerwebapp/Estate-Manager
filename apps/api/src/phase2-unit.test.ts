@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { deriveIdentifier, identifierConfigured } from './lib/property-identifier.js';
 import { validateHierarchy, type HierarchyContext } from './modules/properties/property-rules.js';
 import type { PropertyOptions, AssetType } from '@silverstone/config-schema';
+import { validateAddressComponents } from './modules/properties/property.service.js';
+import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 
 // --- Helper factories -----------------------------------------------------------
 
@@ -188,6 +190,60 @@ describe('deriveIdentifier', () => {
     expect(identifierConfigured(makeOptions({ addressComponents: [] }) as PropertyOptions)).toBe(
       false,
     );
+  });
+});
+
+describe('configured property field validation', () => {
+  const config = {
+    assetTypes: [],
+    unitTypes: [],
+    configVersion: 1,
+    propertyOptions: {
+      addressComponents: [
+        {
+          key: 'block',
+          label: 'Block',
+          requiredFor: ['apartment_block'],
+          notApplicableFor: [],
+          maxLength: 8,
+          pattern: '0-9',
+        },
+        {
+          key: 'wing',
+          label: 'Wing',
+          requiredFor: ['apartment_block'],
+          notApplicableFor: ['apartment_block'],
+          maxLength: 4,
+          pattern: null,
+        },
+      ],
+      identifierTemplate: '{estate_slug}-{block}',
+      identifierMax: 120,
+    },
+  } as unknown as PropertyConfigSnapshot;
+
+  it('accepts valid values and an omitted field made not applicable', () => {
+    expect(() =>
+      validateAddressComponents(config, 'apartment_block', { block: '0-9' }),
+    ).not.toThrow();
+  });
+
+  it('rejects a missing required field and a value that fails its configured pattern', () => {
+    expect(() => validateAddressComponents(config, 'apartment_block', {})).toThrow(
+      /Block.*required/,
+    );
+    expect(() => validateAddressComponents(config, 'apartment_block', { block: 'bad' })).toThrow(
+      /required format/,
+    );
+  });
+
+  it('lets notApplicableFor override requiredFor and still validates supplied values', () => {
+    expect(() =>
+      validateAddressComponents(config, 'apartment_block', { block: '0-9', wing: 'N' }),
+    ).not.toThrow();
+    expect(() =>
+      validateAddressComponents(config, 'apartment_block', { block: '0-9', wing: 'NORTH' }),
+    ).toThrow(/4 characters/);
   });
 });
 

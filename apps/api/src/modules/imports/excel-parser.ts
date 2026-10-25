@@ -25,6 +25,8 @@ export interface ParsedImportRow {
   status: 'VALID' | 'ERROR' | 'DUPLICATE_IN_FILE' | 'COLLISION';
   /** Structured error reasons; empty when valid. */
   errors: string[];
+  /** Exact old template instruction text plus its generated sample-value shape. */
+  legacySampleCandidate?: boolean;
 }
 
 export interface ParseResult {
@@ -102,6 +104,11 @@ export async function parseWorkbook(
   });
 
   const rowLimit = context.maxRows ?? 5000;
+  const instructionsSheet = workbook.getWorksheet('Instructions');
+  const legacyInstructions = String(instructionsSheet?.getCell('A2').value ?? '').trim();
+  const legacyTemplate =
+    legacyInstructions ===
+    'One property per row. The "type" column must be a configured asset type key. Address component values must satisfy the configured format. The identifier is derived from the configured template at import time.';
   const seenInFile = new Set<string>();
   const rows: ParsedImportRow[] = [];
   let dataRowCount = 0;
@@ -122,7 +129,19 @@ export async function parseWorkbook(
     });
 
     const result = validateRow(raw, context, seenInFile);
-    rows.push({ rowNumber, raw, status: result.status, errors: result.errors });
+    const legacySampleCandidate =
+      legacyTemplate &&
+      context.propertyOptions.addressComponents.length > 0 &&
+      context.propertyOptions.addressComponents.some(
+        (component) => raw[component.key]?.trim() === `sample_${component.key}`,
+      );
+    rows.push({
+      rowNumber,
+      raw,
+      status: result.status,
+      errors: result.errors,
+      ...(legacySampleCandidate ? { legacySampleCandidate: true } : {}),
+    });
   });
 
   return {
@@ -271,6 +290,7 @@ export function buildTemplate(
   infoSheet.addRow([
     'One property per row. The "type" column must be a configured asset type key.',
   ]);
+  infoSheet.addRow(['Silverstone template format: 2']);
   // Note: the first worksheet contains only headers (row 1). No data row is
   // included so that downloading and re‑uploading the template cannot
   // inadvertently create properties. Detailed column guidance appears on
