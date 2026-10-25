@@ -438,6 +438,32 @@ describe('excel-parser: parseWorkbook row limit', () => {
     });
     expect(result.rows[0]?.status).toBe('COLLISION');
   });
+
+  it('reports physical worksheet row numbers and skips blank rows without renumbering', async () => {
+    const file = await writeTestWorkbook([
+      ['type', 'block', 'unit'],
+      ['apartment_block', '001', '01'],
+      [], // a physically blank worksheet row
+      ['apartment_block', '002', '02'],
+    ]);
+
+    const result = await parseWorkbook(file, {
+      assetTypes: [
+        { key: 'apartment_block', label: 'Apartment block', active: true, detailKind: 'PROPERTY' },
+      ],
+      ...makeTestContext(),
+      estateSlug: 'est',
+      estateId: 'est-1',
+      existingIdentifiers: new Set(),
+      renderIdentifier: () => ({ identifier: 'x', incomplete: false, reasons: [] }),
+      maxRows: 5000,
+    });
+
+    // Row 1 is the header, the blank row 3 is skipped, and the row after it
+    // keeps its own physical number: rows are never renumbered.
+    expect(result.rows.map((row) => row.rowNumber)).toEqual([2, 4]);
+    expect(result.dataRowTotal).toBe(2);
+  });
 });
 
 describe('excel-parser: buildTemplate', () => {
@@ -457,5 +483,35 @@ describe('excel-parser: buildTemplate', () => {
     );
     expect(result.columns).toEqual(['type', 'block', 'unit']);
     expect(result.buffer).toBeDefined();
+  });
+
+  it('produces a header-only first worksheet and keeps the guidance on the Instructions sheet', async () => {
+    const result = buildTemplate(
+      { id: 'est-1', slug: 'est', name: 'Test Estate' },
+      [
+        {
+          key: 'apartment_block',
+          label: 'Apartment block',
+          active: true,
+          detailKind: 'PROPERTY',
+        },
+      ],
+      makeTestContext().propertyOptions,
+      'One property per row.',
+    );
+
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await result.buffer) as unknown as Buffer);
+
+    const sheet = workbook.worksheets[0];
+    expect(sheet?.name).toBe('Properties');
+    // Row 1 holds the headers and nothing follows it: the template carries no
+    // importable sample row, so re-uploading it unchanged imports nothing.
+    expect(sheet?.actualRowCount).toBe(1);
+    const headers = (sheet?.getRow(1).values as unknown[]).slice(1);
+    expect(headers).toEqual(['type', 'block', 'unit']);
+    // The sample-row guidance lives on the second sheet, never as data.
+    expect(workbook.worksheets[1]?.name).toBe('Instructions');
   });
 });

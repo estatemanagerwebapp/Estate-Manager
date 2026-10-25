@@ -83,6 +83,16 @@ export const EnvSchema = z
     SESSION_LIFETIME_DAYS: z.coerce.number().int().min(1).max(30).default(7),
 
     /**
+     * Login attempts allowed per auth-limiter window (15 minutes).
+     *
+     * This limiter is separate from the global `RATE_LIMIT_MAX` because login
+     * is the credential-guessing surface and therefore far stricter. The
+     * default is the production value; disposable test harnesses raise it so a
+     * whole suite of sign-ins from one IP never trips the limiter.
+     */
+    AUTH_LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+
+    /**
      * The base URL of the web console, used to build absolute reset links in
      * password-reset emails. Must be an http(s) URL.
      */

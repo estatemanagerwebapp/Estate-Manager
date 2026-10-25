@@ -61,8 +61,11 @@ export default defineConfig({
 
   webServer: [
     {
-      // Reset the disposable test database, then start the API against it.
-      command: `npm run e2e:reset && ${bin('tsx')} src/main.ts`,
+      // Rebuild the workspace packages first: both the API and the web app
+      // resolve `@silverstone/shared` and `@silverstone/config-schema` from
+      // their built `dist/`, so a stale build would silently test the previous
+      // contract. Then reset the disposable test database and start the API.
+      command: `npm --prefix "${REPO_ROOT}" run build:packages && npm run e2e:reset && ${bin('tsx')} src/main.ts`,
       cwd: `${REPO_ROOT}/apps/api`,
       url: `${E2E_API_ORIGIN}/api/v1/health`,
       timeout: 180_000,
@@ -81,6 +84,9 @@ export default defineConfig({
         LOG_LEVEL: 'warn',
         RATE_LIMIT_WINDOW_MS: '60000',
         RATE_LIMIT_MAX: '1000',
+        // The whole suite signs in many times from one IP; the production
+        // login cap (10 per 15 minutes) would otherwise fail the run.
+        AUTH_LOGIN_RATE_LIMIT_MAX: '1000',
         DATABASE_URL: E2E_DATABASE_URL,
         SILVERSTONE_TEST_DATABASE_URL: E2E_DATABASE_URL,
         ORGANIZATION_SLUG: 'silverstone',

@@ -273,7 +273,9 @@ model ImportBatch {
 model ImportRow {
   id         String  @id @default(uuid()) @db.Uuid
   batchId    String  @map("batch_id") @db.Uuid
-  /// 1-based data row number in the worksheet (the header is row 0).
+  /// 1-based physical row number in the first worksheet of the uploaded workbook.
+  /// Row 1 is the required header. Data rows retain their original worksheet
+  /// row numbers; fully blank rows are skipped without renumbering.
   rowNumber  Int     @map("row_number")
   status     String  @default("VALID") @db.VarChar(24)
   /// Structured error reasons (human-readable, redacted — never the full

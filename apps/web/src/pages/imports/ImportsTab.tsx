@@ -421,7 +421,7 @@ function BatchDetail({
               <thead className="sticky top-0 bg-(--color-surface) text-[11px] text-(--color-ink-muted)">
                 <tr>
                   <th scope="col" className="px-3 py-2 font-medium">
-                    Row
+                    Worksheet row
                   </th>
                   <th scope="col" className="px-3 py-2 font-medium">
                     Status

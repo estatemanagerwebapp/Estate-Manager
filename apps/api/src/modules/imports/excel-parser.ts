@@ -15,7 +15,9 @@ import { createHash } from 'node:crypto';
  */
 
 export interface ParsedImportRow {
-  /** 1-based data row number (the header is row 0). */
+  /** 1-based physical row number in the first worksheet of the uploaded workbook.
+   * Row 1 is the required header. Data rows retain their original worksheet
+   * row numbers; fully blank rows are skipped without renumbering. */
   rowNumber: number;
   /** The raw cell values as strings. */
   raw: Record<string, string>;
@@ -240,7 +242,7 @@ function cellToString(value: ExcelJS.CellValue): string {
  */
 export function buildTemplate(
   estate: { id: string; slug: string; name: string },
-  assetTypes: ImportRowContext['assetTypes'],
+  _assetTypes: ImportRowContext['assetTypes'],
   propertyOptions: ImportRowContext['propertyOptions'],
   instructions: string,
 ): { buffer: Promise<Buffer>; columns: string[] } {
@@ -261,13 +263,6 @@ export function buildTemplate(
   }));
   worksheet.columns = columnInfos as unknown as typeof worksheet.columns;
 
-  // Sample row.
-  const sampleRow: Record<string, string> = { type: assetTypes[0]?.key ?? '' };
-  for (const component of propertyOptions.addressComponents) {
-    sampleRow[component.key] = `sample_${component.key}`;
-  }
-  worksheet.addRow(sampleRow);
-
   // Instructions on a second sheet.
   const infoSheet = workbook.addWorksheet('Instructions');
   infoSheet.addRow(['Instructions']);
@@ -276,6 +271,10 @@ export function buildTemplate(
   infoSheet.addRow([
     'One property per row. The "type" column must be a configured asset type key.',
   ]);
+  // Note: the first worksheet contains only headers (row 1). No data row is
+  // included so that downloading and re‑uploading the template cannot
+  // inadvertently create properties. Detailed column guidance appears on
+  // the Instructions sheet above.
 
   // exceljs returns a Node Buffer (typed against its own Buffer alias) that is
   // structurally identical to node:buffer's. Cast through unknown to keep

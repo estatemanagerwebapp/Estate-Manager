@@ -237,16 +237,15 @@ export function PropertyOptionsPage() {
               />
               <CardBody>
                 <div className="mb-4">
-                  <InfoBanner tone="warning">
+                  <InfoBanner tone="info">
                     <p>
-                      <strong>Partial read API.</strong> The property-options read endpoint returns
-                      the identifier template and each address component&apos;s key, label and
-                      required types — but not the current identifier length cap, component
-                      patterns, component length caps or the "not applicable to" lists.
+                      <strong>Property options read API.</strong> The read endpoint returns the
+                      identifier template and length cap, plus each address component&apos;s key,
+                      label, required types, length cap, pattern and "not applicable to" list.
                     </p>
                     <p className="mt-1">
-                      Those four fields are sent at their schema defaults whenever you save. Set
-                      them explicitly if you need a value other than the default.
+                      These values are loaded into the form, so saving without changing them keeps
+                      the configured values.
                     </p>
                   </InfoBanner>
                 </div>
@@ -492,7 +491,7 @@ function AddressComponentEditor({
             maxLength={120}
           />
         </Field>
-        <Field label="Max length" hint="1–120. Current value is not returned by the read API.">
+        <Field label="Max length" hint="1–120 characters.">
           <input
             type="number"
             min={1}
@@ -504,7 +503,7 @@ function AddressComponentEditor({
             }
           />
         </Field>
-        <Field label="Pattern (optional)" hint="Current value is not returned by the read API.">
+        <Field label="Pattern (optional)" hint="A simple regular expression the value must match.">
           <input
             className={inputClass}
             value={component.pattern ?? ''}
@@ -536,8 +535,7 @@ function AddressComponentEditor({
         />
       </div>
       <p className="mt-1 text-[11px] text-(--color-ink-muted)">
-        The "not applicable to" list is not returned by the read API; it starts empty and is applied
-        on save.
+        The "not applicable to" list overrides "required for" for the listed asset types.
       </p>
       <div className="mt-2 flex justify-end">
         <Button variant="ghost" size="sm" onClick={onRemove}>
@@ -594,14 +592,18 @@ function emptyDraft(view: PropertyOptionsView): FormDraft {
   const labelToKey = new Map(view.assetTypes.map((type) => [type.label, type.key]));
   return {
     identifierTemplate: view.identifierTemplate,
-    identifierMax: 120,
+    // Recover the configured caps from the read view rather than hardcoding
+    // them, so a save without edits round-trips the stored configuration.
+    // The `??` fallbacks keep the form usable against an API that predates
+    // these fields, and match the configuration schema's own defaults.
+    identifierMax: view.identifierMax ?? 120,
     addressComponents: view.addressComponents.map((component) => ({
       key: component.key,
       label: component.label,
       requiredFor: component.requiredForLabels.map((label) => labelToKey.get(label) ?? label),
-      notApplicableFor: [],
-      pattern: null,
-      maxLength: 64,
+      notApplicableFor: component.notApplicableFor ?? [],
+      pattern: component.pattern ?? null,
+      maxLength: component.maxLength ?? 64,
     })),
   };
 }

@@ -8,6 +8,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import type { Worksheet } from 'exceljs';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { createApp } from './app.js';
@@ -708,7 +709,112 @@ async function seedImportConfig(): Promise<{ estateId: string; estateSlug: strin
   return { estateId: estate.id, estateSlug: estate.slug };
 }
 
+/**
+ * Download the server-generated template as raw bytes.
+ *
+ * `responseType('blob')` makes superagent buffer the response instead of
+ * decoding it as text, which would corrupt the `.xlsx` payload.
+ */
+async function downloadTemplate(estateId: string): Promise<Buffer> {
+  const res = await authed()
+    .get(`/api/v1/estates/${estateId}/imports/template`)
+    .responseType('blob')
+    .expect(200);
+  return res.body as unknown as Buffer;
+}
+
+/** Upload a workbook to an estate's import endpoint. */
+function uploadWorkbook(estateId: string, bytes: Buffer, filename: string) {
+  return authed().post(`/api/v1/estates/${estateId}/imports`).attach('file', bytes, {
+    filename,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
+/** The header labels of a worksheet, in column order. */
+function headerLabels(sheet: Worksheet | undefined): string[] {
+  if (!sheet) return [];
+  const values = sheet.getRow(1).values as unknown[];
+  return values.slice(1).map((value) => String(value ?? ''));
+}
+
 describe('import flow (integration)', () => {
+  it('returns template with correct headers and structure', async () => {
+    const { estateId } = await seedImportConfig();
+    const res = await authed().get(`/api/v1/estates/${estateId}/imports/template`);
+    expect(res.headers['content-type']).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(res.headers['content-disposition']).toContain(`properties-${estateId.slice(0, 8)}.xlsx`);
+    // The response body is a binary .xlsx workbook.
+    // supertest exposes the body as a string for binary content types.
+    expect((res.text || '').length).toBeGreaterThan(0);
+  });
+
+  it('serves a template whose Properties worksheet is header-only', async () => {
+    const { estateId } = await seedImportConfig();
+    const bytes = await downloadTemplate(estateId);
+
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes);
+    const sheet = workbook.worksheets[0];
+    expect(sheet?.name).toBe('Properties');
+    // Row 1 holds the headers and nothing follows it: the template carries no
+    // importable sample row, so re-uploading it unchanged imports nothing.
+    expect(sheet?.actualRowCount).toBe(1);
+    expect(headerLabels(sheet)).toEqual(['type', 'block', 'unit']);
+  });
+
+  it('creates no properties when the unchanged template is uploaded', async () => {
+    const { estateId } = await seedImportConfig();
+    const bytes = await downloadTemplate(estateId);
+
+    const preview = await uploadWorkbook(estateId, bytes, 'properties-untouched.xlsx');
+    expect(preview.status).toBe(201);
+    expect(preview.body.data.batch.counts.total).toBe(0);
+    expect(preview.body.data.batch.counts.valid).toBe(0);
+    expect(preview.body.data.rows).toHaveLength(0);
+
+    const commit = await authed().post(`/api/v1/imports/${preview.body.data.batch.id}/commit`);
+    expect(commit.status).toBe(200);
+    expect(commit.body.data.createdPropertyIds).toHaveLength(0);
+
+    const properties = await authed().get(`/api/v1/properties?estateId=${estateId}`);
+    expect(properties.status).toBe(200);
+    expect(properties.body.data.properties).toHaveLength(0);
+  });
+
+  it('creates exactly one property from a template carrying one deliberate row', async () => {
+    const { estateId } = await seedImportConfig();
+    const bytes = await downloadTemplate(estateId);
+
+    // Add one valid row directly beneath the header: it is worksheet row 2.
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes);
+    const sheet = workbook.worksheets[0];
+    sheet?.addRow(['apartment_block', 'Block A', '12']);
+    const populated = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+
+    const preview = await uploadWorkbook(estateId, populated, 'properties-populated.xlsx');
+    expect(preview.status).toBe(201);
+    expect(preview.body.data.batch.counts.total).toBe(1);
+    expect(preview.body.data.batch.counts.valid).toBe(1);
+    expect(preview.body.data.rows).toHaveLength(1);
+    // Row 1 is the header, so the first data row is worksheet row 2.
+    expect(preview.body.data.rows[0].rowNumber).toBe(2);
+    expect(preview.body.data.rows[0].status).toBe('VALID');
+
+    const commit = await authed().post(`/api/v1/imports/${preview.body.data.batch.id}/commit`);
+    expect(commit.status).toBe(200);
+    expect(commit.body.data.createdPropertyIds).toHaveLength(1);
+
+    const properties = await authed().get(`/api/v1/properties?estateId=${estateId}`);
+    expect(properties.status).toBe(200);
+    expect(properties.body.data.properties).toHaveLength(1);
+  });
+
   it('returns 404 for commit on an unknown batch', async () => {
     const res = await authed().post('/api/v1/imports/00000000-0000-0000-0000-000000000000/commit');
     expect(res.status).toBe(404);

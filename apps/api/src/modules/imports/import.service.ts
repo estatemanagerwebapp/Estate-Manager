@@ -483,20 +483,16 @@ export class ImportService {
   ): Promise<ImportTemplateInfo> {
     const estate = await this.requireEstate(context.organizationId, estateId);
     const columns = ['type', ...config.propertyOptions.addressComponents.map((c) => c.key)];
-    const sampleRow: Record<string, string> = { type: config.assetTypes[0]?.key ?? '' };
-    for (const component of config.propertyOptions.addressComponents) {
-      sampleRow[component.key] = `sample_${component.key}`;
-    }
     return {
       estateId: estate.id,
       estateName: estate.name,
       configVersion: config.configVersion,
       columns,
-      sampleRow,
       instructions:
         'One property per row. The "type" column must be a configured asset type key. ' +
         'Address component values must satisfy the configured format. ' +
-        'The identifier is derived from the configured template at import time.',
+        'The identifier is derived from the configured template at import time. ' +
+        'The Properties worksheet contains headers only — add your own rows starting at row 2.',
     };
   }
 

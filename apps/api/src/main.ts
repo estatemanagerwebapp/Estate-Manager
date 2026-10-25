@@ -22,6 +22,11 @@ async function main(): Promise<void> {
     auth: {
       ...deps.auth,
       organizationId: deps.organizationId,
+      // The auth router carries its own, much stricter limiter for the
+      // credential-guessing surface. It is configured from the environment so
+      // disposable test harnesses can raise it without touching the
+      // production default.
+      rateLimits: { loginPerWindow: env.AUTH_LOGIN_RATE_LIMIT_MAX },
     },
     estates: {
       estateService: deps.estateService,

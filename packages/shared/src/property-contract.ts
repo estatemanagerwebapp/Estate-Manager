@@ -148,9 +148,17 @@ export interface PropertyOptionsView {
     label: string;
     /** Human-readable list of which asset types require this. */
     requiredForLabels: string[];
+    /** Asset type keys where this component does not apply (overrides required). */
+    notApplicableFor: string[];
+    /** Optional regex the component value must match when supplied. */
+    pattern: string | null;
+    /** Maximum character length for the component value. */
+    maxLength: number;
   }>;
   /** The identifier template string, e.g. `{estate_slug}-{block}-{unit}`. */
   identifierTemplate: string;
+  /** Maximum character length for the derived identifier. */
+  identifierMax: number;
   /** Available asset type options (code + label + active). */
   assetTypes: Array<{ key: string; label: string; active: boolean; detailKind: string }>;
   /** Available unit type options. */
@@ -205,7 +213,9 @@ export type ImportRowStatus =
 export interface ImportRowDto {
   id: string;
   batchId: string;
-  /** 1-based data row number in the worksheet (header is row 0). */
+  /** 1-based physical row number in the first worksheet of the uploaded workbook.
+   Row 1 is the required header. Data rows retain their original worksheet
+   row numbers; fully blank rows are skipped without renumbering. */
   rowNumber: number;
   status: ImportRowStatus;
   /** Structured error reasons; empty when the row is valid/created. */
@@ -233,6 +243,13 @@ export interface ImportCommitResponse {
 /**
  * Template download descriptor. The template is generated server-side from
  * the active configuration so its columns never drift from allowed values.
+ *
+ * The actual download is a binary `.xlsx` workbook — this interface describes
+ * its structural metadata, it is not the HTTP response body.
+ *
+ * The generated workbook's first worksheet is header-only: row 1 holds the
+ * column headers and no importable sample row follows. Re-uploading the
+ * unchanged template therefore creates no properties.
  */
 export interface ImportTemplateInfo {
   estateId: string;
@@ -240,9 +257,7 @@ export interface ImportTemplateInfo {
   configVersion: number;
   /** Column headers in the order they appear in the template. */
   columns: string[];
-  /** Sample row values (clearly marked as an example). */
-  sampleRow: Record<string, string>;
-  /** Free-text instructions embedded in the worksheet. */
+  /** Free-text instructions embedded in the worksheet's Instructions sheet. */
   instructions: string;
 }
 

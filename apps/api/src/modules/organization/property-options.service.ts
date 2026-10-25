@@ -129,6 +129,9 @@ function buildPropertyOptionsView(snapshot: PropertyConfigSnapshot): PropertyOpt
     key: component.key,
     label: component.label,
     requiredForLabels: (component.requiredFor ?? []).map((key) => typeKeyToLabel.get(key) ?? key),
+    notApplicableFor: component.notApplicableFor ?? [],
+    pattern: component.pattern ?? null,
+    maxLength: component.maxLength ?? 64,
   }));
 
   return {
@@ -136,6 +139,7 @@ function buildPropertyOptionsView(snapshot: PropertyConfigSnapshot): PropertyOpt
     identifierConfigured: identifierConfigured(propertyOptions),
     addressComponents,
     identifierTemplate: propertyOptions.identifierTemplate,
+    identifierMax: propertyOptions.identifierMax ?? 120,
     assetTypes: assetTypes.map((type) => ({
       key: type.key,
       label: type.label,
