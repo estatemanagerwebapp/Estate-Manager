@@ -31,13 +31,11 @@ export class PropertyOptionsService {
    * Returns the active property-options block, rendered into the view shape
    * consumed by the frontend.
    */
-  async view(
-    _context: {
-      organizationId: string;
-      actorId: string | null;
-      requestId: string | null;
-    },
-  ): Promise<PropertyOptionsView> {
+  async view(_context: {
+    organizationId: string;
+    actorId: string | null;
+    requestId: string | null;
+  }): Promise<PropertyOptionsView> {
     const snapshot = await this.loadConfig();
     return buildPropertyOptionsView(snapshot);
   }
@@ -95,10 +93,14 @@ export class PropertyOptionsService {
       actorId: context.actorId,
       eventType: 'propertyOptions.updated',
       targetType: 'organization',
-      targetId: created.version.toString(),
+      targetId: null, // organization-level event; the version is recorded in metadata
       requestId: context.requestId,
       outcome: 'success',
-      metadata: { version: created.version, baseVersion: input.baseVersion },
+      metadata: {
+        version: created.version,
+        baseVersion: input.baseVersion,
+        organizationSlug: this.organizationSlug,
+      },
     });
 
     return buildPropertyOptionsView({

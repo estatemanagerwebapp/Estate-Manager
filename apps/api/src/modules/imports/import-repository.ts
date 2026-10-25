@@ -51,7 +51,21 @@ export type CreateRowInput = {
   data: Record<string, unknown>;
 };
 
-type BatchRow = Prisma.ImportBatchGetPayload<{ select: { id: true; estateId: true; organizationId: true; filename: true; fingerprint: true; status: true; configVersion: true; counts: true; uploadedById: true; uploadedAt: true; committedAt: true } }>;
+type BatchRow = Prisma.ImportBatchGetPayload<{
+  select: {
+    id: true;
+    estateId: true;
+    organizationId: true;
+    filename: true;
+    fingerprint: true;
+    status: true;
+    configVersion: true;
+    counts: true;
+    uploadedById: true;
+    uploadedAt: true;
+    committedAt: true;
+  };
+}>;
 
 export class PrismaImportRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -177,11 +191,28 @@ export class PrismaImportRepository {
    * transaction finishes (commit or abort), then re-reads the status and
    * fails with 409 if the batch is no longer PREVIEWED.
    */
-  async lockBatch(tx: Prisma.TransactionClient, batchId: string): Promise<ImportBatchRecord | null> {
-    const rows = await tx.$queryRaw<Array<{ id: string; status: string; counts: unknown; estate_id: string; organization_id: string; filename: string; fingerprint: string; config_version: number; uploaded_by_id: string; uploaded_at: Date; committed_at: Date | null }>>`
+  async lockBatch(
+    tx: Prisma.TransactionClient,
+    batchId: string,
+  ): Promise<ImportBatchRecord | null> {
+    const rows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        status: string;
+        counts: unknown;
+        estate_id: string;
+        organization_id: string;
+        filename: string;
+        fingerprint: string;
+        config_version: number;
+        uploaded_by_id: string;
+        uploaded_at: Date;
+        committed_at: Date | null;
+      }>
+    >`
       SELECT id, estate_id, organization_id, filename, fingerprint, status, config_version, counts, uploaded_by_id, uploaded_at, committed_at
       FROM import_batches
-      WHERE id = ${batchId}
+      WHERE id = ${batchId}::uuid
       FOR UPDATE
     `;
     if (rows.length === 0) return null;
@@ -207,10 +238,7 @@ export class PrismaImportRepository {
    * Runs on the tx client so the row status stays consistent with the
    * property inserts in the same transaction.
    */
-  async markRowsSkipped(
-    tx: Prisma.TransactionClient,
-    rowIds: string[],
-  ): Promise<void> {
+  async markRowsSkipped(tx: Prisma.TransactionClient, rowIds: string[]): Promise<void> {
     if (rowIds.length === 0) return;
     await tx.importRow.updateMany({
       where: { id: { in: rowIds } },

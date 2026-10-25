@@ -2,7 +2,11 @@ import type { PrismaClient } from '@prisma/client';
 import { AppError } from '../../lib/errors.js';
 import type { PrismaEstateRepository, EstateRecord } from '../estates/estate-repository.js';
 import type { PrismaPropertyRepository } from '../properties/property-repository.js';
-import type { PrismaImportRepository, ImportBatchRecord, ImportRowRecord } from './import-repository.js';
+import type {
+  PrismaImportRepository,
+  ImportBatchRecord,
+  ImportRowRecord,
+} from './import-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import { parseWorkbook, type ParsedImportRow } from './excel-parser.js';
 import { deriveIdentifier } from '../../lib/property-identifier.js';
@@ -100,29 +104,68 @@ export class ImportService {
       );
     }
 
+    // The fingerprint is the idempotency key for re-uploads. An open batch is
+    // returned as-is (no duplicate rows); a terminal batch is refused so the
+    // same workbook cannot be imported twice.
+    const existingBatch = await this.imports.findBatchByFingerprint(
+      context.organizationId,
+      result.fingerprint,
+    );
+    if (existingBatch) {
+      if (existingBatch.status === 'PREVIEWED') {
+        const existingRows = await this.imports.rowsForBatch(existingBatch.id);
+        return this.toPreviewResponse(estate, existingBatch, existingRows, config.configVersion);
+      }
+      throw new AppError(
+        409,
+        'CONFLICT',
+        `This file has already been imported (batch ${existingBatch.id}). Upload a different workbook or delete that batch first.`,
+      );
+    }
+
     // Persist the batch + rows.
     const counts = aggregateCounts(result.rows);
-    const batch = await this.imports.createBatch({
-      estateId: estate.id,
-      organizationId: context.organizationId,
-      filename: input.filename,
-      fingerprint: result.fingerprint,
-      configVersion: config.configVersion,
-      counts,
-      uploadedById: context.actorId ?? '',
-    });
+    let batch: ImportBatchRecord;
+    try {
+      batch = await this.imports.createBatch({
+        estateId: estate.id,
+        organizationId: context.organizationId,
+        filename: input.filename,
+        fingerprint: result.fingerprint,
+        configVersion: config.configVersion,
+        counts,
+        uploadedById: context.actorId ?? '',
+      });
+    } catch (error) {
+      // Two concurrent uploads of the same workbook can both pass the
+      // pre-check; the unique fingerprint index is the backstop. Surface a
+      // 409 instead of a 500 (no P2002 ever escapes as a programmatic error).
+      const isUniqueViolation =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code?: unknown }).code === 'P2002';
+      if (!isUniqueViolation) throw error;
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'This file is already being imported. Wait for the existing batch to finish before uploading it again.',
+        { cause: error },
+      );
+    }
 
     const rowInputs = result.rows.map((row) => {
       // Embed the derived identifier so the commit path can skip rows whose
       // identifier now collides with a live property.
-      const identifier = row.status === 'VALID' || row.status === 'COLLISION'
-        ? deriveIdentifier({
-            estateSlug: estate.slug,
-            typeKey: row.raw['type'] ?? '',
-            addressComponents: row.raw,
-            propertyOptions: config.propertyOptions,
-          }).identifier ?? ''
-        : '';
+      const identifier =
+        row.status === 'VALID' || row.status === 'COLLISION'
+          ? (deriveIdentifier({
+              estateSlug: estate.slug,
+              typeKey: row.raw['type'] ?? '',
+              addressComponents: row.raw,
+              propertyOptions: config.propertyOptions,
+            }).identifier ?? '')
+          : '';
       return {
         batchId: batch.id,
         rowNumber: row.rowNumber,
@@ -140,14 +183,6 @@ export class ImportService {
     // Re-fetch to get the created row ids (createMany does not return ids).
     const batchRows = await this.imports.rowsForBatch(batch.id);
 
-    // Check for config drift: if the active config version is ahead of the
-    // pinned version, the batch must be re-validated.
-    const activeVersion = config.configVersion;
-    const configDrift = batch.configVersion < activeVersion;
-
-    const dto = toBatchDto(batch, estate, batchRows, configDrift);
-    const rowDtos = batchRows.map((row) => toRowDto(row));
-
     await this.audit.record({
       organizationId: context.organizationId,
       actorId: context.actorId,
@@ -164,13 +199,25 @@ export class ImportService {
       },
     });
 
+    return this.toPreviewResponse(estate, batch, batchRows, config.configVersion);
+  }
+
+  private toPreviewResponse(
+    estate: EstateRecord,
+    batch: ImportBatchRecord,
+    batchRows: ImportRowRecord[],
+    activeConfigVersion: number,
+  ): ImportPreviewResponse {
+    // Config drift: if the active config version is ahead of the version pinned
+    // at upload time, the batch must be re-validated.
+    const configDrift = batch.configVersion < activeConfigVersion;
     const guidance = configDrift
       ? 'The organization configuration has changed since this file was uploaded. Re-upload the file to re-validate against the current configuration.'
       : undefined;
 
     return {
-      batch: dto,
-      rows: rowDtos,
+      batch: toBatchDto(batch, estate, batchRows, configDrift),
+      rows: batchRows.map((row) => toRowDto(row)),
       configDrift,
       guidance,
     };
@@ -183,6 +230,7 @@ export class ImportService {
   async commit(
     context: ImportServiceContext,
     batchId: string,
+    activeConfigVersion: number,
   ): Promise<ImportCommitResponse> {
     const batch = await this.imports.findById(batchId, context.organizationId);
     if (!batch) {
@@ -199,7 +247,21 @@ export class ImportService {
       );
     }
     if (batch.status === 'FAILED') {
-      throw new AppError(409, 'CONFLICT', 'This batch is in a terminal failed state and cannot be committed');
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'This batch is in a terminal failed state and cannot be committed',
+      );
+    }
+    // Config drift: the batch was validated against an older configuration, so
+    // committing it now would write identifiers/labels the current rules do not
+    // allow. Refuse and force a re-upload (the preview flagged this already).
+    if (batch.configVersion < activeConfigVersion) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        `The organization configuration changed since this file was uploaded (batch config v${batch.configVersion}, active v${activeConfigVersion}). Re-upload the file to re-validate it before committing.`,
+      );
     }
 
     const estate = await this.estates.findById(context.organizationId, batch.estateId);
@@ -218,9 +280,10 @@ export class ImportService {
     // upload time may be stale). Rows that now collide are skipped, not
     // created.
     const collisionRowIds = new Set(
-      [...collisionRows, ...validRows.filter((row) => activeIdentifiers.has(identifierFromRow(row)))].map(
-        (row) => row.id,
-      ),
+      [
+        ...collisionRows,
+        ...validRows.filter((row) => activeIdentifiers.has(identifierFromRow(row))),
+      ].map((row) => row.id),
     );
 
     const toCreate = validRows.filter((row) => !collisionRowIds.has(row.id));
@@ -235,7 +298,11 @@ export class ImportService {
         // finishes, then re-reads the status and fails with 409.
         const locked = await this.imports.lockBatch(tx, batchId);
         if (!locked || locked.status !== 'PREVIEWED') {
-          throw new AppError(409, 'CONFLICT', 'This batch has already been committed or is in a terminal state');
+          throw new AppError(
+            409,
+            'CONFLICT',
+            'This batch has already been committed or is in a terminal state',
+          );
         }
 
         // Create properties chunked (200 at a time) inside the transaction.
@@ -281,7 +348,10 @@ export class ImportService {
         if (createdRowIdToPropertyId.size > 0) {
           await this.imports.markRowsCreated(
             tx,
-            [...createdRowIdToPropertyId.entries()].map(([rowId, propertyId]) => ({ rowId, propertyId })),
+            [...createdRowIdToPropertyId.entries()].map(([rowId, propertyId]) => ({
+              rowId,
+              propertyId,
+            })),
           );
         }
 
@@ -456,7 +526,8 @@ function aggregateCounts(rows: ParsedImportRow[]): Record<string, number> {
     const status = row.status;
     if (status === 'VALID') counts.valid = (counts.valid ?? 0) + 1;
     else if (status === 'ERROR') counts.error = (counts.error ?? 0) + 1;
-    else if (status === 'DUPLICATE_IN_FILE') counts.duplicateInFile = (counts.duplicateInFile ?? 0) + 1;
+    else if (status === 'DUPLICATE_IN_FILE')
+      counts.duplicateInFile = (counts.duplicateInFile ?? 0) + 1;
     else if (status === 'COLLISION') counts.collision = (counts.collision ?? 0) + 1;
   }
   return counts;
@@ -467,9 +538,7 @@ function aggregateCounts(rows: ParsedImportRow[]): Record<string, number> {
  * at parse time (`row.data.__identifier`). Used during commit to skip rows
  * whose identifier now collides with a live property.
  */
-function identifierFromRow(
-  row: { data: Record<string, unknown> },
-): string {
+function identifierFromRow(row: { data: Record<string, unknown> }): string {
   const identifier = row.data['__identifier'] as string | undefined;
   return identifier ?? '';
 }

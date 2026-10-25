@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 /**
  * Data access for the property registry. Prisma types stop at this
@@ -93,7 +94,8 @@ export class PrismaPropertyRepository {
     input: CreatePropertyInput,
   ): Promise<string | null> {
     const propertyId = randomUUID();
-    const affected = await tx.$executeRaw`
+    const addressComponentsJson = JSON.stringify(input.addressComponents);
+    const sql = Prisma.sql`
       INSERT INTO properties (
         id,
         estate_id,
@@ -108,20 +110,21 @@ export class PrismaPropertyRepository {
         updated_at
       )
       VALUES (
-        ${propertyId},
-        ${input.estateId},
-        ${input.organizationId},
+        ${Prisma.sql`${propertyId}::uuid`},
+        ${Prisma.sql`${input.estateId}::uuid`},
+        ${Prisma.sql`${input.organizationId}::uuid`},
         ${input.identifier},
         ${input.typeKey},
-        ${input.unitTypeKey},
-        ${input.parentPropertyId},
-        ${JSON.stringify(input.addressComponents)}::jsonb,
+        ${input.unitTypeKey ?? Prisma.sql`NULL::text`},
+        ${input.parentPropertyId ?? Prisma.sql`NULL::uuid`},
+        ${Prisma.sql`${addressComponentsJson}::jsonb`},
         'ACTIVE',
         now(),
         now()
       )
       ON CONFLICT (estate_id, identifier) DO NOTHING
     `;
+    const affected = await tx.$executeRaw(sql);
     return affected === 1 ? propertyId : null;
   }
 
@@ -138,7 +141,10 @@ export class PrismaPropertyRepository {
    * friendly pre-check that reports a 409 with the existing property id; the
    * database unique index is the authoritative backstop under a race.
    */
-  async findExistingIdentifier(estateId: string, identifier: string): Promise<PropertyRecord | null> {
+  async findExistingIdentifier(
+    estateId: string,
+    identifier: string,
+  ): Promise<PropertyRecord | null> {
     const row = await this.prisma.property.findFirst({
       where: { estateId, identifier },
       include: { parentProperty: { select: { id: true, identifier: true } } },
@@ -244,7 +250,10 @@ export class PrismaPropertyRepository {
     return rows.map((row) => row.id);
   }
 
-  async getPropertyRowsByStatus(batchId: string, status: string): Promise<Array<{ id: string; rowNumber: number; propertyId: string | null }>> {
+  async getPropertyRowsByStatus(
+    batchId: string,
+    status: string,
+  ): Promise<Array<{ id: string; rowNumber: number; propertyId: string | null }>> {
     const rows = await this.prisma.importRow.findMany({
       where: { batchId, status },
       select: { id: true, rowNumber: true, propertyId: true },

@@ -20,11 +20,7 @@ export interface ParsedImportRow {
   /** The raw cell values as strings. */
   raw: Record<string, string>;
   /** Validated status. */
-  status:
-    | 'VALID'
-    | 'ERROR'
-    | 'DUPLICATE_IN_FILE'
-    | 'COLLISION';
+  status: 'VALID' | 'ERROR' | 'DUPLICATE_IN_FILE' | 'COLLISION';
   /** Structured error reasons; empty when valid. */
   errors: string[];
 }
@@ -161,8 +157,7 @@ function validateRow(
     const value = raw[component.key]?.trim() ?? '';
     if (value === '') {
       const isRequired =
-        (component.requiredFor.length === 0 ||
-          component.requiredFor.includes(typeKey)) &&
+        (component.requiredFor.length === 0 || component.requiredFor.includes(typeKey)) &&
         !component.notApplicableFor.includes(typeKey);
       if (isRequired && typeKey) {
         errors.push(`Missing required address component "${component.label}"`);
@@ -177,7 +172,9 @@ function validateRow(
         try {
           const regex = new RegExp(component.pattern);
           if (!regex.test(value)) {
-            errors.push(`Address component "${component.label}" does not match the required format`);
+            errors.push(
+              `Address component "${component.label}" does not match the required format`,
+            );
           }
         } catch {
           // Malformed pattern in config: skip the check, flag the config issue.
@@ -255,9 +252,14 @@ export function buildTemplate(
 
   const columns = ['type', ...propertyOptions.addressComponents.map((c) => c.key)];
 
-  for (const column of columns) {
-    worksheet.columns.push({ header: column, key: column, width: 24 });
-  }
+  // Set columns explicitly via the worksheet.columns setter; the array
+  // starts as null in some exceljs versions, so assign it fresh.
+  const columnInfos = columns.map((column) => ({
+    header: column,
+    key: column,
+    width: 24,
+  }));
+  worksheet.columns = columnInfos as unknown as typeof worksheet.columns;
 
   // Sample row.
   const sampleRow: Record<string, string> = { type: assetTypes[0]?.key ?? '' };
@@ -271,7 +273,9 @@ export function buildTemplate(
   infoSheet.addRow(['Instructions']);
   infoSheet.addRow([instructions]);
   infoSheet.addRow([`Estate: ${estate.name} (${estate.slug})`]);
-  infoSheet.addRow(['One property per row. The "type" column must be a configured asset type key.']);
+  infoSheet.addRow([
+    'One property per row. The "type" column must be a configured asset type key.',
+  ]);
 
   // exceljs returns a Node Buffer (typed against its own Buffer alias) that is
   // structurally identical to node:buffer's. Cast through unknown to keep

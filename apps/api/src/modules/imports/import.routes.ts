@@ -243,7 +243,12 @@ export function createImportBatchRouter(options: ImportRouteOptions): Router {
     h.managePermission,
     h.asyncWrap(async (req, res) => {
       const context = h.makeContext(req, res);
-      const response = await h.importService.commit(context, h.param(req, 'batchId'));
+      const config = await h.loadConfig();
+      const response = await h.importService.commit(
+        context,
+        h.param(req, 'batchId'),
+        config.configVersion,
+      );
       res.status(200).json({ data: response });
     }),
   );
