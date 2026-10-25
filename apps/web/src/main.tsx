@@ -12,6 +12,12 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { AccountPage } from './pages/AccountPage';
 import { UsersPage } from './pages/UsersPage';
+import { EstatesListPage } from './pages/estates/EstatesListPage';
+import { EstateCreatePage } from './pages/estates/EstateCreatePage';
+import { EstateDetailPage } from './pages/estates/EstateDetailPage';
+import { PropertiesListPage } from './pages/properties/PropertiesListPage';
+import { PropertyDetailPage } from './pages/properties/PropertyDetailPage';
+import { PropertyOptionsPage } from './pages/properties/PropertyOptionsPage';
 import './index.css';
 
 const container = document.getElementById('root');
@@ -69,6 +75,58 @@ createRoot(container).render(
                 }
               />
               <Route path="/app/account" element={<AccountPage />} />
+
+              {/* Phase 2: estates */}
+              <Route
+                path="/app/estates"
+                element={
+                  <RequirePermission permission="estate.read">
+                    <EstatesListPage />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/app/estates/new"
+                element={
+                  <RequirePermission permission="estate.manage">
+                    <EstateCreatePage />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/app/estates/:estateId"
+                element={
+                  <RequirePermission permission="estate.read">
+                    <EstateDetailPage />
+                  </RequirePermission>
+                }
+              />
+
+              {/* Phase 2: properties */}
+              <Route
+                path="/app/properties"
+                element={
+                  <RequirePermission permission="property.read">
+                    <PropertiesListPage />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/app/properties/:propertyId"
+                element={
+                  <RequirePermission permission="property.read">
+                    <PropertyDetailPage />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/app/property-options"
+                element={
+                  <RequirePermission permission="property.read">
+                    <PropertyOptionsPage />
+                  </RequirePermission>
+                }
+              />
             </Route>
 
             {/* Root: signed-in operators land on the overview; anonymous

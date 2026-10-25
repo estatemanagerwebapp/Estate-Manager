@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "bootstrap:admin": "tsx src/bootstrap-admin.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e:reset": "tsx src/e2e/reset-database.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },

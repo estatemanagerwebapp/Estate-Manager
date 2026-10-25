@@ -1,6 +1,16 @@
 import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom';
-import { Building2, LayoutDashboard, Users, KeyRound, LogOut, Settings } from 'lucide-react';
+import {
+  Building2,
+  LayoutDashboard,
+  Users,
+  KeyRound,
+  LogOut,
+  Settings,
+  Home,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
+import { useCan } from '../auth/useCan';
 import { ROLE_LABELS } from '@silverstone/shared';
 
 /**
@@ -11,6 +21,7 @@ import { ROLE_LABELS } from '@silverstone/shared';
  */
 export function AppShell() {
   const { user, logout } = useAuth();
+  const can = useCan();
   const navigate = useNavigate();
 
   async function handleLogout() {
@@ -45,6 +56,30 @@ export function AppShell() {
             </span>
             Overview
           </NavLink>
+          {can['estate.read'] && (
+            <NavLink to="/app/estates" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <Home aria-hidden size={16} />
+              </span>
+              Estates
+            </NavLink>
+          )}
+          {can['property.read'] && (
+            <NavLink to="/app/properties" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <Building2 aria-hidden size={16} />
+              </span>
+              Properties
+            </NavLink>
+          )}
+          {can['property.read'] && (
+            <NavLink to="/app/property-options" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <SlidersHorizontal aria-hidden size={16} />
+              </span>
+              Property options
+            </NavLink>
+          )}
           {canManageUsers(user) && (
             <NavLink to="/app/users" className={navClasses}>
               <span className="text-(--color-primary)">

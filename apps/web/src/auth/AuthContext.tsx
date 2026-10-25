@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { LoginResponse, UserDto } from '@silverstone/shared';
-import { ApiRequestError, api } from '../api/client';
+import { ApiRequestError, api, setUnauthorizedHandler } from '../api/client';
 
 /**
  * Session state for the web console.
@@ -86,6 +86,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionVersion.current += 1;
     setUser(null);
   }, []);
+
+  // When any API call fails with 401 the session is gone (expired, revoked,
+  // or logged out from another tab). Clear the cached user projection so
+  // route guards bounce to /login on the next render.
+  useEffect(() => {
+    setUnauthorizedHandler(clear);
+    return () => setUnauthorizedHandler(null);
+  }, [clear]);
 
   const value = useMemo<AuthState>(
     () => ({ loading, user, login, logout, clear }),
