@@ -2,11 +2,19 @@ import http from 'node:http';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
+import { getPasswordHashAlgorithm, getPasswordHashPolicy } from './lib/password.js';
 import { logger } from './lib/logger.js';
 import { disconnectPrisma } from './lib/prisma.js';
 
 async function main(): Promise<void> {
   const env = getEnv();
+  // Resolve the hashing backend before listening so a strict policy fails
+  // startup loudly instead of surfacing on the first login.
+  const passwordAlgorithm = await getPasswordHashAlgorithm();
+  logger.info(
+    { algorithm: passwordAlgorithm, policy: getPasswordHashPolicy() },
+    'password hashing backend selected',
+  );
   const deps = await createAppDependencies();
   const app = createApp({
     checkDatabase: deps.checkDatabase,

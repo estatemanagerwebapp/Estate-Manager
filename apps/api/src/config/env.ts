@@ -95,6 +95,14 @@ export const EnvSchema = z
     /** Reset-token lifetime in minutes. */
     RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
 
+    // --- Phase 1 — Password hashing -------------------------------------------
+    /**
+     * Argon2id is the primary password hash (ADR-0005). `allow-fallback` permits
+     * PBKDF2-SHA256 when the native module cannot load and logs a warning;
+     * `argon2id-required` refuses to start rather than downgrade silently.
+     */
+    PASSWORD_HASH_POLICY: z.enum(['allow-fallback', 'argon2id-required']).default('allow-fallback'),
+
     // --- Phase 1 — Email delivery ---------------------------------------------
     /**
      * Which email adapter to use: `console` logs messages locally (no real

@@ -2,12 +2,18 @@
  * Phase 1 unit tests for user-rules, password-policy and the password helpers.
  *
  * No database: pure functions and the `node:crypto` primitives are under
- * test. Argon2's native binary is available in this workspace (it was
- * compiled during `npm install`), so the hashing round-trips exercise the
- * real KDF.
+ * test. The hashing backend depends on whether the argon2 native module loads
+ * (see `password-hashing.test.ts` for the policy matrix); these assertions are
+ * written against whichever backend the environment selected.
  */
 import { describe, expect, it } from 'vitest';
-import { hashPassword, verifyPassword, sha256Hex, generateOpaqueToken } from './lib/password.js';
+import {
+  hashPassword,
+  verifyPassword,
+  getPasswordHashAlgorithm,
+  sha256Hex,
+  generateOpaqueToken,
+} from './lib/password.js';
 import { validatePassword, meetsPasswordPolicy } from './modules/auth/password-policy.js';
 import {
   canManageRole,
@@ -32,9 +38,17 @@ const user = (overrides: Partial<UserRecord>): UserRecord => ({
 });
 
 describe('password hashing', () => {
-  it('round-trips an Argon2id hash', async () => {
+  it('round-trips a hash produced by the selected backend', async () => {
+    const algorithm = await getPasswordHashAlgorithm();
     const hash = await hashPassword('Correct-Horse-77!');
-    expect(hash).toMatch(/^\$argon2id\$/);
+
+    // The self-describing prefix must agree with the selected backend.
+    if (algorithm === 'argon2id') {
+      expect(hash).toMatch(/^\$argon2id\$/);
+    } else {
+      expect(hash).toMatch(/^pbkdf2-sha256:600000:/);
+    }
+
     expect(await verifyPassword(hash, 'Correct-Horse-77!')).toBe(true);
     expect(await verifyPassword(hash, 'wrong-password')).toBe(false);
   });
