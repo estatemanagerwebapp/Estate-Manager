@@ -42,6 +42,7 @@ model Organization {
   payments            Payment[]
   transactions        Transaction[]
   accessCodes         AccessCode[]
+  complaints          Complaint[]
 
   @@map("organizations")
 }
@@ -104,6 +105,8 @@ model User {
   payments           Payment[]
   transactions       Transaction[]
   accessCodes        AccessCode[]
+  complaints         Complaint[]
+  complaintReplies   ComplaintReply[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -303,6 +306,48 @@ model AccessCode {
   @@map("access_codes")
 }
 
+// --- Phase 3 — resident complaints (S5) ----------------------------------------
+// Additive models: a complaint filed by a resident on their property, plus
+// the reply thread written by the estate office.
+
+model Complaint {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  propertyId     String?   @map("property_id") @db.Uuid
+  category       String    @db.VarChar(48)
+  subject        String    @db.VarChar(160)
+  description    String
+  /// OPEN | IN_PROGRESS | RESOLVED | CLOSED.
+  status         String    @default("OPEN") @db.VarChar(16)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property     Property?         @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  replies      ComplaintReply[]
+
+  @@index([organizationId, userId, status])
+  @@map("complaints")
+}
+
+model ComplaintReply {
+  id          String   @id @default(uuid()) @db.Uuid
+  complaintId String   @map("complaint_id") @db.Uuid
+  /// The estate-office user who replied; null when the author was removed.
+  authorId    String?  @map("author_id") @db.Uuid
+  body        String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  author    User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([complaintId])
+  @@map("complaint_replies")
+}
+
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
 /// holds the expiration and revocation state. A null `expiresAt` marks a
 /// revoked session (logout / password change / account suspension).
@@ -437,6 +482,7 @@ model Property {
   residentOnboardings ResidentOnboarding[]
   invoices            Invoice[]
   accessCodes         AccessCode[]
+  complaints          Complaint[]
 
   /// The canonical identifier is unique within its estate. This is the
   /// backstop for all identifier-collision handling: the application pre-checks
@@ -557,4 +603,5 @@ enum AuditEventType {
   resident_code_generated
   resident_code_extended
   resident_code_deactivated
+  resident_complaint_created
 }

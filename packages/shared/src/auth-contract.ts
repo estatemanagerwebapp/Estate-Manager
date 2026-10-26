@@ -268,6 +268,7 @@ export const AUDIT_EVENT_TYPES = [
   'resident.code_generated',
   'resident.code_extended',
   'resident.code_deactivated',
+  'resident.complaint_created',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

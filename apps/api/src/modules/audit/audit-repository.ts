@@ -56,6 +56,7 @@ const AUDIT_EVENT_DB_MAP = {
   'resident.code_generated': 'resident_code_generated',
   'resident.code_extended': 'resident_code_extended',
   'resident.code_deactivated': 'resident_code_deactivated',
+  'resident.complaint_created': 'resident_complaint_created',
 } as const;
 
 export interface RecordAuditEventInput {

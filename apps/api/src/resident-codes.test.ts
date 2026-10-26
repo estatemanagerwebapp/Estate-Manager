@@ -47,6 +47,8 @@ let residentCookie = '';
 let residentUserId = '';
 let secondResidentCookie = '';
 let secondResidentUserId = '';
+/** The plaintext code issued by the generate test, for leak assertions. */
+let issuedPlaintext = '';
 const ADMIN_PASSWORD = 'Sup3rSecretXyz';
 
 function uniqueSuffix(): string {
@@ -278,6 +280,7 @@ describe('resident access codes (S4)', () => {
     const fullCode = response.body.data.code as string;
     const codeId = response.body.data.codeId as string;
     expect(fullCode).toHaveLength(8);
+    issuedPlaintext = fullCode;
     expect(codeId).toBeDefined();
 
     // The row stores the hash and a 4-character prefix — never the plaintext.
@@ -321,9 +324,13 @@ describe('resident access codes (S4)', () => {
       where: { organizationId, userId: residentUserId },
     });
     expect(stored).not.toBeNull();
+    // Neither the stored hash nor the plaintext secret may appear.
     expect(serialized).not.toContain(stored!.codeHash);
-    // Only the 4-char prefix of the secret may appear.
-    expect(serialized).not.toMatch(/[A-Z0-9]{8}/);
+    expect(issuedPlaintext.length).toBeGreaterThan(0);
+    expect(serialized).not.toContain(issuedPlaintext);
+    // The DTO exposes the prefix only — there is no full-code field.
+    expect(Object.keys(codes[0])).not.toContain('code');
+    expect(codes[0].codePrefix).toBe(issuedPlaintext.slice(0, 4));
   });
 
   it('extends the validity window', async () => {

@@ -51,6 +51,10 @@ import type {
   ResidentGenerateAccessCodeResponse,
   ResidentExtendAccessCodeResponse,
   ResidentDeactivateAccessCodeResponse,
+  ResidentComplaintsResponse,
+  ResidentCreateComplaintInput,
+  ResidentCreateComplaintResponse,
+  ComplaintStatus,
 } from '@silverstone/shared';
 
 /**
@@ -556,6 +560,19 @@ export const api = {
       `/api/v1/resident/codes/${encodeURIComponent(codeId)}/deactivate`,
       { method: 'POST' },
     ),
+
+  /** S5: the acting resident's complaints (with their reply threads). */
+  getResidentComplaints: (status?: ComplaintStatus) =>
+    request<ResidentComplaintsResponse>(
+      `/api/v1/resident/complaints${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
+
+  /** S5: file a complaint on the acting resident's property. */
+  createResidentComplaint: (input: ResidentCreateComplaintInput) =>
+    request<ResidentCreateComplaintResponse>('/api/v1/resident/complaints', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

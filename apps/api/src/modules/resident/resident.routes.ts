@@ -26,6 +26,7 @@ import type { ResidentProfileService } from './profile.service.js';
 import { ResidentPropertiesService } from './properties.service.js';
 import { ResidentFinanceService } from './finance.service.js';
 import { ResidentCodesService } from './codes.service.js';
+import { ResidentComplaintsService } from './complaints.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -39,6 +40,8 @@ export interface ResidentRouteOptions {
   finance?: ResidentFinanceService;
   /** S4: resident access codes — generate, extend, deactivate. */
   codes?: ResidentCodesService;
+  /** S5: resident complaints — file and read the reply thread. */
+  complaints?: ResidentComplaintsService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -399,6 +402,86 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         makeContext(req, res).requestId,
       );
       res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- S5: Complaints -----------------------------------------------------------
+  // GET  /complaints         — the acting resident's complaints (+ replies).
+  // POST /complaints         — file a complaint on their own property.
+  //
+  // Self-scoped: every query is filtered by the session user id.
+
+  const complaintViewGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'complaint.view'),
+  );
+  const complaintCreateGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'complaint.create'),
+  );
+
+  router.get(
+    '/complaints',
+    authGuard,
+    residentGuard,
+    complaintViewGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.complaints) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Complaints service not wired'));
+        return;
+      }
+      const query = z
+        .object({ status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']).optional() })
+        .safeParse(req.query ?? {});
+      if (!query.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint filter'));
+        return;
+      }
+      const response = await options.complaints.list(
+        organizationId,
+        ctx.userId,
+        query.data.status,
+      );
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/complaints',
+    authGuard,
+    residentGuard,
+    complaintCreateGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.complaints) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Complaints service not wired'));
+        return;
+      }
+      const body = z
+        .object({
+          category: z.string().trim().min(1).max(48),
+          subject: z.string().trim().min(1).max(160),
+          description: z.string().trim().min(1).max(4000),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint input'));
+        return;
+      }
+      const response = await options.complaints.create(
+        organizationId,
+        ctx.userId,
+        body.data,
+        makeContext(req, res).requestId,
+      );
+      res.status(201).json({ data: response });
     }),
   );
 

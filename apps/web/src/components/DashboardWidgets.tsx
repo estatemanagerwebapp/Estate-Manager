@@ -266,6 +266,7 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'resident.code_generated': 'generated an access code',
   'resident.code_extended': 'extended an access code',
   'resident.code_deactivated': 'deactivated an access code',
+  'resident.complaint_created': 'filed a complaint',
 };
 
 type ActivityTone = 'success' | 'danger' | 'warning' | 'neutral';

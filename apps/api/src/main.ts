@@ -102,6 +102,7 @@ async function main(): Promise<void> {
       }),
       finance: deps.residentFinanceService,
       codes: deps.residentCodesService,
+      complaints: deps.residentComplaintsService,
     },
   });
 
