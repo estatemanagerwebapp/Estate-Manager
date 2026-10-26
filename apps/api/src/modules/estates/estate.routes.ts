@@ -1,9 +1,4 @@
-import {
-  Router,
-  type Request,
-  type Response,
-  type RequestHandler,
-} from 'express';
+import { Router, type Request, type Response, type RequestHandler } from 'express';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
@@ -164,8 +159,24 @@ export function createEstateRouter(options: EstateRouteOptions): Router {
         return;
       }
       const context = makeContext(req, res);
-      const response = await estateService.setStatus(context, param(req, 'estateId'), body.data.status);
+      const response = await estateService.setStatus(
+        context,
+        param(req, 'estateId'),
+        body.data.status,
+      );
       res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- DELETE /estates/:estateId -----------------------------------------------
+  router.delete(
+    '/:estateId',
+    authGuard,
+    managePermission,
+    asyncWrap(async (req, res) => {
+      const context = makeContext(req, res);
+      await estateService.delete(context, param(req, 'estateId'));
+      res.status(200).json({ data: { ok: true } });
     }),
   );
 

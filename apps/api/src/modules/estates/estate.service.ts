@@ -1,5 +1,9 @@
 import { AppError } from '../../lib/errors.js';
-import type { PrismaEstateRepository, EstateRecord, UpdateEstateInput } from './estate-repository.js';
+import type {
+  PrismaEstateRepository,
+  EstateRecord,
+  UpdateEstateInput,
+} from './estate-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   EstateDto,
@@ -27,15 +31,20 @@ export interface EstateServiceContext {
   requestId: string | null;
 }
 
-const SLUG_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 
+/**
+ * Derive a lowercase estate slug from a display name. Separators are hyphens
+ * (the web-URL convention): "Clove Apartments" → "clove-apartments". Slugs are
+ * embedded verbatim into property identifiers via the `{estate_slug}` token,
+ * so this convention keeps derived identifiers readable.
+ */
 export function slugify(name: string): string {
   const base = name
     .toLowerCase()
     .replace(/[^a-z0-9\s_-]/g, '')
-    .replace(/\s+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '');
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   return base.length > 0 ? base.slice(0, 63) : 'estate';
 }
 
@@ -45,7 +54,10 @@ export class EstateService {
     private readonly audit: PrismaAuditRepository,
   ) {}
 
-  async list(context: EstateServiceContext, query: { search?: string; status?: string }): Promise<EstateListResponse> {
+  async list(
+    context: EstateServiceContext,
+    query: { search?: string; status?: string },
+  ): Promise<EstateListResponse> {
     if (query.status && !isEstateStatus(query.status)) {
       throw new AppError(400, 'VALIDATION_ERROR', `Unknown estate status "${query.status}"`);
     }
@@ -70,7 +82,10 @@ export class EstateService {
     };
   }
 
-  async create(context: EstateServiceContext, input: { name: string; slug?: string; address?: string }): Promise<EstateDto> {
+  async create(
+    context: EstateServiceContext,
+    input: { name: string; slug?: string; address?: string },
+  ): Promise<EstateDto> {
     const name = input.name.trim();
     if (name.length === 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Estate name is required');
@@ -163,7 +178,11 @@ export class EstateService {
     return toDto(updated ?? record);
   }
 
-  async setStatus(context: EstateServiceContext, estateId: string, status: EstateStatus): Promise<SetEstateStatusResponse> {
+  async setStatus(
+    context: EstateServiceContext,
+    estateId: string,
+    status: EstateStatus,
+  ): Promise<SetEstateStatusResponse> {
     const record = await this.requireEstate(context.organizationId, estateId);
     if (!isEstateStatus(status)) {
       throw new AppError(400, 'VALIDATION_ERROR', `Unknown estate status "${status}"`);
@@ -186,6 +205,37 @@ export class EstateService {
     });
 
     return { ok: true, estate: toDto(updated ?? record) };
+  }
+
+  /**
+   * Physically delete an estate. Refused when the estate still has any
+   * properties — the cascade delete on `properties.estate_id` would wipe
+   * the entire property registry under that estate. The caller must
+   * archive or delete the properties first.
+   */
+  async delete(context: EstateServiceContext, estateId: string): Promise<void> {
+    const record = await this.requireEstate(context.organizationId, estateId);
+    const counts = await this.estates.propertyCounts(record.id);
+    if (counts.total > 0) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        `This estate still has ${counts.total} property record${counts.total === 1 ? '' : 's'}; delete or archive them before deleting the estate`,
+      );
+    }
+
+    await this.estates.delete(record.id);
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'estate.deleted',
+      targetType: 'estate',
+      targetId: record.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { slug: record.slug },
+    });
   }
 
   private async requireEstate(organizationId: string, estateId: string): Promise<EstateRecord> {

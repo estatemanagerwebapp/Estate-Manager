@@ -90,9 +90,7 @@ describe('policy configuration', () => {
   it('rejects an unknown policy value with an actionable message', async () => {
     process.env.PASSWORD_HASH_POLICY = 'argon2';
     const pw = await loadPasswordModule();
-    expect(() => pw.getPasswordHashPolicy()).toThrow(
-      /invalid PASSWORD_HASH_POLICY="argon2"/i,
-    );
+    expect(() => pw.getPasswordHashPolicy()).toThrow(/invalid PASSWORD_HASH_POLICY="argon2"/i);
   });
 
   it('accepts argon2id-required', async () => {
@@ -175,16 +173,12 @@ describe('argon2id unavailable', () => {
     process.env.PASSWORD_HASH_POLICY = 'argon2id-required';
     const pw = await loadPasswordModule();
 
-    await expect(pw.getPasswordHashAlgorithm()).rejects.toThrow(
-      /Argon2id is required/i,
-    );
+    await expect(pw.getPasswordHashAlgorithm()).rejects.toThrow(/Argon2id is required/i);
     await expect(pw.hashPassword(SECRET)).rejects.toMatchObject({
       name: 'PasswordBackendUnavailableError',
       code: 'PASSWORD_BACKEND_UNAVAILABLE',
     });
-    await expect(pw.hashPassword(SECRET)).rejects.toThrow(
-      /npm install-scripts approve argon2/,
-    );
+    await expect(pw.hashPassword(SECRET)).rejects.toThrow(/npm install-scripts approve argon2/);
   });
 
   it('still verifies legacy PBKDF2 hashes under the strict policy', async () => {
@@ -258,16 +252,10 @@ describe('verifying existing hash formats', () => {
     const pw = await loadPasswordModule();
 
     expect(
-      await pw.verifyPassword(
-        'pbkdf2-sha256:1000:c2lsdmVyc3RvbmUtdGVzdA==:ZGlnZXN0',
-        SECRET,
-      ),
+      await pw.verifyPassword('pbkdf2-sha256:1000:c2lsdmVyc3RvbmUtdGVzdA==:ZGlnZXN0', SECRET),
     ).toBe(false);
     expect(
-      await pw.verifyPassword(
-        'pbkdf2-sha256:999999999:c2lsdmVyc3RvbmUtdGVzdA==:ZGlnZXN0',
-        SECRET,
-      ),
+      await pw.verifyPassword('pbkdf2-sha256:999999999:c2lsdmVyc3RvbmUtdGVzdA==:ZGlnZXN0', SECRET),
     ).toBe(false);
   });
 });

@@ -52,9 +52,7 @@ export interface HierarchyResult {
  * result rather than throwing so callers (manual create + import) can collect
  * all reasons at once.
  */
-export function validateHierarchy(
-  ctx: HierarchyContext,
-): HierarchyResult {
+export function validateHierarchy(ctx: HierarchyContext): HierarchyResult {
   const reasons: string[] = [];
 
   // Top-level property: nothing to validate beyond the depth guard.
@@ -75,9 +73,7 @@ export function validateHierarchy(
   // Resolve the parent's asset type definition.
   const parentType = ctx.assetTypes.find((type) => type.key === ctx.parentTypeKey);
   if (!parentType) {
-    reasons.push(
-      `The parent's asset type "${ctx.parentTypeKey}" is not configured`,
-    );
+    reasons.push(`The parent's asset type "${ctx.parentTypeKey}" is not configured`);
     return { valid: false, reasons };
   }
 

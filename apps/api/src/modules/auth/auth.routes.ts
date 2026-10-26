@@ -349,5 +349,23 @@ export function createAuthRouter(options: AuthRouteOptions): Router {
     }),
   );
 
+  // --- DELETE /users/:userId ----------------------------------------------------
+
+  router.delete(
+    '/users/:userId',
+    authGuard,
+    userManagePermission,
+    asyncWrap(async (req, res, next) => {
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      const context = makeContext(req, res);
+      const response = await userService.remove(context, auth.role, param(req, 'userId'));
+      res.status(200).json({ data: response });
+    }),
+  );
+
   return router;
 }

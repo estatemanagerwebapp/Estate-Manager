@@ -15,10 +15,13 @@ export type CreatePropertyInput = {
   unitTypeKey: string | null;
   parentPropertyId: string | null;
   addressComponents: Record<string, string>;
+  /** Human-facing property name; null when not supplied (import path). */
+  name: string | null;
 };
 
 export type UpdatePropertyInput = {
   status?: string;
+  name?: string | null;
   addressComponents?: Record<string, string>;
 };
 
@@ -44,6 +47,8 @@ export interface PropertyRecord {
   /** Parent property projection, when the property is a unit under a parent. */
   parentProperty: { id: string; identifier: string } | null;
   addressComponents: Record<string, string>;
+  /** Human-facing property name; null for legacy/import-created records. */
+  name: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -68,6 +73,7 @@ export class PrismaPropertyRepository {
         unitTypeKey: input.unitTypeKey,
         parentPropertyId: input.parentPropertyId,
         addressComponents: input.addressComponents as Prisma.InputJsonValue,
+        name: input.name,
       },
       include: { parentProperty: { select: { id: true, identifier: true } } },
     });
@@ -189,6 +195,7 @@ export class PrismaPropertyRepository {
       where: { id: propertyId },
       data: {
         ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.addressComponents !== undefined
           ? { addressComponents: input.addressComponents as Prisma.InputJsonValue }
           : {}),
@@ -208,6 +215,20 @@ export class PrismaPropertyRepository {
       where: { parentPropertyId: propertyId },
     });
     return count > 0;
+  }
+
+  /**
+   * Physically delete a property. Refuses when the property still has child
+   * properties — the caller must archive or re-parent them first. The
+   * self-referential FK (parentPropertyId → id, ON DELETE SET NULL) means
+   * children of a deleted property become orphaned, so this guard keeps the
+   * registry consistent.
+   */
+  async deleteIfNoChildren(propertyId: string): Promise<boolean> {
+    const hasChildren = await this.hasChildren(propertyId);
+    if (hasChildren) return false;
+    await this.prisma.property.delete({ where: { id: propertyId } });
+    return true;
   }
 
   /**
@@ -280,6 +301,7 @@ function toRecord(row: PrismaPropertyRow & { addressComponents: unknown }): Prop
       ? { id: row.parentProperty.id, identifier: row.parentProperty.identifier }
       : null,
     addressComponents,
+    name: row.name ?? null,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

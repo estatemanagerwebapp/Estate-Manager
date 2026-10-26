@@ -231,13 +231,14 @@ export class AuthService {
     const { token } = await this.resetTokens.createForUser(record.id, this.resetTokenTtlMinutes);
     const resetUrl = `${this.webBaseUrl}/reset-password?token=${token}`;
 
+    const emailTo = record.email ?? normalizedEmail;
     let delivered = false;
     try {
       await this.email.send({
-        to: record.email,
+        to: emailTo,
         subject: 'Reset your Silverstone Managers password',
         text:
-          `A password reset was requested for ${record.email}.\n` +
+          `A password reset was requested for ${emailTo}.\n` +
           `Open ${resetUrl} to choose a new password. This link expires ` +
           `${this.resetTokenTtlMinutes} minutes from now.\n` +
           'If you did not request this, you can ignore this message.',
@@ -366,8 +367,11 @@ export class AuthService {
       organizationId,
       email,
       passwordHash: hash,
+      fullName: email.split('@')[0] ?? 'Administrator',
+      phone: null,
       role: 'SUPER_ADMIN',
       status: 'ACTIVE',
+      mustChangePassword: false,
     });
 
     await this.audit.record({
@@ -389,8 +393,11 @@ export class AuthService {
   private async toUserDto(record: {
     id: string;
     email: string;
+    phone: string | null;
+    fullName: string | null;
     role: string;
     status: string;
+    mustChangePassword: boolean;
     lastPasswordChangedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
@@ -399,7 +406,10 @@ export class AuthService {
     return {
       id: record.id,
       email: record.email,
+      phone: record.phone,
+      fullName: record.fullName,
       role: record.role as UserDto['role'],
+      mustChangePassword: record.mustChangePassword,
       permissions,
       status: record.status as UserDto['status'],
       createdAt: record.createdAt.toISOString(),

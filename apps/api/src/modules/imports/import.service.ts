@@ -354,6 +354,7 @@ export class ImportService {
               unitTypeKey,
               parentPropertyId: null,
               addressComponents: rowData as Record<string, string>,
+              name: null,
             });
 
             if (propertyId !== null) {

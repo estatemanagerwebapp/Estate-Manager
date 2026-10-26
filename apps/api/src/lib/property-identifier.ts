@@ -52,7 +52,8 @@ export function deriveIdentifier(input: IdentifierInput): IdentifierResult {
   // Determine which components are required for this asset type.
   const requiredKeys = new Set<string>();
   for (const component of components) {
-    const inRequiredFor = component.requiredFor.length > 0 && component.requiredFor.includes(typeKey);
+    const inRequiredFor =
+      component.requiredFor.length > 0 && component.requiredFor.includes(typeKey);
     const appliesToAll = component.requiredFor.length === 0;
     const notApplicable = component.notApplicableFor.includes(typeKey);
     if (notApplicable) continue;
@@ -118,9 +119,7 @@ export function deriveIdentifier(input: IdentifierInput): IdentifierResult {
 /** Collapse runs of the common identifier separators produced by empty slots. */
 function collapsedSeparators(value: string): string {
   // Collapse repeated -, /, ., _, or space runs into a single separator.
-  return value
-    .replace(/([-./_])\1+/g, '$1')
-    .replace(/^\s+|\s+$/g, '');
+  return value.replace(/([-./_])\1+/g, '$1').replace(/^\s+|\s+$/g, '');
 }
 
 /**

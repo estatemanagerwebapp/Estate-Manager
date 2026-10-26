@@ -332,12 +332,13 @@ describe('validateHierarchy', () => {
 import { slugify } from './modules/estates/estate.service.js';
 
 describe('estate service: slugify', () => {
-  it('converts mixed-case names to lowercase snake slug', () => {
-    expect(slugify('Silver Stone Garden')).toBe('silver_stone_garden');
+  it('converts mixed-case names to lowercase hyphenated slug', () => {
+    expect(slugify('Silver Stone Garden')).toBe('silver-stone-garden');
   });
 
-  it('strips special characters', () => {
-    expect(slugify('Estate #5 (West)')).toBe('estate_5_west');
+  it('strips special characters and normalises separators to hyphens', () => {
+    expect(slugify('Estate #5 (West)')).toBe('estate-5-west');
+    expect(slugify('Clove_Apartments')).toBe('clove-apartments');
   });
 
   it('caps at 63 characters', () => {

@@ -94,6 +94,7 @@ export class PropertyService {
       estateId: string;
       typeKey: string;
       parentPropertyId?: string;
+      name?: string;
       addressComponents?: Record<string, string>;
     },
   ): Promise<PropertyDto> {
@@ -169,6 +170,7 @@ export class PropertyService {
       unitTypeKey: input.parentPropertyId ? (addressComponents['unit_type_key'] ?? null) : null,
       parentPropertyId: input.parentPropertyId ?? null,
       addressComponents,
+      name: input.name?.trim() || null,
     });
 
     await this.audit.record({
@@ -189,18 +191,29 @@ export class PropertyService {
     context: PropertyServiceContext,
     config: PropertyConfigSnapshot,
     propertyId: string,
-    input: { status?: PropertyStatus; addressComponents?: Record<string, string> },
+    input: {
+      status?: PropertyStatus;
+      name?: string | null;
+      addressComponents?: Record<string, string>;
+    },
   ): Promise<PropertyDto> {
     const record = await this.properties.findById(context.organizationId, propertyId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Property not found');
     }
 
-    const data: { status?: string; addressComponents?: Record<string, string> } = {};
+    const data: {
+      status?: string;
+      name?: string | null;
+      addressComponents?: Record<string, string>;
+    } = {};
     if (input.status !== undefined) {
       if (input.status !== record.status) {
         data.status = input.status;
       }
+    }
+    if (input.name !== undefined) {
+      data.name = input.name?.trim() || null;
     }
     if (input.addressComponents !== undefined) {
       data.addressComponents = input.addressComponents;
@@ -254,15 +267,50 @@ export class PropertyService {
     return this.toDto(archived ?? record, config);
   }
 
+  /**
+   * Physically delete a property. The identifier becomes available again for
+   * re-registration within the same estate. Refused when the property has
+   * child properties (units) — archive them first.
+   */
+  async delete(context: PropertyServiceContext, propertyId: string): Promise<void> {
+    const record = await this.properties.findById(context.organizationId, propertyId);
+    if (!record) {
+      throw new AppError(404, 'NOT_FOUND', 'Property not found');
+    }
+
+    const deleted = await this.properties.deleteIfNoChildren(propertyId);
+    if (!deleted) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'This property has child properties; archive or re-parent them before deleting',
+      );
+    }
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'property.deleted',
+      targetType: 'property',
+      targetId: record.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { identifier: record.identifier, estateId: record.estateId },
+    });
+  }
+
   private toDto(record: PropertyRecord, config?: PropertyConfigSnapshot): PropertyDto {
-    const typeLabel = config?.assetTypes.find((type) => type.key === record.typeKey)?.label ?? record.typeKey;
-    const parentProperty = record.parentPropertyId && record.parentProperty
-      ? { id: record.parentProperty.id, identifier: record.parentProperty.identifier }
-      : null;
+    const typeLabel =
+      config?.assetTypes.find((type) => type.key === record.typeKey)?.label ?? record.typeKey;
+    const parentProperty =
+      record.parentPropertyId && record.parentProperty
+        ? { id: record.parentProperty.id, identifier: record.parentProperty.identifier }
+        : null;
     return {
       id: record.id,
       estateId: record.estateId,
       identifier: record.identifier,
+      name: record.name,
       typeKey: record.typeKey,
       typeLabel,
       status: record.status as PropertyStatus,
@@ -301,20 +349,31 @@ export function validateAddressComponents(
   for (const component of components) {
     const value = values[component.key]?.trim() ?? '';
     const notApplicable = component.notApplicableFor.includes(typeKey);
-    const required = !notApplicable &&
+    const required =
+      !notApplicable &&
       (component.requiredFor.length === 0 || component.requiredFor.includes(typeKey));
     if (required && value === '') {
       rejectField(component.key, `Address component "${component.label}" is required`);
     }
     if (value === '') continue;
     if (value.length > component.maxLength) {
-      rejectField(component.key, `Address component "${component.label}" exceeds ${component.maxLength} characters`);
+      rejectField(
+        component.key,
+        `Address component "${component.label}" exceeds ${component.maxLength} characters`,
+      );
     }
     if (component.pattern) {
       let matches = false;
-      try { matches = new RegExp(component.pattern).test(value); } catch { /* invalid config is surfaced below */ }
+      try {
+        matches = new RegExp(component.pattern).test(value);
+      } catch {
+        /* invalid config is surfaced below */
+      }
       if (!matches) {
-        rejectField(component.key, `Address component "${component.label}" does not match the required format`);
+        rejectField(
+          component.key,
+          `Address component "${component.label}" does not match the required format`,
+        );
       }
     }
   }
@@ -325,10 +384,7 @@ export function validateAddressComponents(
  * Throws a 400 when the key is unknown or the type is inactive, so the
  * registry never references a classification that no longer exists.
  */
-function assertConfiguredTypeKey(
-  config: PropertyConfigSnapshot,
-  typeKey: string,
-): string {
+function assertConfiguredTypeKey(config: PropertyConfigSnapshot, typeKey: string): string {
   const assetType = config.assetTypes.find((type) => type.key === typeKey);
   if (!assetType) {
     throw new AppError(

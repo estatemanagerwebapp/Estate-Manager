@@ -1,9 +1,4 @@
-import {
-  Router,
-  type Request,
-  type Response,
-  type RequestHandler,
-} from 'express';
+import { Router, type Request, type Response, type RequestHandler } from 'express';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
@@ -113,9 +108,8 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
           estateId: z.string().trim().min(1),
           typeKey: z.string().trim().min(1).max(48),
           parentPropertyId: z.string().trim().min(1).optional(),
-          addressComponents: z
-            .record(z.string(), z.string())
-            .optional(),
+          name: z.string().trim().min(1).max(120).optional(),
+          addressComponents: z.record(z.string(), z.string()).optional(),
         })
         .safeParse(req.body ?? {});
       if (!body.success) {
@@ -128,6 +122,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
         estateId: body.data.estateId,
         typeKey: body.data.typeKey,
         parentPropertyId: body.data.parentPropertyId,
+        name: body.data.name,
         addressComponents: body.data.addressComponents as Record<string, string> | undefined,
       };
       const property = await propertyService.create(context, config, input);
@@ -157,6 +152,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const body = z
         .object({
           status: z.enum(['ACTIVE', 'ARCHIVED']).optional(),
+          name: z.string().trim().min(1).max(120).optional().nullable(),
           addressComponents: z.record(z.string(), z.string()).optional(),
         })
         .safeParse(req.body ?? {});
@@ -168,6 +164,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const config = await loadConfig();
       const update = {
         status: body.data.status,
+        name: body.data.name,
         addressComponents: body.data.addressComponents as Record<string, string> | undefined,
       };
       const property = await propertyService.update(
@@ -190,6 +187,18 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const config = await loadConfig();
       const property = await propertyService.archive(context, config, param(req, 'propertyId'));
       res.status(200).json({ data: { property } });
+    }),
+  );
+
+  // --- DELETE /properties/:propertyId --------------------------------------------
+  router.delete(
+    '/:propertyId',
+    authGuard,
+    managePermission,
+    asyncWrap(async (req, res) => {
+      const context = makeContext(req, res);
+      await propertyService.delete(context, param(req, 'propertyId'));
+      res.status(200).json({ data: { ok: true } });
     }),
   );
 

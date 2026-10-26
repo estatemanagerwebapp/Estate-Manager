@@ -16,6 +16,7 @@ const TEST_ENV: Record<string, string> = {
   RATE_LIMIT_MAX: '1000',
   DATABASE_URL:
     process.env.SILVERSTONE_TEST_DATABASE_URL ??
+    process.env.DATABASE_URL ??
     'postgresql://postgres:postgres@localhost:5432/silverstone_test',
   ORGANIZATION_SLUG: 'test_org',
   SHUTDOWN_TIMEOUT_MS: '5000',

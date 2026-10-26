@@ -184,10 +184,7 @@ function verifyPbkdf2(stored: string, candidate: string): boolean {
   const parsed = parsePbkdf2Hash(stored);
   if (!parsed) return false;
   const expected = Buffer.from(parsed.digest, 'base64');
-  const actual = Buffer.from(
-    derivePbkdf2(candidate, parsed.salt, parsed.iterations),
-    'base64',
-  );
+  const actual = Buffer.from(derivePbkdf2(candidate, parsed.salt, parsed.iterations), 'base64');
   if (expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);
 }
@@ -254,10 +251,7 @@ export async function hashPassword(password: string): Promise<string> {
  * invalidating existing credentials. Argon2id hashes are still checked against
  * Argon2id even when new hashes are being written with PBKDF2.
  */
-export async function verifyPassword(
-  storedHash: string,
-  candidate: string,
-): Promise<boolean> {
+export async function verifyPassword(storedHash: string, candidate: string): Promise<boolean> {
   if (storedHash.startsWith('$argon2')) {
     const mod = await loadArgon2();
     if (!mod) {

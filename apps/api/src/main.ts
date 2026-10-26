@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { ResidentProfileService } from './modules/resident/profile.service.js';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
@@ -53,6 +54,45 @@ async function main(): Promise<void> {
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,
       organizationId: deps.organizationId,
+    },
+    onboarding: {
+      residentOnboarding: deps.residentOnboardingService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      mediaStorage: deps.mediaStorage,
+    },
+    media: {
+      storage: deps.mediaStorage,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      residentOnboarding: deps.residentOnboardingService,
+    },
+    dashboard: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      audit: deps.audit,
+      users: deps.users,
+      residentOnboarding: deps.residentOnboarding,
+      estates: deps.estates,
+      properties: deps.properties,
+      organizationId: deps.organizationId,
+    },
+    resident: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      profile: new ResidentProfileService({
+        users: deps.users,
+        drafts: deps.residentOnboarding,
+        audit: deps.audit,
+        loadProperty: async (orgId, propertyId) => {
+          const detail = await deps.loadPropertyDetail(orgId, propertyId);
+          if (!detail) return null;
+          return { identifier: detail.identifier, estate: detail.estate };
+        },
+      }),
     },
   });
 

@@ -1,9 +1,4 @@
-import {
-  Router,
-  type Request,
-  type Response,
-  type RequestHandler,
-} from 'express';
+import { Router, type Request, type Response, type RequestHandler } from 'express';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
 import { z } from 'zod';
 import { PropertyOptionsSchema } from '@silverstone/config-schema';

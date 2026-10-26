@@ -27,25 +27,39 @@ const AUDIT_EVENT_DB_MAP = {
   'account.reactivated': 'account_reactivated',
   'account.disabled': 'account_disabled',
   'user.role_changed': 'user_role_changed',
+  'user.deleted': 'user_deleted',
   'admin.bootstrap': 'admin_bootstrap',
+  'user.registered': 'user_registered',
+  'user.onboarding_completed': 'user_onboarding_completed',
   // Phase 2 — estate / property / import events.
   'estate.created': 'estate_created',
   'estate.updated': 'estate_updated',
   'estate.status_changed': 'estate_status_changed',
+  'estate.deleted': 'estate_deleted',
   'property.created': 'property_created',
   'property.updated': 'property_updated',
   'property.status_changed': 'property_status_changed',
+  'property.deleted': 'property_deleted',
   'import.previewed': 'import_previewed',
   'import.completed': 'import_completed',
   'import.commit_failed': 'import_commit_failed',
   'propertyOptions.updated': 'property_options_updated',
+  // Phase 2 — resident onboarding (persistent code, payment-gated).
+  'resident.registered': 'resident_registered',
+  'resident.onboarding_completed': 'resident_onboarding_completed',
+  'resident.payment_recorded': 'resident_payment_recorded',
+  'resident.payment_submitted': 'resident_payment_submitted',
+  'resident.deleted': 'resident_deleted',
+  // Phase 3 — resident dashboard.
+  'resident.profile_updated': 'resident_profile_updated',
 } as const;
 
 export interface RecordAuditEventInput {
   organizationId: string;
   actorId: string | null;
   eventType: AuditEventType;
-  targetType: 'user' | 'session' | 'organization' | 'estate' | 'property' | 'import' | null;
+  targetType:
+    'user' | 'session' | 'organization' | 'estate' | 'property' | 'import' | 'resident' | null;
   targetId: string | null;
   requestId: string | null;
   outcome: 'success' | 'failure';

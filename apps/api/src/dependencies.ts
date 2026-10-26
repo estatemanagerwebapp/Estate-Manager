@@ -6,6 +6,7 @@
  * factory so `createApp` stays a pure function of its options.
  */
 import { getEnv } from './config/env.js';
+import * as path from 'node:path';
 import { getPrismaClient } from './lib/prisma.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
 import {
@@ -16,6 +17,12 @@ import { createEmailAdapter } from './modules/auth/email-adapter-factory.js';
 import { PrismaUserRepository } from './modules/auth/user-repository.js';
 import { PrismaSessionRepository } from './modules/auth/session-repository.js';
 import { PrismaPasswordResetRepository } from './modules/auth/reset-token-repository.js';
+import { PrismaResidentOnboardingRepository } from './modules/auth/resident-onboarding-repository.js';
+import {
+  ResidentOnboardingService,
+  type PropertyDetail,
+} from './modules/auth/resident-onboarding.service.js';
+import { LocalMediaStorage } from './modules/media/media-storage.js';
 import { PrismaAuditRepository } from './modules/audit/audit-repository.js';
 import { PermissionResolver } from './modules/auth/permission-resolver.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -39,6 +46,17 @@ export interface AppDependencies {
     sessions: PrismaSessionRepository;
     permissions: PermissionResolver;
   };
+  /**
+   * Raw repositories the dashboard router aggregates across. Exposed
+   * alongside the services so the dashboard's count-only reads stay at the
+   * data boundary (ADR-0001) rather than leaking through the service layer.
+   */
+  audit: PrismaAuditRepository;
+  users: PrismaUserRepository;
+  /** Resident-onboarding drafts (count of pending + completed). */
+  residentOnboarding: PrismaResidentOnboardingRepository;
+  estates: PrismaEstateRepository;
+  properties: PrismaPropertyRepository;
   /** Resolved at startup: the organization's database id. */
   organizationId: string;
   /** Phase 2 — estate management. */
@@ -49,6 +67,14 @@ export interface AppDependencies {
   importService: ImportService;
   /** Phase 2 — property options (read + update with optimistic concurrency). */
   propertyOptionsService: PropertyOptionsService;
+  /** Phase 2 — resident onboarding (persistent code, payment-gated). */
+  residentOnboardingService: ResidentOnboardingService;
+  /** Phase 2 — local media storage (ID document uploads). */
+  mediaStorage: LocalMediaStorage;
+  loadPropertyDetail: (
+    organizationId: string,
+    propertyId: string,
+  ) => Promise<PropertyDetail | null>;
   /** Loads the resolved configuration (asset types + property options + version). */
   loadConfig: () => Promise<PropertyConfigSnapshot>;
 }
@@ -122,6 +148,35 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     env.ORGANIZATION_SLUG,
   );
 
+  // Phase 2 — resident onboarding (persistent code, payment-gated).
+  const residentDrafts = new PrismaResidentOnboardingRepository(prisma);
+  const mediaRoot = path.resolve(process.cwd(), 'uploads');
+  const mediaStorage = new LocalMediaStorage(prisma, mediaRoot);
+
+  const loadPropertyDetail = async (
+    organizationId: string,
+    propertyId: string,
+  ): Promise<PropertyDetail | null> => {
+    const property = await properties.findById(organizationId, propertyId);
+    if (!property) return null;
+    const estate = await estates.findById(organizationId, property.estateId);
+    if (!estate) return null;
+    return {
+      identifier: property.identifier,
+      name: property.name,
+      estate: { name: estate.name, slug: estate.slug },
+    };
+  };
+
+  const residentOnboardingService = new ResidentOnboardingService(
+    users,
+    residentDrafts,
+    audit,
+    permissions,
+    async () => (await configService.resolve()).config,
+    loadPropertyDetail,
+  );
+
   return {
     checkDatabase: async () => {
       await prisma.$queryRaw`SELECT 1`;
@@ -133,11 +188,19 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       sessions,
       permissions,
     },
+    audit,
+    users,
+    residentOnboarding: residentDrafts,
+    estates,
+    properties,
     organizationId: await resolveOrganizationId(prisma, configService),
     estateService,
     propertyService,
     importService,
     propertyOptionsService,
+    residentOnboardingService,
+    mediaStorage,
+    loadPropertyDetail,
     loadConfig,
   };
 }
