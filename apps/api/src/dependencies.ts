@@ -24,6 +24,8 @@ import { PrismaAccessCodeRepository } from './modules/resident/codes-repository.
 import { ResidentCodesService } from './modules/resident/codes.service.js';
 import { PrismaComplaintRepository } from './modules/resident/complaints-repository.js';
 import { ResidentComplaintsService } from './modules/resident/complaints.service.js';
+import { PrismaMessageRepository } from './modules/resident/messages-repository.js';
+import { ResidentMessagesService } from './modules/resident/messages.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -81,6 +83,8 @@ export interface AppDependencies {
   residentCodesService: ResidentCodesService;
   /** Phase 3 (S5) — resident complaints (file + read the reply thread). */
   residentComplaintsService: ResidentComplaintsService;
+  /** Phase 3 (S6) — resident messages (threads with the estate office). */
+  residentMessagesService: ResidentMessagesService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -212,6 +216,12 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
 
+  const messageRepo = new PrismaMessageRepository(prisma);
+  const residentMessagesService = new ResidentMessagesService({
+    messages: messageRepo,
+    audit,
+  });
+
   const residentOnboardingService = new ResidentOnboardingService(
     users,
     residentDrafts,
@@ -254,6 +264,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentFinanceService,
     residentCodesService,
     residentComplaintsService,
+    residentMessagesService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,

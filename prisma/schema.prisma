@@ -43,6 +43,7 @@ model Organization {
   transactions        Transaction[]
   accessCodes         AccessCode[]
   complaints          Complaint[]
+  messageThreads      MessageThread[]
 
   @@map("organizations")
 }
@@ -107,6 +108,7 @@ model User {
   accessCodes        AccessCode[]
   complaints         Complaint[]
   complaintReplies   ComplaintReply[]
+  messageThreads     MessageThread[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -346,6 +348,43 @@ model ComplaintReply {
 
   @@index([complaintId])
   @@map("complaint_replies")
+}
+
+// --- Phase 3 — resident messages (S6) ---------------------------------------------
+// Additive models: a conversation thread started by a resident, and the
+// messages posted into it by either side.
+
+model MessageThread {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// The resident who started the thread; also its owner for scoping.
+  residentUserId String   @map("resident_user_id") @db.Uuid
+  subject        String   @db.VarChar(160)
+  /// OPEN | CLOSED.
+  status         String   @default("OPEN") @db.VarChar(16)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  resident     User         @relation(fields: [residentUserId], references: [id], onDelete: Cascade)
+  messages     Message[]
+
+  @@index([organizationId, residentUserId])
+  @@map("message_threads")
+}
+
+model Message {
+  id         String   @id @default(uuid()) @db.Uuid
+  threadId   String   @map("thread_id") @db.Uuid
+  /// RESIDENT | ESTATE_OFFICE.
+  senderRole String   @map("sender_role") @db.VarChar(16)
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("messages")
 }
 
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
@@ -604,4 +643,5 @@ enum AuditEventType {
   resident_code_extended
   resident_code_deactivated
   resident_complaint_created
+  resident_message_sent
 }

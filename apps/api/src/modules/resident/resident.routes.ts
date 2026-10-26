@@ -27,6 +27,7 @@ import { ResidentPropertiesService } from './properties.service.js';
 import { ResidentFinanceService } from './finance.service.js';
 import { ResidentCodesService } from './codes.service.js';
 import { ResidentComplaintsService } from './complaints.service.js';
+import { ResidentMessagesService } from './messages.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -42,6 +43,8 @@ export interface ResidentRouteOptions {
   codes?: ResidentCodesService;
   /** S5: resident complaints — file and read the reply thread. */
   complaints?: ResidentComplaintsService;
+  /** S6: resident messages — threads with the estate office. */
+  messages?: ResidentMessagesService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -476,6 +479,73 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         return;
       }
       const response = await options.complaints.create(
+        organizationId,
+        ctx.userId,
+        body.data,
+        makeContext(req, res).requestId,
+      );
+      res.status(201).json({ data: response });
+    }),
+  );
+
+  // --- S6: Messages --------------------------------------------------------------
+  // GET  /messages — the acting resident's conversation threads.
+  // POST /messages — start a thread or reply into an open one.
+  //
+  // Self-scoped: the thread id is resolved against the session user, so
+  // another resident's thread is invisible (404).
+
+  const messageGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'message.view'),
+  );
+
+  router.get(
+    '/messages',
+    authGuard,
+    residentGuard,
+    messageGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.messages) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Messages service not wired'));
+        return;
+      }
+      const response = await options.messages.list(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/messages',
+    authGuard,
+    residentGuard,
+    messageGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.messages) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Messages service not wired'));
+        return;
+      }
+      const body = z
+        .object({
+          threadId: z.string().trim().min(1).optional(),
+          subject: z.string().trim().min(1).max(160).optional(),
+          body: z.string().trim().min(1).max(4000),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid message input'));
+        return;
+      }
+      const response = await options.messages.send(
         organizationId,
         ctx.userId,
         body.data,

@@ -55,6 +55,9 @@ import type {
   ResidentCreateComplaintInput,
   ResidentCreateComplaintResponse,
   ComplaintStatus,
+  ResidentMessagesResponse,
+  ResidentSendMessageInput,
+  ResidentSendMessageResponse,
 } from '@silverstone/shared';
 
 /**
@@ -570,6 +573,17 @@ export const api = {
   /** S5: file a complaint on the acting resident's property. */
   createResidentComplaint: (input: ResidentCreateComplaintInput) =>
     request<ResidentCreateComplaintResponse>('/api/v1/resident/complaints', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** S6: the acting resident's conversation threads with the estate office. */
+  getResidentMessages: () =>
+    request<ResidentMessagesResponse>('/api/v1/resident/messages'),
+
+  /** S6: start a thread (no threadId) or reply into an open one. */
+  sendResidentMessage: (input: ResidentSendMessageInput) =>
+    request<ResidentSendMessageResponse>('/api/v1/resident/messages', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
