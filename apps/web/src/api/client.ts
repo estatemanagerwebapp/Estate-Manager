@@ -58,6 +58,7 @@ import type {
   ResidentMessagesResponse,
   ResidentSendMessageInput,
   ResidentSendMessageResponse,
+  ResidentCommunityView,
 } from '@silverstone/shared';
 
 /**
@@ -587,6 +588,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  /** S7: community feed — latest announcements + the estate broadcast. */
+  getResidentCommunity: () =>
+    request<ResidentCommunityView>('/api/v1/resident/community'),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

@@ -28,6 +28,7 @@ import { ResidentFinanceService } from './finance.service.js';
 import { ResidentCodesService } from './codes.service.js';
 import { ResidentComplaintsService } from './complaints.service.js';
 import { ResidentMessagesService } from './messages.service.js';
+import { ResidentCommunityService } from './community.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -45,6 +46,8 @@ export interface ResidentRouteOptions {
   complaints?: ResidentComplaintsService;
   /** S6: resident messages — threads with the estate office. */
   messages?: ResidentMessagesService;
+  /** S7: community feed — announcements + estate broadcast (read-only). */
+  community?: ResidentCommunityService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -552,6 +555,29 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         makeContext(req, res).requestId,
       );
       res.status(201).json({ data: response });
+    }),
+  );
+
+  // --- S7: Community -------------------------------------------------------------
+  // GET /community — the latest announcements and the active broadcast for
+  // the resident's own estate. Read-only: residents never publish here.
+
+  router.get(
+    '/community',
+    authGuard,
+    residentGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.community) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Community service not wired'));
+        return;
+      }
+      const response = await options.community.get(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
     }),
   );
 

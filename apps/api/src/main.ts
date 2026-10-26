@@ -104,6 +104,7 @@ async function main(): Promise<void> {
       codes: deps.residentCodesService,
       complaints: deps.residentComplaintsService,
       messages: deps.residentMessagesService,
+      community: deps.residentCommunityService,
     },
   });
 

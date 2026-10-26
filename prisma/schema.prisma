@@ -44,6 +44,8 @@ model Organization {
   accessCodes         AccessCode[]
   complaints          Complaint[]
   messageThreads      MessageThread[]
+  announcements       Announcement[]
+  estateBroadcasts    EstateBroadcast[]
 
   @@map("organizations")
 }
@@ -109,6 +111,7 @@ model User {
   complaints         Complaint[]
   complaintReplies   ComplaintReply[]
   messageThreads     MessageThread[]
+  announcements      Announcement[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -387,6 +390,48 @@ model Message {
   @@map("messages")
 }
 
+// --- Phase 3 — resident community feed (S7) ----------------------------------------
+// Read-only feeds for residents. Announcements are organization-wide;
+// broadcasts are estate-scoped and carry a priority plus an optional expiry.
+// Both are written by the estate office, never by a resident.
+
+model Announcement {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  title          String    @db.VarChar(160)
+  body           String
+  /// The estate-office user who published it; null when the author was removed.
+  authorId       String?   @map("author_id") @db.Uuid
+  publishedAt    DateTime  @default(now()) @map("published_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, publishedAt])
+  @@map("announcements")
+}
+
+model EstateBroadcast {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  estateId       String    @map("estate_id") @db.Uuid
+  title          String    @db.VarChar(160)
+  body           String
+  /// INFO | WARNING | CRITICAL.
+  priority       String    @default("INFO") @db.VarChar(16)
+  issuedAt       DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  /// Null = no expiry.
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estate       Estate       @relation(fields: [estateId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, estateId, issuedAt])
+  @@map("estate_broadcasts")
+}
+
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
 /// holds the expiration and revocation state. A null `expiresAt` marks a
 /// revoked session (logout / password change / account suspension).
@@ -480,6 +525,7 @@ model Estate {
   properties          Property[]
   importBatches       ImportBatch[]
   residentOnboardings ResidentOnboarding[]
+  estateBroadcasts    EstateBroadcast[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])

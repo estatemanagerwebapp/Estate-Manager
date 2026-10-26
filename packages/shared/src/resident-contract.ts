@@ -250,6 +250,8 @@ export interface EstateBroadcastDto {
   body: string;
   priority: 'INFO' | 'WARNING' | 'CRITICAL';
   issuedAt: string;
+  /** Null = the broadcast does not expire. */
+  expiresAt: string | null;
 }
 
 export interface ResidentCommunityView {

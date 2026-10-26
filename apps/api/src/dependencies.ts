@@ -26,6 +26,8 @@ import { PrismaComplaintRepository } from './modules/resident/complaints-reposit
 import { ResidentComplaintsService } from './modules/resident/complaints.service.js';
 import { PrismaMessageRepository } from './modules/resident/messages-repository.js';
 import { ResidentMessagesService } from './modules/resident/messages.service.js';
+import { PrismaCommunityRepository } from './modules/resident/community-repository.js';
+import { ResidentCommunityService } from './modules/resident/community.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -85,6 +87,8 @@ export interface AppDependencies {
   residentComplaintsService: ResidentComplaintsService;
   /** Phase 3 (S6) — resident messages (threads with the estate office). */
   residentMessagesService: ResidentMessagesService;
+  /** Phase 3 (S7) — resident community feed (announcements + broadcast). */
+  residentCommunityService: ResidentCommunityService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -222,6 +226,19 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     audit,
   });
 
+  const communityRepo = new PrismaCommunityRepository(prisma);
+  const residentCommunityService = new ResidentCommunityService({
+    community: communityRepo,
+    // The resident's estate, resolved through their onboarding draft and the
+    // assigned property — never from the request.
+    loadEstateId: async (_organizationId, userId) => {
+      const draft = await residentDrafts.findByUser(userId);
+      if (!draft?.propertyId) return null;
+      const property = await properties.findById(_organizationId, draft.propertyId);
+      return property?.estateId ?? null;
+    },
+  });
+
   const residentOnboardingService = new ResidentOnboardingService(
     users,
     residentDrafts,
@@ -265,6 +282,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentCodesService,
     residentComplaintsService,
     residentMessagesService,
+    residentCommunityService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,
