@@ -25,6 +25,7 @@ import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { ResidentProfileService } from './profile.service.js';
 import { ResidentPropertiesService } from './properties.service.js';
 import { ResidentFinanceService } from './finance.service.js';
+import { ResidentCodesService } from './codes.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -36,6 +37,8 @@ export interface ResidentRouteOptions {
   properties?: ResidentPropertiesService;
   /** S3: resident finance — invoices, payments, transactions. */
   finance?: ResidentFinanceService;
+  /** S4: resident access codes — generate, extend, deactivate. */
+  codes?: ResidentCodesService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -261,6 +264,138 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
           method: body.data.method,
           reference: body.data.reference ?? null,
         },
+        makeContext(req, res).requestId,
+      );
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- S4: Access Codes -----------------------------------------------------------
+  // GET  /codes               — the acting resident's codes (prefix + window).
+  // POST /codes               — generate; the full code is returned once.
+  // POST /codes/:id/extend    — push the validity window further out.
+  // POST /codes/:id/deactivate— revoke a code.
+  //
+  // Self-scoped: the acting user id comes from the session, and every lookup
+  // is filtered by it, so a resident can never address another resident's
+  // code (404).
+
+  const codeCreateGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'code.create'),
+  );
+  const codeDeactivateGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'code.deactivate'),
+  );
+
+  const codeKindSchema = z.enum(['ENTRY', 'EXIT', 'BOTH']);
+
+  router.get(
+    '/codes',
+    authGuard,
+    residentGuard,
+    codeCreateGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.codes) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+        return;
+      }
+      const response = await options.codes.list(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/codes',
+    authGuard,
+    residentGuard,
+    codeCreateGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.codes) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+        return;
+      }
+      const body = z
+        .object({
+          kind: codeKindSchema,
+          durationDays: z.number().int().min(1).max(365).optional(),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid access code input'));
+        return;
+      }
+      const response = await options.codes.generate(
+        organizationId,
+        ctx.userId,
+        { kind: body.data.kind, durationDays: body.data.durationDays },
+        makeContext(req, res).requestId,
+      );
+      res.status(201).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/codes/:id/extend',
+    authGuard,
+    residentGuard,
+    codeCreateGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.codes) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+        return;
+      }
+      const body = z
+        .object({ durationDays: z.number().int().min(1).max(365).optional() })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid extend input'));
+        return;
+      }
+      const response = await options.codes.extend(
+        organizationId,
+        ctx.userId,
+        String(req.params.id),
+        body.data.durationDays,
+        makeContext(req, res).requestId,
+      );
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/codes/:id/deactivate',
+    authGuard,
+    residentGuard,
+    codeDeactivateGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.codes) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+        return;
+      }
+      const response = await options.codes.deactivate(
+        organizationId,
+        ctx.userId,
+        String(req.params.id),
         makeContext(req, res).requestId,
       );
       res.status(200).json({ data: response });

@@ -20,6 +20,8 @@ import { PrismaPasswordResetRepository } from './modules/auth/reset-token-reposi
 import { PrismaResidentOnboardingRepository } from './modules/auth/resident-onboarding-repository.js';
 import { PrismaFinanceRepository } from './modules/resident/finance-repository.js';
 import { ResidentFinanceService } from './modules/resident/finance.service.js';
+import { PrismaAccessCodeRepository } from './modules/resident/codes-repository.js';
+import { ResidentCodesService } from './modules/resident/codes.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -73,6 +75,8 @@ export interface AppDependencies {
   residentOnboardingService: ResidentOnboardingService;
   /** Phase 3 (S3) — resident finance (invoices, payments, transactions). */
   residentFinanceService: ResidentFinanceService;
+  /** Phase 3 (S4) — resident access codes (generate / extend / deactivate). */
+  residentCodesService: ResidentCodesService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -182,6 +186,18 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
 
+  const accessCodeRepo = new PrismaAccessCodeRepository(prisma);
+  const residentCodesService = new ResidentCodesService({
+    codes: accessCodeRepo,
+    audit,
+    // The acting resident's assigned property, resolved through their
+    // onboarding draft — never from the request.
+    loadPropertyId: async (_organizationId, userId) => {
+      const draft = await residentDrafts.findByUser(userId);
+      return draft?.propertyId ?? null;
+    },
+  });
+
   const residentOnboardingService = new ResidentOnboardingService(
     users,
     residentDrafts,
@@ -222,6 +238,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     propertyOptionsService,
     residentOnboardingService,
     residentFinanceService,
+    residentCodesService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,

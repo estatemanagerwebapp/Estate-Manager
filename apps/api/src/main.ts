@@ -101,6 +101,7 @@ async function main(): Promise<void> {
         loadConfig: deps.loadConfig,
       }),
       finance: deps.residentFinanceService,
+      codes: deps.residentCodesService,
     },
   });
 

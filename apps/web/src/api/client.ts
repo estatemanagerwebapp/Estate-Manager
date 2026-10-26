@@ -46,6 +46,11 @@ import type {
   ResidentFinanceView,
   ResidentCreatePaymentInput,
   ResidentCreatePaymentResponse,
+  ResidentAccessCodeDto,
+  ResidentGenerateAccessCodeInput,
+  ResidentGenerateAccessCodeResponse,
+  ResidentExtendAccessCodeResponse,
+  ResidentDeactivateAccessCodeResponse,
 } from '@silverstone/shared';
 
 /**
@@ -523,6 +528,34 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  /** S4: the acting resident's access codes (prefix + validity, never the secret). */
+  getResidentCodes: () =>
+    request<{ codes: ResidentAccessCodeDto[] }>('/api/v1/resident/codes'),
+
+  /** S4: generate an access code. The full code is returned exactly once. */
+  generateResidentAccessCode: (input: ResidentGenerateAccessCodeInput) =>
+    request<ResidentGenerateAccessCodeResponse>('/api/v1/resident/codes', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** S4: push a code's validity window further out. */
+  extendResidentAccessCode: (codeId: string, durationDays?: number) =>
+    request<ResidentExtendAccessCodeResponse>(
+      `/api/v1/resident/codes/${encodeURIComponent(codeId)}/extend`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ durationDays }),
+      },
+    ),
+
+  /** S4: deactivate (revoke) an access code. */
+  deactivateResidentAccessCode: (codeId: string) =>
+    request<ResidentDeactivateAccessCodeResponse>(
+      `/api/v1/resident/codes/${encodeURIComponent(codeId)}/deactivate`,
+      { method: 'POST' },
+    ),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

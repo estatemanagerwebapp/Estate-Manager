@@ -263,6 +263,9 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'propertyOptions.updated': 'updated property options',
   'resident.profile_updated': 'updated their profile',
   'resident.invoice_created': 'created a resident invoice',
+  'resident.code_generated': 'generated an access code',
+  'resident.code_extended': 'extended an access code',
+  'resident.code_deactivated': 'deactivated an access code',
 };
 
 type ActivityTone = 'success' | 'danger' | 'warning' | 'neutral';

@@ -265,6 +265,9 @@ export const AUDIT_EVENT_TYPES = [
   'resident.profile_updated',
   'resident.payment_recorded',
   'resident.invoice_created',
+  'resident.code_generated',
+  'resident.code_extended',
+  'resident.code_deactivated',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

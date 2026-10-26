@@ -41,6 +41,7 @@ model Organization {
   invoices            Invoice[]
   payments            Payment[]
   transactions        Transaction[]
+  accessCodes         AccessCode[]
 
   @@map("organizations")
 }
@@ -102,6 +103,7 @@ model User {
   invoices           Invoice[]
   payments           Payment[]
   transactions       Transaction[]
+  accessCodes        AccessCode[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -268,6 +270,39 @@ model Transaction {
   @@map("transactions")
 }
 
+// --- Phase 3 — resident access codes (S4) -------------------------------------
+// Additive model for gate-access codes. The full code is returned exactly
+// once at generation; only its SHA-256 hash and a short display prefix are
+// stored, so a database leak never yields a usable code.
+
+model AccessCode {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  propertyId     String?   @map("property_id") @db.Uuid
+  /// ENTRY | EXIT | BOTH.
+  kind           String    @db.VarChar(16)
+  /// SHA-256 hex of the full code. The plaintext is never stored.
+  codeHash       String    @map("code_hash") @db.VarChar(64)
+  /// First characters of the code, for display only.
+  codePrefix     String    @map("code_prefix") @db.VarChar(8)
+  /// ACTIVE | REVOKED | EXPIRED.
+  status         String    @default("ACTIVE") @db.VarChar(16)
+  /// End of the validity window; null = no expiry (open-ended code).
+  validUntil     DateTime? @map("valid_until") @db.Timestamptz(6)
+  issuedAt       DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, userId, status])
+  @@map("access_codes")
+}
+
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
 /// holds the expiration and revocation state. A null `expiresAt` marks a
 /// revoked session (logout / password change / account suspension).
@@ -401,6 +436,7 @@ model Property {
   childProperties     Property[]           @relation("propertyHierarchy")
   residentOnboardings ResidentOnboarding[]
   invoices            Invoice[]
+  accessCodes         AccessCode[]
 
   /// The canonical identifier is unique within its estate. This is the
   /// backstop for all identifier-collision handling: the application pre-checks
@@ -518,4 +554,7 @@ enum AuditEventType {
   // Phase 3 — resident dashboard.
   resident_profile_updated
   resident_invoice_created
+  resident_code_generated
+  resident_code_extended
+  resident_code_deactivated
 }
