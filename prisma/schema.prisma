@@ -48,6 +48,7 @@ model Organization {
   estateBroadcasts    EstateBroadcast[]
   facilities          Facility[]
   bookings            Booking[]
+  sosEvents           SosEvent[]
 
   @@map("organizations")
 }
@@ -115,6 +116,7 @@ model User {
   messageThreads     MessageThread[]
   announcements      Announcement[]
   bookings           Booking[]
+  sosEvents          SosEvent[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -480,6 +482,34 @@ model Booking {
   @@map("bookings")
 }
 
+// --- Phase 3 — resident emergency / SOS (S9) ----------------------------------------
+// An SOS event is raised by a resident against their assigned property and
+// is worked by the estate office. The timestamps of each stage are kept on
+// the row so the history reads clearly.
+
+model SosEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  /// Null when the resident has no assigned property yet.
+  propertyId     String?   @map("property_id") @db.Uuid
+  note           String?   @db.VarChar(500)
+  /// RAISED | ACKNOWLEDGED | RESOLVED.
+  status         String    @default("RAISED") @db.VarChar(16)
+  raisedAt       DateTime  @default(now()) @map("raised_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, userId, raisedAt])
+  @@index([organizationId, status])
+  @@map("sos_events")
+}
+
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
 /// holds the expiration and revocation state. A null `expiresAt` marks a
 /// revoked session (logout / password change / account suspension).
@@ -617,6 +647,7 @@ model Property {
   invoices            Invoice[]
   accessCodes         AccessCode[]
   complaints          Complaint[]
+  sosEvents           SosEvent[]
 
   /// The canonical identifier is unique within its estate. This is the
   /// backstop for all identifier-collision handling: the application pre-checks
@@ -741,4 +772,5 @@ enum AuditEventType {
   resident_message_sent
   resident_booking_created
   resident_booking_cancelled
+  resident_sos_raised
 }

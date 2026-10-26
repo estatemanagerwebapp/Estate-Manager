@@ -30,6 +30,8 @@ import { PrismaCommunityRepository } from './modules/resident/community-reposito
 import { ResidentCommunityService } from './modules/resident/community.service.js';
 import { PrismaBookingRepository } from './modules/resident/bookings-repository.js';
 import { ResidentBookingsService } from './modules/resident/bookings.service.js';
+import { PrismaSosRepository } from './modules/resident/sos-repository.js';
+import { ResidentSosService } from './modules/resident/sos.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -93,6 +95,8 @@ export interface AppDependencies {
   residentCommunityService: ResidentCommunityService;
   /** Phase 3 (S8) — resident facilities and bookings. */
   residentBookingsService: ResidentBookingsService;
+  /** Phase 3 (S9) — resident emergency / SOS alerts. */
+  residentSosService: ResidentSosService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -255,6 +259,16 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
 
+  const sosRepo = new PrismaSosRepository(prisma);
+  const residentSosService = new ResidentSosService({
+    sos: sosRepo,
+    audit,
+    loadPropertyId: async (_organizationId, userId) => {
+      const draft = await residentDrafts.findByUser(userId);
+      return draft?.propertyId ?? null;
+    },
+  });
+
   const residentOnboardingService = new ResidentOnboardingService(
     users,
     residentDrafts,
@@ -300,6 +314,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentMessagesService,
     residentCommunityService,
     residentBookingsService,
+    residentSosService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,

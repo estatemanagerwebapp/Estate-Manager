@@ -270,6 +270,7 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'resident.message_sent': 'sent a message',
   'resident.booking_created': 'requested a facility booking',
   'resident.booking_cancelled': 'cancelled a facility booking',
+  'resident.sos_raised': 'raised an SOS alert',
 };
 
 type ActivityTone = 'success' | 'danger' | 'warning' | 'neutral';

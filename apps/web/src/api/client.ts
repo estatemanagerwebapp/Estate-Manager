@@ -63,6 +63,9 @@ import type {
   ResidentCreateBookingInput,
   ResidentCreateBookingResponse,
   ResidentCancelBookingResponse,
+  ResidentSosEventsResponse,
+  ResidentCreateSosInput,
+  ResidentCreateSosResponse,
 } from '@silverstone/shared';
 
 /**
@@ -614,6 +617,16 @@ export const api = {
       `/api/v1/resident/bookings/${encodeURIComponent(bookingId)}/cancel`,
       { method: 'POST' },
     ),
+
+  /** S9: the resident's own SOS history. */
+  getResidentSosEvents: () => request<ResidentSosEventsResponse>('/api/v1/resident/sos'),
+
+  /** S9: raise an SOS alert. */
+  createResidentSos: (input: ResidentCreateSosInput) =>
+    request<ResidentCreateSosResponse>('/api/v1/resident/sos', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

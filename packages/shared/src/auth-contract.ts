@@ -272,6 +272,7 @@ export const AUDIT_EVENT_TYPES = [
   'resident.message_sent',
   'resident.booking_created',
   'resident.booking_cancelled',
+  'resident.sos_raised',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

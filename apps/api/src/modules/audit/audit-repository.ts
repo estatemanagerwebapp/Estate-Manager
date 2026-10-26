@@ -60,6 +60,7 @@ const AUDIT_EVENT_DB_MAP = {
   'resident.message_sent': 'resident_message_sent',
   'resident.booking_created': 'resident_booking_created',
   'resident.booking_cancelled': 'resident_booking_cancelled',
+  'resident.sos_raised': 'resident_sos_raised',
 } as const;
 
 export interface RecordAuditEventInput {

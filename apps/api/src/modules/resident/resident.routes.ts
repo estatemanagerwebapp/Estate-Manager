@@ -30,6 +30,7 @@ import { ResidentComplaintsService } from './complaints.service.js';
 import { ResidentMessagesService } from './messages.service.js';
 import { ResidentCommunityService } from './community.service.js';
 import { ResidentBookingsService } from './bookings.service.js';
+import { ResidentSosService } from './sos.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -51,6 +52,8 @@ export interface ResidentRouteOptions {
   community?: ResidentCommunityService;
   /** S8: facilities and bookings. */
   bookings?: ResidentBookingsService;
+  /** S9: emergency / SOS alerts. */
+  sos?: ResidentSosService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -677,6 +680,67 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         makeContext(req, res).requestId,
       );
       res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- S9: Emergency / SOS -----------------------------------------------------------
+  // GET  /sos — the acting resident's own SOS history.
+  // POST /sos — raise an SOS alert against their own property.
+  //
+  // Self-scoped: the resident and their property come from the session,
+  // never from the request body.
+
+  const sosGuard = requirePermission((ctx) => permissions.can(ctx.role, 'sos.create'));
+
+  router.get(
+    '/sos',
+    authGuard,
+    residentGuard,
+    sosGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.sos) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'SOS service not wired'));
+        return;
+      }
+      const response = await options.sos.list(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/sos',
+    authGuard,
+    residentGuard,
+    sosGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.sos) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'SOS service not wired'));
+        return;
+      }
+      const body = z
+        .object({ note: z.string().trim().max(500).optional() })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid SOS input'));
+        return;
+      }
+      const response = await options.sos.raise(
+        organizationId,
+        ctx.userId,
+        { note: body.data.note },
+        makeContext(req, res).requestId,
+      );
+      res.status(201).json({ data: response });
     }),
   );
 
