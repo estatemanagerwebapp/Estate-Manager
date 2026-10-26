@@ -24,6 +24,18 @@ export const PERMISSIONS = [
   'audit.read',
   'user.manage',
   'portal.access.self',
+  // Resident dashboard capabilities (additive; granted to RESIDENT by default).
+  'profile.view',
+  'property.view',
+  'invoice.view',
+  'payment.create',
+  'code.create',
+  'code.deactivate',
+  'complaint.create',
+  'complaint.view',
+  'message.view',
+  'facility.book',
+  'sos.create',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -62,7 +74,20 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = 
   SUPER_ADMIN: ALL_PERMISSIONS,
   ESTATE_ADMIN: [...ADMIN_PERMISSIONS, ...USER_ADMIN_PERMISSIONS],
   GUARD: ['gate.manage', 'gate.read', 'resident.read'],
-  RESIDENT: ['portal.access.self'],
+  RESIDENT: [
+    'portal.access.self',
+    'profile.view',
+    'property.view',
+    'invoice.view',
+    'payment.create',
+    'code.create',
+    'code.deactivate',
+    'complaint.create',
+    'complaint.view',
+    'message.view',
+    'facility.book',
+    'sos.create',
+  ],
   AUDITOR: AUDITOR_PERMISSIONS,
 };
 

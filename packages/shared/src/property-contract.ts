@@ -82,6 +82,11 @@ export interface PropertyDto {
    */
   identifier: string;
   /**
+   * Human-facing name the organization gives this property. Distinct from
+   * the derived identifier; null for legacy/import-created records.
+   */
+  name: string | null;
+  /**
    * Config asset type key (e.g. `house`, `apartment_block`, `land_plot`).
    * Validated against the organization configuration at write time.
    */
@@ -115,12 +120,16 @@ export interface CreatePropertyInput {
   estateId: string;
   typeKey: string;
   parentPropertyId?: string;
+  /** Human-facing property name. Optional; import-created rows leave it null. */
+  name?: string;
   /** Address component values keyed by configured component key. */
   addressComponents?: AddressComponents;
 }
 
 export interface UpdatePropertyInput {
   status?: PropertyStatus;
+  /** Human-facing property name; optional — left undefined means unchanged. */
+  name?: string | null;
   /** Address components may be updated; the identifier is NOT. */
   addressComponents?: AddressComponents;
 }
@@ -167,12 +176,7 @@ export interface PropertyOptionsView {
 
 // --- Import batches ------------------------------------------------------------
 
-export const IMPORT_BATCH_STATUSES = [
-  'PREVIEWED',
-  'COMMITTED',
-  'COMMIT_FAILED',
-  'FAILED',
-] as const;
+export const IMPORT_BATCH_STATUSES = ['PREVIEWED', 'COMMITTED', 'COMMIT_FAILED', 'FAILED'] as const;
 export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
 
 export interface ImportBatchDto {
@@ -205,12 +209,7 @@ export interface ImportBatchDto {
 }
 
 export type ImportRowStatus =
-  | 'VALID'
-  | 'ERROR'
-  | 'DUPLICATE_IN_FILE'
-  | 'COLLISION'
-  | 'CREATED'
-  | 'DUPLICATE_EXISTING';
+  'VALID' | 'ERROR' | 'DUPLICATE_IN_FILE' | 'COLLISION' | 'CREATED' | 'DUPLICATE_EXISTING';
 
 export interface ImportRowDto {
   id: string;
@@ -269,9 +268,11 @@ export const PHASE2_AUDIT_EVENT_TYPES = [
   'estate.created',
   'estate.updated',
   'estate.status_changed',
+  'estate.deleted',
   'property.created',
   'property.updated',
   'property.status_changed',
+  'property.deleted',
   'import.previewed',
   'import.completed',
   'import.commit_failed',

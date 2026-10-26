@@ -30,7 +30,24 @@ describe('permissions', () => {
   });
 
   it('limits residents to their own portal surface', () => {
-    expect(permissionsForRole('RESIDENT')).toEqual(['portal.access.self']);
+    expect(permissionsForRole('RESIDENT')).toEqual([
+      'portal.access.self',
+      'profile.view',
+      'property.view',
+      'invoice.view',
+      'payment.create',
+      'code.create',
+      'code.deactivate',
+      'complaint.create',
+      'complaint.view',
+      'message.view',
+      'facility.book',
+      'sos.create',
+    ]);
+    // No administrative surface leaks into the resident role.
+    expect(hasPermission('RESIDENT', 'resident.manage')).toBe(false);
+    expect(hasPermission('RESIDENT', 'billing.manage')).toBe(false);
+    expect(hasPermission('RESIDENT', 'config.manage')).toBe(false);
   });
 
   it('grants auditors read-only access', () => {
