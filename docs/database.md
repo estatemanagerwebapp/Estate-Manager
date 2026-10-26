@@ -13,6 +13,16 @@ identity surface:
   (`@@unique([organizationId, email])`); stores `role` / `status` as
   plain `VARCHAR(20)` mirroring the shared `ROLE_KEYS` /
   `ACCOUNT_STATUSES`, plus the Argon2id (or PBKDF2) password hash.
+- `ResidentOnboarding` — draft resident record created when an admin
+  registers a resident; holds the persistent onboarding code
+  (`onboardingCode` column, SHA-256 hash at rest), all wizard-collected
+  fields (gender, marital status, next of kin, ID type + document URL),
+  payment status, and an optional link to the `User` once the account is
+  created. Revocable by admin deletion; no TTL, no attempt cap, not
+  single-use — re-shareable from the Residents page.
+- `MediaFile` — uploaded ID documents stored under
+  `apps/api/uploads/<org>/<id>` on local disk (Cloudflare R2 later on
+  Vercel, rewrite URL only); served at `GET /media/:org/:id`.
 - `Session` — one row per live sign-in; `expiresAt` is `NULL` when the
   session was revoked. The opaque cookie value is the row's primary key.
 - `PasswordResetToken` — stores only the **SHA-256 hash** of the
@@ -22,6 +32,9 @@ identity surface:
   application code). `eventType` / `outcome` are Prisma enums with
   underscored values; the wire contract uses dotted names and the
   translation lives in `modules/audit/audit-repository.ts`.
+  Phase 2 adds: `resident.registered`, `resident.onboarding_completed`,
+  `resident.payment_recorded`, `resident.payment_submitted`,
+  `resident.deleted`, `user.deleted`; targetType `'resident'` / `'user'`.
 
 ### Partial unique index
 
@@ -68,6 +81,7 @@ so the backend is Postgres-agnostic by design.
 postgresql://postgres.<ref>:<password>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
 ```
 
+- **Connection limit.** The Supabase session pooler caps at 15 concurrent connections per database user. Prisma's default pool size is `num_cpus * 2 + 1` (17 on an 8-core machine), which exceeds this ceiling and causes `EMAXCONNSESSION` errors under concurrent test loads. Append `?connection_limit=5` to `DATABASE_URL` to cap the per-process pool. With vitest forking ~4 workers, 4 × 5 = 20 potential connections queue at the pooler rather than fail; a single-worker dev server uses at most 5.
 - **Session, not transaction, pooler.** Prisma keeps pooled connections
   open between requests; transaction mode (port 6543) breaks that.
 - **URL-encode pooler passwords containing special characters** for both
