@@ -166,6 +166,7 @@ export type {
   ResidentBookingsView,
   ResidentCreateBookingInput,
   ResidentCreateBookingResponse,
+  ResidentCancelBookingResponse,
   SosStatus,
   SosEventDto,
   ResidentSosEventsResponse,

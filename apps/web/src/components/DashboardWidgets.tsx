@@ -268,6 +268,8 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'resident.code_deactivated': 'deactivated an access code',
   'resident.complaint_created': 'filed a complaint',
   'resident.message_sent': 'sent a message',
+  'resident.booking_created': 'requested a facility booking',
+  'resident.booking_cancelled': 'cancelled a facility booking',
 };
 
 type ActivityTone = 'success' | 'danger' | 'warning' | 'neutral';

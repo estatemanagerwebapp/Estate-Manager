@@ -59,6 +59,10 @@ import type {
   ResidentSendMessageInput,
   ResidentSendMessageResponse,
   ResidentCommunityView,
+  ResidentBookingsView,
+  ResidentCreateBookingInput,
+  ResidentCreateBookingResponse,
+  ResidentCancelBookingResponse,
 } from '@silverstone/shared';
 
 /**
@@ -592,6 +596,24 @@ export const api = {
   /** S7: community feed — latest announcements + the estate broadcast. */
   getResidentCommunity: () =>
     request<ResidentCommunityView>('/api/v1/resident/community'),
+
+  /** S8: bookable facilities plus the resident's upcoming and past bookings. */
+  getResidentFacilities: () =>
+    request<ResidentBookingsView>('/api/v1/resident/facilities'),
+
+  /** S8: request a booking. */
+  createResidentBooking: (input: ResidentCreateBookingInput) =>
+    request<ResidentCreateBookingResponse>('/api/v1/resident/bookings', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** S8: cancel one of the resident's own bookings. */
+  cancelResidentBooking: (bookingId: string) =>
+    request<ResidentCancelBookingResponse>(
+      `/api/v1/resident/bookings/${encodeURIComponent(bookingId)}/cancel`,
+      { method: 'POST' },
+    ),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

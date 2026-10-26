@@ -46,6 +46,8 @@ model Organization {
   messageThreads      MessageThread[]
   announcements       Announcement[]
   estateBroadcasts    EstateBroadcast[]
+  facilities          Facility[]
+  bookings            Booking[]
 
   @@map("organizations")
 }
@@ -112,6 +114,7 @@ model User {
   complaintReplies   ComplaintReply[]
   messageThreads     MessageThread[]
   announcements      Announcement[]
+  bookings           Booking[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -432,6 +435,51 @@ model EstateBroadcast {
   @@map("estate_broadcasts")
 }
 
+// --- Phase 3 — facilities & bookings (S8) -----------------------------------------
+// Facilities are listed per estate (or organization-wide when estateId is
+// null) and may be bookable. Bookings are owned by the resident who made
+// them and carry a window plus a status.
+
+model Facility {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Null = available to every estate in the organization.
+  estateId       String?  @map("estate_id") @db.Uuid
+  name           String   @db.VarChar(160)
+  description    String
+  bookable       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estate       Estate?       @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+
+  @@index([organizationId, estateId])
+  @@map("facilities")
+}
+
+model Booking {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  facilityId     String   @map("facility_id") @db.Uuid
+  startsAt       DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime @map("ends_at") @db.Timestamptz(6)
+  attendees      Int?
+  /// REQUESTED | CONFIRMED | CANCELLED | COMPLETED.
+  status         String   @default("REQUESTED") @db.VarChar(16)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, startsAt])
+  @@index([facilityId, startsAt, endsAt])
+  @@map("bookings")
+}
+
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
 /// holds the expiration and revocation state. A null `expiresAt` marks a
 /// revoked session (logout / password change / account suspension).
@@ -526,6 +574,7 @@ model Estate {
   importBatches       ImportBatch[]
   residentOnboardings ResidentOnboarding[]
   estateBroadcasts    EstateBroadcast[]
+  facilities          Facility[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -690,4 +739,6 @@ enum AuditEventType {
   resident_code_deactivated
   resident_complaint_created
   resident_message_sent
+  resident_booking_created
+  resident_booking_cancelled
 }

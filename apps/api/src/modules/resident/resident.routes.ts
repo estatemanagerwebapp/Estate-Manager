@@ -29,6 +29,7 @@ import { ResidentCodesService } from './codes.service.js';
 import { ResidentComplaintsService } from './complaints.service.js';
 import { ResidentMessagesService } from './messages.service.js';
 import { ResidentCommunityService } from './community.service.js';
+import { ResidentBookingsService } from './bookings.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -48,6 +49,8 @@ export interface ResidentRouteOptions {
   messages?: ResidentMessagesService;
   /** S7: community feed — announcements + estate broadcast (read-only). */
   community?: ResidentCommunityService;
+  /** S8: facilities and bookings. */
+  bookings?: ResidentBookingsService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -577,6 +580,102 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         return;
       }
       const response = await options.community.get(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- S8: Facilities & Bookings ---------------------------------------------------
+  // GET  /facilities           — bookable facilities + the resident's bookings.
+  // POST /bookings             — request a booking (self scope).
+  // POST /bookings/:id/cancel  — cancel one of the resident's own bookings.
+
+  const bookingGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'facility.book'),
+  );
+
+  router.get(
+    '/facilities',
+    authGuard,
+    residentGuard,
+    bookingGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.bookings) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+        return;
+      }
+      const response = await options.bookings.list(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/bookings',
+    authGuard,
+    residentGuard,
+    bookingGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.bookings) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+        return;
+      }
+      const body = z
+        .object({
+          facilityId: z.string().trim().min(1),
+          startsAt: z.string().trim().min(1),
+          endsAt: z.string().trim().min(1),
+          attendees: z.number().int().min(1).max(500).optional(),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid booking input'));
+        return;
+      }
+      const response = await options.bookings.create(
+        organizationId,
+        ctx.userId,
+        {
+          facilityId: body.data.facilityId,
+          startsAt: body.data.startsAt,
+          endsAt: body.data.endsAt,
+          attendees: body.data.attendees,
+        },
+        makeContext(req, res).requestId,
+      );
+      res.status(201).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/bookings/:id/cancel',
+    authGuard,
+    residentGuard,
+    bookingGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.bookings) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+        return;
+      }
+      const response = await options.bookings.cancel(
+        organizationId,
+        ctx.userId,
+        String(req.params.id),
+        makeContext(req, res).requestId,
+      );
       res.status(200).json({ data: response });
     }),
   );

@@ -105,6 +105,7 @@ async function main(): Promise<void> {
       complaints: deps.residentComplaintsService,
       messages: deps.residentMessagesService,
       community: deps.residentCommunityService,
+      bookings: deps.residentBookingsService,
     },
   });
 

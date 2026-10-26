@@ -28,6 +28,8 @@ import { PrismaMessageRepository } from './modules/resident/messages-repository.
 import { ResidentMessagesService } from './modules/resident/messages.service.js';
 import { PrismaCommunityRepository } from './modules/resident/community-repository.js';
 import { ResidentCommunityService } from './modules/resident/community.service.js';
+import { PrismaBookingRepository } from './modules/resident/bookings-repository.js';
+import { ResidentBookingsService } from './modules/resident/bookings.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -89,6 +91,8 @@ export interface AppDependencies {
   residentMessagesService: ResidentMessagesService;
   /** Phase 3 (S7) — resident community feed (announcements + broadcast). */
   residentCommunityService: ResidentCommunityService;
+  /** Phase 3 (S8) — resident facilities and bookings. */
+  residentBookingsService: ResidentBookingsService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -239,6 +243,18 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
 
+  const bookingRepo = new PrismaBookingRepository(prisma);
+  const residentBookingsService = new ResidentBookingsService({
+    bookings: bookingRepo,
+    audit,
+    loadEstateId: async (organizationId, userId) => {
+      const draft = await residentDrafts.findByUser(userId);
+      if (!draft?.propertyId) return null;
+      const property = await properties.findById(organizationId, draft.propertyId);
+      return property?.estateId ?? null;
+    },
+  });
+
   const residentOnboardingService = new ResidentOnboardingService(
     users,
     residentDrafts,
@@ -283,6 +299,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentComplaintsService,
     residentMessagesService,
     residentCommunityService,
+    residentBookingsService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,

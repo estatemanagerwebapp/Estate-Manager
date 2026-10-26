@@ -284,6 +284,8 @@ export interface BookingDto {
 export interface ResidentBookingsView {
   facilities: FacilityDto[];
   upcoming: BookingDto[];
+  /** Bookings whose window has already passed (or that were cancelled). */
+  past: BookingDto[];
 }
 
 export interface ResidentCreateBookingInput {
@@ -294,6 +296,11 @@ export interface ResidentCreateBookingInput {
 }
 
 export interface ResidentCreateBookingResponse {
+  ok: true;
+  booking: BookingDto;
+}
+
+export interface ResidentCancelBookingResponse {
   ok: true;
   booking: BookingDto;
 }
