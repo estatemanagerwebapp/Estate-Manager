@@ -1,0 +1,238 @@
+<!-- PATTERN: wizard (stepper + step content + sticky footer actions)
+     SHARED: styles.css
+     NOTES:
+       - Cascade: estate → property → unit, each select feeds the next.
+       - Fees block is read-only, computed server-side (kobo), shown in naira.
+       - Invite code policy is read-only, comes from config.onboarding.
+       - On "Send" the invite becomes a list row with status rail:
+         Invited → Accepted → Paid → Verified.
+     OPEN: should the assignment step allow "assign later" (defer to Assignments module)? -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Invite resident · Silverstone Operators Console</title>
+    <meta name="viewport" content="width=1440" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">S</div>
+          <div><strong>Silverstone</strong><small>Managers · Operators</small></div>
+        </div>
+        <div class="nav-label">Manage</div>
+        <a class="nav-item" href="dashboard.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Overview
+        </a>
+        <a class="nav-item active" href="residents.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="9" cy="8" r="3.5" />
+            <path
+              d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5M16 5.5a3.5 3.5 0 0 1 0 7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Residents
+        </a>
+        <a class="nav-item" href="properties.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M4 21V10M20 21V10M4 21h16M4 10l8-6 8 6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Properties
+        </a>
+        <a class="nav-item" href="invoices.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M7 3h10a2 2 0 0 1 2 2v16l-3-2-3 2-3-2-3 2V5a2 2 0 0 1 2-2zM9 8h6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Billing
+        </a>
+        <div class="spacer"></div>
+        <div class="user-chip">
+          <div class="avatar">AO</div>
+          <div><strong>Adaeze Okafor</strong><small>Super admin</small></div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <div class="crumbs">Residents&nbsp; <b>/&nbsp; Invite</b></div>
+          <div class="env-dot"><i></i> Config v1</div>
+        </div>
+
+        <div class="content" style="max-width: 760px">
+          <div class="page-head">
+            <div>
+              <h1>Invite a resident</h1>
+              <p>They'll receive a one-time code to complete onboarding.</p>
+            </div>
+          </div>
+
+          <!-- stepper -->
+          <div class="stepper">
+            <div class="step done">
+              <span class="num">✓</span> Invitee <span class="step-line"></span>
+            </div>
+            <div class="step now">
+              <span class="num">2</span> Asset &amp; fees <span class="step-line"></span>
+            </div>
+            <div class="step"><span class="num">3</span> Review &amp; send</div>
+          </div>
+
+          <div class="card card-pad">
+            <div class="section-title">
+              Invitee
+              <span class="muted small" style="font-weight: 400; text-transform: none"
+                >(completed)</span
+              >
+            </div>
+            <div class="field">
+              <label>Full name <span class="req">*</span></label>
+              <input value="Tunde Balogun" />
+            </div>
+            <div class="form-cols">
+              <div class="field">
+                <label>Email <span class="req">*</span></label>
+                <input value="tunde.b@example.com" />
+                <span class="err">Must be a valid email (server validates at send).</span>
+                <!-- maps ApiErrorBody.details[] path "body.email" -->
+              </div>
+              <div class="field">
+                <label>Phone <span class="req">*</span></label>
+                <input value="+234 810 445 9911" />
+              </div>
+            </div>
+
+            <div class="section-title">Asset assignment</div>
+            <div class="form-cols">
+              <div class="field">
+                <label>Estate <span class="req">*</span></label>
+                <select>
+                  <option>Silverstone Gate A</option>
+                  <option>Silverstone Village</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Property <span class="req">*</span></label>
+                <select>
+                  <option>Block C · Silverstone Gate A</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label>Unit <span class="req">*</span></label>
+              <select>
+                <option>3BR-C2 · Three bedroom</option>
+                <option>Studio-C1 · Studio</option>
+                <option disabled>2BR-A4 · already assigned</option>
+              </select>
+            </div>
+
+            <div class="section-title">Fees (computed — read only)</div>
+            <div
+              class="row"
+              style="
+                justify-content: space-between;
+                padding: 10px 14px;
+                background: var(--canvas);
+                border-radius: 8px;
+              "
+            >
+              <div>
+                <div style="font-weight: 600">Registration fee</div>
+                <div class="muted small">One-off · not refundable · ONE_OFF cadence</div>
+              </div>
+              <div class="money">₦50,000</div>
+              <!-- source: 5,000,000 kobo (config.fees.registration.amountKobo) -->
+            </div>
+            <p class="muted small" style="margin-top: 10px">
+              Invitation code: 10 characters · expires in 24 h · single-use · 5 attempts allowed.
+              <span class="muted">Policy from organization config — not editable here.</span>
+            </p>
+
+            <div class="banner warn" style="margin: 18px 0 0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4M12 15h.01" stroke-linecap="round" />
+              </svg>
+              Payment is not enabled for this deployment. The resident can be activated manually
+              after an offline payment is recorded.
+            </div>
+          </div>
+
+          <!-- sticky wizard footer -->
+          <div class="row" style="margin-top: 18px; justify-content: space-between">
+            <button class="btn">← Back to invitee</button>
+            <div class="row">
+              <button class="btn ghost">Save as draft</button>
+              <button class="btn primary">Continue to review</button>
+            </div>
+          </div>
+
+          <!-- ============ step 3 preview: review & send ============ -->
+          <div class="banner ok" style="margin-top: 36px">
+            Step 3 — Review &amp; send (preview):
+          </div>
+          <div class="card card-pad">
+            <div class="row" style="justify-content: space-between; margin-bottom: 14px">
+              <h3>Ready to send</h3>
+              <button class="btn ghost">Edit asset</button>
+            </div>
+            <table style="width: 100%">
+              <tr>
+                <td class="muted small" style="padding: 7px 0; width: 120px">Resident</td>
+                <td style="padding: 7px 0">Tunde Balogun · tunde.b@example.com</td>
+              </tr>
+              <tr>
+                <td class="muted small" style="padding: 7px 0">Assignment</td>
+                <td style="padding: 7px 0">Silverstone Gate A · Block C · 3BR-C2</td>
+              </tr>
+              <tr>
+                <td class="muted small" style="padding: 7px 0">Fee due at activation</td>
+                <td class="money" style="padding: 7px 0">₦50,000</td>
+              </tr>
+              <tr>
+                <td class="muted small" style="padding: 7px 0">Code policy</td>
+                <td style="padding: 7px 0">10-char · 24 h · single-use · 5 attempts</td>
+              </tr>
+            </table>
+            <!-- status rail shown after send -->
+            <div class="section-title" style="margin-top: 22px">After sending — progress rail</div>
+            <div class="progress-rail">
+              <span class="pt on">1</span><span class="pl"></span> <span class="pt">2</span
+              ><span class="pl"></span> <span class="pt">3</span><span class="pl"></span>
+              <span class="pt">4</span>
+            </div>
+            <div class="row" style="margin-top: 8px; font-size: 12px; color: var(--ink-3)">
+              <span style="width: 64px">Invited</span><span style="width: 64px">Accepted</span>
+              <span style="width: 64px">Paid</span><span>Verified</span>
+            </div>
+            <button
+              class="btn primary"
+              style="width: 100%; justify-content: center; margin-top: 22px"
+            >
+              Send invitation
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
