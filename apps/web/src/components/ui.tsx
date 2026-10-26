@@ -164,6 +164,15 @@ export function LoadingPanel({ label = 'Loading…' }: { label?: string }) {
   );
 }
 
+/**
+ * Shimmering placeholder block for use inside skeleton layouts.
+ * Mirrors the card/row dimensions of the loaded content so the layout
+ * doesn't jump when the real data arrives.
+ */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-slate-200 ${className}`} aria-hidden />;
+}
+
 export function EmptyState({
   title,
   body,

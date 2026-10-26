@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Plus, Building2, RefreshCw } from 'lucide-react';
+import { Search, Plus, Building2, RefreshCw, Trash2 } from 'lucide-react';
 import { type EstateDto, type EstateStatus, ESTATE_STATUSES } from '@silverstone/shared';
 import { api, ApiRequestError, type EstateFilter } from '../../api/client';
 import { useCan } from '../../auth/useCan';
+import { useToast } from '../../toast/Toast';
+import { useConfirm } from '../../components/dialog';
 import { Button, Badge, statusTone } from '../../components/ui';
 
 /**
@@ -33,6 +35,29 @@ export function EstatesListPage() {
       setLoading(false);
     }
   }, []);
+
+  const toast = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [acting, setActing] = useState<string | null>(null);
+
+  async function deleteEstate(estate: EstateDto) {
+    const ok = await confirm({
+      title: 'Permanently delete this estate?',
+      body: `The estate "${estate.name}" will be removed along with its import history. This cannot be undone. Estates that still have registered properties cannot be deleted.`,
+      danger: true,
+    });
+    if (!ok) return;
+    setActing(estate.id);
+    try {
+      await api.deleteEstate(estate.id);
+      toast.success('Estate deleted.');
+      void load({ search, status: status || undefined });
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the estate.');
+    } finally {
+      setActing(null);
+    }
+  }
 
   // Debounce the free-text search a touch so we don't fire a request per
   // keystroke; the status filter fires immediately.
@@ -150,6 +175,11 @@ export function EstatesListPage() {
                 <th scope="col" className="px-4 py-3 font-medium">
                   Updated
                 </th>
+                {can['estate.manage'] && (
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -173,12 +203,27 @@ export function EstatesListPage() {
                   <td className="px-4 py-3 text-xs text-(--color-ink-muted)">
                     {new Date(estate.updatedAt).toLocaleDateString()}
                   </td>
+                  {can['estate.manage'] && (
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void deleteEstate(estate)}
+                        disabled={acting === estate.id}
+                        aria-label={`Delete ${estate.name}`}
+                        title="Delete estate"
+                      >
+                        <Trash2 aria-hidden size={13} />
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Archive, ArchiveRestore, Pencil, Home } from 'lucide-react';
+import { ArrowLeft, Archive, ArchiveRestore, Pencil, Home, Trash2 } from 'lucide-react';
 import type { EstateDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useCan } from '../../auth/useCan';
@@ -97,6 +97,23 @@ export function EstateDetailPage() {
     }
   }
 
+  async function remove() {
+    if (!estate) return;
+    const ok = await confirm({
+      title: 'Permanently delete this estate?',
+      body: `The estate "${estate.name}" will be removed along with its import history. This cannot be undone. Estates that still have registered properties cannot be deleted — delete or archive those properties first.`,
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteEstate(estate.id);
+      toast.success('Estate deleted.');
+      window.location.href = '/app/estates';
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the estate.');
+    }
+  }
+
   return (
     <div>
       <Link
@@ -152,6 +169,10 @@ export function EstateDetailPage() {
                       Reactivate
                     </Button>
                   )}
+                  <Button variant="danger" size="sm" onClick={() => void remove()}>
+                    <Trash2 aria-hidden size={13} />
+                    Delete
+                  </Button>
                 </>
               ) : null
             }

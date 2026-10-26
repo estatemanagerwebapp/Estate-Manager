@@ -1,14 +1,18 @@
 import type {
   ChangePasswordResponse,
+  CompleteResidentOnboardingResponse,
   LoginResponse,
   LogoutResponse,
   MeResponse,
+  RegisterResidentInput,
+  RegisterResidentResponse,
   ResetPasswordResponse,
   UserDto,
   UserListResponse,
   UserDetailResponse,
   SetUserStatusResponse,
   SetUserRoleResponse,
+  DeleteUserResponse,
   ApiErrorBody,
   ApiSuccessBody,
   CreateEstateInput,
@@ -28,6 +32,16 @@ import type {
   ImportRowDto,
   EstateDto,
   PropertyDto,
+  ResidentOnboardingDto,
+  OnboardingGuestView,
+  OnboardingSaveInput,
+  OnboardingSaveResponse,
+  AdminMarkPaidInput,
+  AdminMarkPaidResponse,
+  AuditEventDto,
+  ResidentProfileView,
+  ResidentProfileUpdateInput,
+  ResidentProfileUpdateResponse,
 } from '@silverstone/shared';
 
 /**
@@ -239,6 +253,76 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
 
+  /** Permanently delete a user account. */
+  deleteUser: (userId: string) =>
+    request<DeleteUserResponse>(`/api/v1/auth/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    }),
+
+  // --- Registration + onboarding (Phase 2) ---------------------------------
+  registerResident: (input: RegisterResidentInput) =>
+    request<RegisterResidentResponse>('/api/v1/onboard/residents', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  listResidents: () => request<{ residents: ResidentOnboardingDto[] }>('/api/v1/onboard/residents'),
+
+  markResidentPaid: (residentId: string, input: AdminMarkPaidInput = {}) =>
+    request<AdminMarkPaidResponse>(
+      `/api/v1/onboard/residents/${encodeURIComponent(residentId)}/payment`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+    ),
+
+  /** Delete a resident onboarding draft (testing cleanup). */
+  deleteResident: (residentId: string) =>
+    request<{ ok: true; id: string }>(
+      `/api/v1/onboard/residents/${encodeURIComponent(residentId)}`,
+      { method: 'DELETE' },
+    ),
+
+  getOnboardingByCode: (code: string) =>
+    request<OnboardingGuestView>(`/api/v1/onboard/by-code/${encodeURIComponent(code)}`),
+
+  saveOnboardingDraft: (code: string, input: OnboardingSaveInput) =>
+    request<OnboardingSaveResponse>(`/api/v1/onboard/by-code/${encodeURIComponent(code)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  /**
+   * Records the resident's out-of-band payment reference (temporary
+   * walk-through while the payment gateway is not connected). The draft stays
+   * UNPAID until an administrator confirms it.
+   */
+  submitPaymentNote: (code: string, paymentRef: string) =>
+    request<OnboardingSaveResponse>(
+      `/api/v1/onboard/by-code/${encodeURIComponent(code)}/payment-note`,
+      { method: 'POST', body: JSON.stringify({ paymentRef }) },
+    ),
+
+  completeOnboarding: (code: string) =>
+    request<CompleteResidentOnboardingResponse>(
+      `/api/v1/onboard/by-code/${encodeURIComponent(code)}/complete`,
+      { method: 'POST', body: JSON.stringify({ code }) },
+    ),
+
+  uploadIdDocument: (code: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<{ id: string; publicUrl: string; mimeType: string; sizeBytes: number }>(
+      `/api/v1/onboard/by-code/${encodeURIComponent(code)}/id-document`,
+      {
+        method: 'POST',
+        body: form,
+        // The multipart boundary is set by the browser; do not force JSON.
+      },
+    );
+  },
+
   // --- Phase 2: estates -------------------------------------------------------
   listEstates: (filter: EstateFilter = {}) => {
     const params = new URLSearchParams();
@@ -267,6 +351,11 @@ export const api = {
     request<SetEstateStatusResponse>(`/api/v1/estates/${encodeURIComponent(estateId)}/status`, {
       method: 'POST',
       body: JSON.stringify({ status }),
+    }),
+
+  deleteEstate: (estateId: string) =>
+    request<{ ok: true }>(`/api/v1/estates/${encodeURIComponent(estateId)}`, {
+      method: 'DELETE',
     }),
 
   // --- Phase 2: properties ----------------------------------------------------
@@ -303,6 +392,50 @@ export const api = {
       {
         method: 'POST',
       },
+    ),
+
+  deleteProperty: (propertyId: string) =>
+    request<{ ok: true }>(`/api/v1/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'DELETE',
+    }),
+
+  // --- Dashboard (operator overview) -----------------------------------------
+  /**
+   * KPI aggregates for the overview dashboard. Counters the signed-in role is
+   * not permitted to read are `null` (rendered as "n/a"), never a zero —
+   * a zero would claim the metric is empty, which is a fact the role cannot
+   * see.
+   */
+  getDashboardKpis: () =>
+    request<{
+      kpis: {
+        estates: number | null;
+        activeProperties: number | null;
+        totalProperties: number | null;
+        users: number | null;
+        residentDrafts: number | null;
+        auditEventsLast30Days: number | null;
+      };
+    }>('/api/v1/dashboard/kpis'),
+
+  /**
+   * Most-recent audit events for the dashboard activity feed and the full
+   * activity page. Requires `audit.read`.
+   *
+   * `limit` is clamped to the documented [1,50] window. Pass `after` (the
+   * previous page's `nextCursor`) to page forward through the audit log.
+   */
+  getDashboardActivity: (limit = 20, after?: string) =>
+    request<{
+      events: AuditEventDto[];
+      nextCursor: string | null;
+      limit: number;
+    }>(
+      (() => {
+        const params = new URLSearchParams({ limit: String(Math.min(Math.max(limit, 1), 50)) });
+        if (after) params.set('after', after);
+        return `/api/v1/dashboard/activity?${params.toString()}`;
+      })(),
     ),
 
   // --- Phase 2: property options (config) ------------------------------------
@@ -361,6 +494,17 @@ export const api = {
    * Download the server-generated .xlsx template for an estate.
    * Returns a `Blob` the caller can wrap in `URL.createObjectURL`.
    */
+  // --- Phase 3: resident dashboard -------------------------------------------------
+  /** The acting resident's own profile (user + onboarding + assigned property). */
+  getResidentProfile: () => request<ResidentProfileView>('/api/v1/resident/profile'),
+
+  /** Update the acting resident's editable fields (phone + next-of-kin). */
+  updateResidentProfile: (input: ResidentProfileUpdateInput) =>
+    request<ResidentProfileUpdateResponse>('/api/v1/resident/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(
       `/api/v1/estates/${encodeURIComponent(estateId)}/imports/template`,

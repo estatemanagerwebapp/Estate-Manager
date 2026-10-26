@@ -8,10 +8,28 @@ import { AppShell } from './components/AppShell';
 import { FoundationPage } from './pages/FoundationPage';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { OnboardPage } from './pages/OnboardPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { ActivityPage } from './pages/activity/ActivityPage';
 import { AccountPage } from './pages/AccountPage';
 import { UsersPage } from './pages/UsersPage';
+import { ResidentsPage } from './pages/ResidentsPage';
+import { ResidentLoginPage } from './pages/ResidentLoginPage';
+import { ResidentAppShell } from './components/ResidentAppShell';
+import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
+import { ResidentChangePasswordPage } from './pages/ResidentChangePasswordPage';
+import { ResidentProfilePage } from './pages/resident/ResidentProfilePage';
+import { ResidentPropertiesPage } from './pages/resident/ResidentPropertiesPage';
+import { ResidentInvoicesPage } from './pages/resident/ResidentInvoicesPage';
+import { ResidentCodesPage } from './pages/resident/ResidentCodesPage';
+import { ResidentComplaintsPage } from './pages/resident/ResidentComplaintsPage';
+import { ResidentMessagesPage } from './pages/resident/ResidentMessagesPage';
+import { ResidentCommunityPage } from './pages/resident/ResidentCommunityPage';
+import { ResidentFacilitiesPage } from './pages/resident/ResidentFacilitiesPage';
+import { ResidentBookingsPage } from './pages/resident/ResidentBookingsPage';
+import { ResidentSosPage } from './pages/resident/ResidentSosPage';
+import { ResidentNotificationsPage } from './pages/resident/ResidentNotificationsPage';
 import { EstatesListPage } from './pages/estates/EstatesListPage';
 import { EstateCreatePage } from './pages/estates/EstateCreatePage';
 import { EstateDetailPage } from './pages/estates/EstateDetailPage';
@@ -56,6 +74,14 @@ createRoot(container).render(
                 </RequireGuest>
               }
             />
+            <Route
+              path="/onboard"
+              element={
+                <RequireGuest>
+                  <OnboardPage />
+                </RequireGuest>
+              }
+            />
 
             {/* Authenticated */}
             <Route
@@ -67,10 +93,26 @@ createRoot(container).render(
             >
               <Route path="/app" element={<OverviewPage />} />
               <Route
+                path="/app/activity"
+                element={
+                  <RequirePermission permission="audit.read">
+                    <ActivityPage />
+                  </RequirePermission>
+                }
+              />
+              <Route
                 path="/app/users"
                 element={
                   <RequirePermission permission="user.manage">
                     <UsersPage />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/app/residents"
+                element={
+                  <RequirePermission permission="user.manage">
+                    <ResidentsPage />
                   </RequirePermission>
                 }
               />
@@ -127,6 +169,38 @@ createRoot(container).render(
                   </RequirePermission>
                 }
               />
+            </Route>
+
+            {/* Resident dashboard */}
+            <Route
+              path="/resident/login"
+              element={
+                <RequireGuest>
+                  <ResidentLoginPage />
+                </RequireGuest>
+              }
+            />
+            <Route
+              element={
+                <RequireAuth>
+                  <ResidentAppShell />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<ResidentDashboardPage />} />
+              <Route path="dashboard" element={<ResidentDashboardPage />} />
+              <Route path="change-password" element={<ResidentChangePasswordPage />} />
+              <Route path="profile" element={<ResidentProfilePage />} />
+              <Route path="properties" element={<ResidentPropertiesPage />} />
+              <Route path="invoices" element={<ResidentInvoicesPage />} />
+              <Route path="codes" element={<ResidentCodesPage />} />
+              <Route path="complaints" element={<ResidentComplaintsPage />} />
+              <Route path="messages" element={<ResidentMessagesPage />} />
+              <Route path="community" element={<ResidentCommunityPage />} />
+              <Route path="facilities" element={<ResidentFacilitiesPage />} />
+              <Route path="bookings" element={<ResidentBookingsPage />} />
+              <Route path="sos" element={<ResidentSosPage />} />
+              <Route path="notifications" element={<ResidentNotificationsPage />} />
             </Route>
 
             {/* Root: signed-in operators land on the overview; anonymous

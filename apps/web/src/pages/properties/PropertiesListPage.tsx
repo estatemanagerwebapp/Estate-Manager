@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Home, ChevronLeft, ChevronRight, LoaderCircle } from 'lucide-react';
+import {
+  Home,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Archive,
+  RotateCcw,
+  ExternalLink,
+  MapPin,
+  Tag,
+  Clock,
+  Trash2,
+} from 'lucide-react';
 import { api, ApiRequestError, type EstateFilter } from '../../api/client';
-import { usePropertyOptions, registerableAssetTypes } from '../../api/hooks';
+import { usePropertyOptions } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
+import { useToast } from '../../toast/Toast';
+import { useConfirm } from '../../components/dialog';
 import {
   Button,
   Badge,
@@ -12,16 +26,25 @@ import {
   selectClass,
   Card,
   CardHeader,
+  Skeleton,
 } from '../../components/ui';
-import type { EstateDto, PropertyListResponse } from '@silverstone/shared';
+import type { EstateDto, PropertyDto, PropertyListResponse } from '@silverstone/shared';
+import { PropertyRegisterModal } from './PropertyRegisterModal';
 
 /**
  * Org-wide properties list (decision #1: properties are estate-scoped on the
  * server, so the screen exposes an estate picker that filters the list).
+ *
+ * Layout: a responsive card grid — each card shows the property's name,
+ * identifier, type label, estate, status badge, and last-updated date, plus
+ * inline actions (Open detail, Archive, Reactivate) depending on status and
+ * the caller's permissions.
  */
 export function PropertiesListPage() {
   const can = useCan();
   const { view } = usePropertyOptions(true);
+  const toast = useToast();
+  const { confirm, dialog } = useConfirm();
 
   const [estates, setEstates] = useState<EstateDto[]>([]);
   const [estateId, setEstateId] = useState('');
@@ -29,11 +52,13 @@ export function PropertiesListPage() {
   const [status, setStatus] = useState('');
   const [identifierSearch, setIdentifierSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(50);
+  const [pageSize] = useState(24);
 
   const [list, setList] = useState<PropertyListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [acting, setActing] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +99,61 @@ export function PropertiesListPage() {
     void load();
   }, [load]);
 
-  const types = registerableAssetTypes(view);
+  const types = (view?.assetTypes ?? []).filter((type) => type.active);
+  const estateName = new Map(estates.map((estate) => [estate.id, estate.name]));
+
+  async function archiveProperty(property: PropertyDto) {
+    const ok = await confirm({
+      title: 'Archive this property?',
+      body: `The identifier ${property.identifier} will be preserved for audit; the property will no longer appear in active lists.`,
+      danger: true,
+    });
+    if (!ok) return;
+    setActing(property.id);
+    try {
+      await api.archiveProperty(property.id);
+      toast.success('Property archived.');
+      void load();
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not archive the property.');
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function reactivateProperty(property: PropertyDto) {
+    setActing(property.id);
+    try {
+      await api.updateProperty(property.id, { status: 'ACTIVE' });
+      toast.success('Property reactivated.');
+      void load();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiRequestError ? err.message : 'Could not reactivate the property.',
+      );
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function deleteProperty(property: PropertyDto) {
+    const ok = await confirm({
+      title: 'Permanently delete this property?',
+      body: `The identifier ${property.identifier} will be released for re-registration within this estate. This cannot be undone. Properties with child units cannot be deleted.`,
+      danger: true,
+    });
+    if (!ok) return;
+    setActing(property.id);
+    try {
+      await api.deleteProperty(property.id);
+      toast.success('Property deleted.');
+      void load();
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the property.');
+    } finally {
+      setActing(null);
+    }
+  }
 
   return (
     <div>
@@ -87,6 +166,14 @@ export function PropertiesListPage() {
           <p className="text-sm text-(--color-ink-muted)">
             Register a property under an estate, or bulk-import with an .xlsx workbook.
           </p>
+        </div>
+        <div className="ml-auto">
+          {can['property.manage'] && (
+            <Button size="sm" onClick={() => setRegisterOpen(true)} disabled={estates.length === 0}>
+              <Plus aria-hidden size={13} />
+              Register property
+            </Button>
+          )}
         </div>
       </header>
 
@@ -135,8 +222,8 @@ export function PropertiesListPage() {
             className={selectClass}
           >
             <option value="">All statuses</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="ACTIVE">Active</option>
+            <option value="ARCHIVED">Archived</option>
           </select>
           <input
             type="search"
@@ -145,7 +232,7 @@ export function PropertiesListPage() {
               setIdentifierSearch(event.target.value);
               setPage(1);
             }}
-            placeholder="Identifier contains…"
+            placeholder="Search identifier…"
             aria-label="Search by identifier"
             className="w-48 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-(--color-primary)"
           />
@@ -160,10 +247,7 @@ export function PropertiesListPage() {
 
       <div className="mt-4">
         {loading ? (
-          <p className="flex items-center gap-2 p-4 text-sm text-(--color-ink-muted)" role="status">
-            <LoaderCircle aria-hidden size={14} className="animate-spin" />
-            Loading properties…
-          </p>
+          <PropertyCardSkeleton count={8} />
         ) : !list || list.properties.length === 0 ? (
           <EmptyState
             title="No properties match"
@@ -182,50 +266,21 @@ export function PropertiesListPage() {
           />
         ) : (
           <>
-            <div className="overflow-hidden rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200/80 bg-(--color-surface) text-xs text-(--color-ink-muted)">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Identifier
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Type
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Status
-                    </th>
-                    <th scope="col" className="px-4 py-3 font-medium">
-                      Updated
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {list.properties.map((property) => (
-                    <tr key={property.id} className="hover:bg-(--color-surface)">
-                      <td className="px-4 py-3">
-                        <Link
-                          to={`/app/properties/${property.id}`}
-                          className="font-medium text-(--color-ink) hover:text-(--color-primary)"
-                        >
-                          {property.identifier}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-(--color-ink-muted)">
-                        {property.typeLabel || property.typeKey}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={statusTone(property.status)}>{property.status}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-(--color-ink-muted)">
-                        {new Date(property.updatedAt).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {list.properties.map((property) => (
+                <PropertyCard
+                  key={property.id}
+                  property={property}
+                  estateName={estateName.get(property.estateId)}
+                  canManage={can['property.manage']}
+                  acting={acting === property.id}
+                  onArchive={() => void archiveProperty(property)}
+                  onReactivate={() => void reactivateProperty(property)}
+                  onDelete={() => void deleteProperty(property)}
+                />
+              ))}
             </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-(--color-ink-muted)">
+            <div className="mt-4 flex items-center justify-between text-xs text-(--color-ink-muted)">
               <span>
                 Page {list.page} of {Math.max(1, Math.ceil(list.total / list.pageSize))} ·{' '}
                 {list.total} total
@@ -256,6 +311,162 @@ export function PropertiesListPage() {
               </div>
             </div>
           </>
+        )}
+      </div>
+
+      {registerOpen && (
+        <PropertyRegisterModal
+          estates={estates}
+          defaultEstateId={estateId || estates[0]?.id}
+          onClose={() => setRegisterOpen(false)}
+          onCreated={() => {
+            setRegisterOpen(false);
+            void load();
+          }}
+        />
+      )}
+      {dialog}
+    </div>
+  );
+}
+
+// --- Skeleton -----------------------------------------------------------------
+
+function PropertyCardSkeleton({ count }: { count: number }) {
+  return (
+    <div
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      role="status"
+      aria-label="Loading properties"
+    >
+      {Array.from({ length: count }, (_, index) => (
+        <div
+          key={index}
+          className="rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-16 rounded-full" />
+          </div>
+          <Skeleton className="mt-3 h-3 w-40" />
+          <Skeleton className="mt-2 h-3 w-24" />
+          <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+            <Skeleton className="h-3 w-20" />
+            <div className="flex gap-2">
+              <Skeleton className="h-6 w-14 rounded" />
+              <Skeleton className="h-6 w-16 rounded" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- Card ---------------------------------------------------------------------
+
+function PropertyCard({
+  property,
+  estateName,
+  canManage,
+  acting,
+  onArchive,
+  onReactivate,
+  onDelete,
+}: {
+  property: PropertyDto;
+  estateName?: string;
+  canManage: boolean;
+  acting: boolean;
+  onArchive: () => void;
+  onReactivate: () => void;
+  onDelete: () => void;
+}) {
+  const isArchived = property.status === 'ARCHIVED';
+
+  return (
+    <div
+      className={`rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition-opacity ${
+        isArchived ? 'border-slate-200/80 opacity-70' : 'border-slate-200/80'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-(--color-ink)">
+            {property.name ?? property.identifier}
+          </p>
+          {property.name && (
+            <p className="mt-0.5 truncate text-xs text-(--color-ink-muted)">
+              {property.identifier}
+            </p>
+          )}
+        </div>
+        <Badge tone={statusTone(property.status)}>{isArchived ? 'Archived' : 'Active'}</Badge>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-(--color-ink-muted)">
+        <span className="inline-flex items-center gap-1">
+          <Tag aria-hidden size={12} />
+          {property.typeLabel || property.typeKey}
+        </span>
+        {estateName && (
+          <span className="inline-flex items-center gap-1">
+            <MapPin aria-hidden size={12} />
+            {estateName}
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1">
+          <Clock aria-hidden size={12} />
+          {new Date(property.updatedAt).toLocaleDateString()}
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+        <Link
+          to={`/app/properties/${property.id}`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-(--color-primary) hover:opacity-80"
+        >
+          Open
+          <ExternalLink aria-hidden size={12} />
+        </Link>
+        {canManage && (
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDelete}
+                disabled={acting}
+                aria-label={`Delete ${property.name ?? property.identifier}`}
+                title="Delete permanently"
+              >
+                <Trash2 aria-hidden size={13} />
+              </Button>
+              {isArchived ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={onReactivate}
+                  disabled={acting}
+                  aria-label={`Reactivate ${property.name ?? property.identifier}`}
+                >
+                  <RotateCcw aria-hidden size={12} />
+                  {acting ? 'Working…' : 'Reactivate'}
+                </Button>
+              ) : (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={onArchive}
+                  disabled={acting}
+                  aria-label={`Archive ${property.name ?? property.identifier}`}
+                >
+                  <Archive aria-hidden size={12} />
+                  {acting ? 'Working…' : 'Archive'}
+                </Button>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

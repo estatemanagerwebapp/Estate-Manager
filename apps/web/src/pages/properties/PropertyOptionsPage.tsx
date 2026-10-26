@@ -221,6 +221,43 @@ export function PropertyOptionsPage() {
             </CardBody>
           </Card>
 
+          {view.addressComponents.length === 0 && (
+            <div className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800" role="note">
+              <p className="font-medium">No address components are configured.</p>
+              <p className="mt-1 text-xs">
+                With the default <code>{view.identifierTemplate}</code> template, every property in
+                an estate derives the same identifier — so only one property can be registered per
+                estate until address components are configured.
+              </p>
+            </div>
+          )}
+
+          {view.addressComponents.length > 0 && (
+            <Card aria-label="Identifier preview">
+              <CardHeader
+                title="Identifier preview"
+                subtitle="Example of the identifier a new property would derive (sample values shown)."
+              />
+              <CardBody>
+                <p className="text-sm text-(--color-ink-muted)">Template</p>
+                <code className="mb-2 inline-block rounded bg-slate-100 px-2 py-1 text-xs">
+                  {view.identifierTemplate}
+                </code>
+                <p className="text-sm font-medium">
+                  {view.identifierTemplate.replace(
+                    /\{([a-z][a-z0-9_]{0,47})\}/gi,
+                    (_whole, token: string) =>
+                      token === 'estate_slug'
+                        ? 'sample-estate'
+                        : view.addressComponents.find((component) => component.key === token)?.key
+                          ? 'sample'
+                          : '',
+                  )}
+                </p>
+              </CardBody>
+            </Card>
+          )}
+
           <TypeCatalogues view={view} />
 
           {canEdit ? (
@@ -364,7 +401,7 @@ function OptionsForm({
     <div className="flex flex-col gap-5">
       <Field
         label="Identifier template"
-        hint="e.g. {estate_slug}-{block}-{unit}. Max length is a hard cap."
+        hint="Available tokens: {estate_slug} and each address component key above. Max length is a hard cap."
       >
         <div className="flex items-center gap-3">
           <input
@@ -590,8 +627,14 @@ function emptyDraft(view: PropertyOptionsView): FormDraft {
   // keys). The PUT request needs keys. Recover the keys by matching labels
   // back to the asset-type key set; fall back to the raw key if unmatched.
   const labelToKey = new Map(view.assetTypes.map((type) => [type.label, type.key]));
+  const template = view.identifierTemplate;
+  // If the template is just `{estate_slug}` and the org has address components
+  // configured, append a placeholder so every property in that estate gets a
+  // distinct identifier.
+  const bareEstateSlug = template === '{estate_slug}' && view.addressComponents.length > 0;
+  const newTemplate = bareEstateSlug ? `${template}-{{view.addressComponents[0].key}}` : template;
   return {
-    identifierTemplate: view.identifierTemplate,
+    identifierTemplate: newTemplate,
     // Recover the configured caps from the read view rather than hardcoding
     // them, so a save without edits round-trips the stored configuration.
     // The `??` fallbacks keep the form usable against an API that predates

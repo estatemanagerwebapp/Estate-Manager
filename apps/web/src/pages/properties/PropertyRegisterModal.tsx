@@ -1,69 +1,112 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { EstateDto, PropertyDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
-import { usePropertyOptions, registerableAssetTypes } from '../../api/hooks';
+import { usePropertyOptions } from '../../api/hooks';
 import { Button, Field, inputClass, selectClass } from '../../components/ui';
 import { Modal } from '../../components/dialog';
 
 /**
- * Register-property modal, opened from the estate-scoped properties tab.
+ * Register-property modal.
  *
- * What the form shows is driven entirely by the property-options view:
- *   - type picker only lists `active` + `detailKind === 'PROPERTY'` types
- *     (unit registration is out of scope for Phase 2)
- *   - address fields are rendered from `addressComponents` (key/label,
- *     requiredFor, maxLength, optional pattern)
+ * The form is driven by the property-options view:
+ *   - an estate picker (optional when the caller pre-selects one)
+ *   - a three-option property-type radio: Land, House, Both — mapped to the
+ *     configured asset type keys `land_plot`, `house`, `both`
+ *   - the address components applicable to the chosen type, rendered
+ *     dynamically from `addressComponents`
+ *   - a required human-facing property name (distinct from the derived
+ *     identifier)
  *
- * The API is authoritative: identifier derivation, collision checks and
- * type-key validation all happen server-side. The client mirrors required /
- * maxLength / pattern for fast inline feedback only.
+ * The API is authoritative: identifier derivation, collision checks, type-key
+ * and address-component validation all happen server-side. The client mirrors
+ * required / maxLength / pattern for fast inline feedback only.
  */
+
+type PropertyTypeOption = 'land' | 'house' | 'both';
+
+const TYPE_OPTION_TO_ASSET_KEY: Record<PropertyTypeOption, string> = {
+  land: 'land_plot',
+  house: 'house',
+  both: 'both',
+};
+
+const TYPE_OPTION_LABELS: Record<PropertyTypeOption, string> = {
+  land: 'Land',
+  house: 'House',
+  both: 'Both (land & house)',
+};
+
 export function PropertyRegisterModal({
   estate,
+  estates,
+  defaultEstateId,
   onClose,
   onCreated,
 }: {
-  estate: EstateDto;
+  /** When supplied, the estate is fixed (estate detail tab). */
+  estate?: EstateDto;
+  /** When supplied, an estate picker is rendered (main properties page). */
+  estates?: EstateDto[];
+  defaultEstateId?: string;
   onClose: () => void;
   onCreated: (property: PropertyDto) => void;
 }) {
   const { view } = usePropertyOptions(true);
-  const [typeKey, setTypeKey] = useState('');
+  const [estateId, setEstateId] = useState(estate?.id ?? defaultEstateId ?? '');
+  const [typeOption, setTypeOption] = useState<PropertyTypeOption>('land');
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const components = view?.addressComponents ?? [];
-  const types = registerableAssetTypes(view);
+  const availableEstates = useMemo(() => (estate ? [estate] : (estates ?? [])), [estate, estates]);
+
+  const typeKey = TYPE_OPTION_TO_ASSET_KEY[typeOption];
+  const typeLabel = view?.assetTypes.find((type) => type.key === typeKey)?.label ?? typeKey;
+
+  // The three type options are offered only when their asset type key is known
+  // to the active configuration.
+  const knownAssetKeys = new Set((view?.assetTypes ?? []).map((type) => type.key));
+
+  // The address components that apply to the chosen type: required for it (by
+  // label), or required for all, and not excluded from it (by key). Rendered
+  // in configuration order.
+  const visibleComponents = components.filter((component) => {
+    const notApplicable = component.notApplicableFor ?? [];
+    if (notApplicable.includes(typeKey)) return false;
+    const appliesToAll = (component.requiredForLabels ?? []).length === 0;
+    const explicitlyRequired = (component.requiredForLabels ?? []).includes(typeLabel);
+    return explicitlyRequired || appliesToAll;
+  });
 
   useEffect(() => {
-    if (types.length > 0) setTypeKey((current) => current || types[0]?.key || '');
-  }, [types]);
+    setEstateId(
+      (current) => current || (availableEstates.length > 0 ? (availableEstates[0]?.id ?? '') : ''),
+    );
+  }, [availableEstates]);
 
   function isRequired(componentKey: string): boolean {
-    const component = components.find((component) => component.key === componentKey);
+    const component = components.find((item) => item.key === componentKey);
     if (!component) return false;
-    if (component.notApplicableFor.includes(typeKey)) return false;
-    return (
-      component.requiredForLabels.length === 0 ||
-      component.requiredForLabels.includes(
-        view?.assetTypes.find((type) => type.key === typeKey)?.label ?? typeKey,
-      )
-    );
+    const notApplicable = component.notApplicableFor ?? [];
+    if (notApplicable.includes(typeKey)) return false;
+    const appliesToAll = (component.requiredForLabels ?? []).length === 0;
+    const explicitlyRequired = (component.requiredForLabels ?? []).includes(typeLabel);
+    return explicitlyRequired || appliesToAll;
   }
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!typeKey) {
-      setError('Choose a property type to continue.');
+  async function handleSubmit(event?: FormEvent | React.MouseEvent) {
+    event?.preventDefault();
+    if (!estateId) {
+      setError('Choose an estate to continue.');
       return;
     }
     setSubmitting(true);
     setError(null);
     setFieldErrors({});
     const localErrors: Record<string, string> = {};
-    for (const component of components) {
+    for (const component of visibleComponents) {
       const value = (values[component.key] ?? '').trim();
       if (isRequired(component.key) && !value) {
         localErrors[component.key] = 'This field is required.';
@@ -87,12 +130,12 @@ export function PropertyRegisterModal({
     }
     try {
       const addressComponents: Record<string, string> = {};
-      for (const [key, value] of Object.entries(values)) {
-        const trimmed = value.trim();
+      for (const [key, rawValue] of Object.entries(values)) {
+        const trimmed = rawValue.trim();
         if (trimmed) addressComponents[key] = trimmed;
       }
       const result = await api.createProperty({
-        estateId: estate.id,
+        estateId,
         typeKey,
         addressComponents:
           Object.keys(addressComponents).length > 0 ? addressComponents : undefined,
@@ -121,17 +164,22 @@ export function PropertyRegisterModal({
     }
   }
 
+  const selectedEstate = availableEstates.find((item) => item.id === estateId);
+  const missingTypes = (Object.keys(TYPE_OPTION_TO_ASSET_KEY) as PropertyTypeOption[]).filter(
+    (option) => !knownAssetKeys.has(TYPE_OPTION_TO_ASSET_KEY[option]),
+  );
+
   return (
     <Modal
       open
       onClose={onClose}
-      title={`Register a property in ${estate.name}`}
+      title={estate ? `Register a property in ${estate.name}` : 'Register a property'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="property-register-form" disabled={submitting || !typeKey}>
+          <Button type="button" onClick={handleSubmit} disabled={submitting || !estateId}>
             {submitting ? 'Registering…' : 'Register property'}
           </Button>
         </>
@@ -144,25 +192,66 @@ export function PropertyRegisterModal({
           </p>
         )}
 
-        <Field label="Property type" hint="Only active property types are listed.">
-          <select
-            value={typeKey}
-            onChange={(event) => setTypeKey(event.target.value)}
-            className={`${selectClass} w-full`}
-            aria-label="Property type"
-          >
-            <option value="" disabled>
-              Select a type…
-            </option>
-            {types.map((type) => (
-              <option key={type.key} value={type.key}>
-                {type.label}
+        {!estate && (
+          <Field label="Estate">
+            <select
+              value={estateId}
+              onChange={(event) => setEstateId(event.target.value)}
+              className={`${selectClass} w-full`}
+              aria-label="Choose an estate"
+            >
+              <option value="" disabled>
+                Select an estate…
               </option>
-            ))}
-          </select>
+              {availableEstates.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        <Field label="Property type">
+          <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Property type">
+            {(Object.keys(TYPE_OPTION_TO_ASSET_KEY) as PropertyTypeOption[]).map((option) => {
+              const assetKey = TYPE_OPTION_TO_ASSET_KEY[option];
+              const available = knownAssetKeys.has(assetKey);
+              return (
+                <label
+                  key={option}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    typeOption === option
+                      ? 'border-(--color-primary) bg-(--color-primary-soft)'
+                      : 'border-slate-200 bg-(--color-surface) hover:bg-slate-50'
+                  } ${available ? '' : 'cursor-not-allowed opacity-50'}`}
+                >
+                  <input
+                    type="radio"
+                    name="property-type"
+                    value={option}
+                    checked={typeOption === option}
+                    disabled={!available}
+                    onChange={() => setTypeOption(option)}
+                    className="accent-(--color-primary)"
+                  />
+                  <span>{TYPE_OPTION_LABELS[option]}</span>
+                  <span className="ml-auto text-[11px] text-(--color-ink-muted)">{assetKey}</span>
+                </label>
+              );
+            })}
+          </div>
         </Field>
 
-        {components.map((component) => {
+        {visibleComponents.length === 0 && (
+          <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800">
+            No address fields are configured for this type. The identifier is derived from the
+            estate slug — ask an administrator to configure address components if you need finer
+            identifiers.
+          </p>
+        )}
+
+        {visibleComponents.map((component) => {
           const required = isRequired(component.key);
           const value = values[component.key] ?? '';
           return (
@@ -183,18 +272,21 @@ export function PropertyRegisterModal({
                   setValues((current) => ({ ...current, [component.key]: event.target.value }))
                 }
                 maxLength={component.maxLength}
-                required={required && view?.identifierConfigured !== false}
                 placeholder={component.key}
               />
             </Field>
           );
         })}
 
-        {view && components.length === 0 && (
-          <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800">
-            No address components are configured for this organization yet. The identifier is
-            derived from the estate slug only — ask an administrator to configure address components
-            if you need a finer identifier.
+        {missingTypes.length > 0 && (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Some property types are not configured for this organization yet; they are disabled.
+          </p>
+        )}
+
+        {selectedEstate && !estate && (
+          <p className="text-[11px] text-(--color-ink-muted)">
+            Registering into {selectedEstate.name}
           </p>
         )}
       </form>
