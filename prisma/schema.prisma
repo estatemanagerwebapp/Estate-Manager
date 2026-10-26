@@ -33,9 +33,11 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  configs OrganizationConfig[]
-  users   User[]
-  estates Estate[]
+  configs             OrganizationConfig[]
+  users               User[]
+  estates             Estate[]
+  residentOnboardings ResidentOnboarding[]
+  mediaFiles          MediaFile[]
 
   @@map("organizations")
 }
@@ -77,21 +79,117 @@ model User {
   /// Normalized lowercase email; enforced unique per deployment.
   email                 String    @db.VarChar(255)
   passwordHash          String    @map("password_hash") @db.VarChar(255)
+  fullName              String?   @map("full_name") @db.VarChar(160)
+  phone                 String?   @db.VarChar(40)
   role                  String    @db.VarChar(20)
   status                String    @default("ACTIVE") @db.VarChar(20)
   lastPasswordChangedAt DateTime? @map("last_password_changed_at") @db.Timestamptz(6)
+  /// True while the credential is the generated post-payment demo password;
+  /// first login must change it (enforced in the web shell).
+  mustChangePassword    Boolean   @default(false) @map("must_change_password")
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sessions     Session[]
-  resetTokens  PasswordResetToken[]
-  auditEvents  AuditEvent[]
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions           Session[]
+  resetTokens        PasswordResetToken[]
+  auditEvents        AuditEvent[]
+  mediaFiles         MediaFile[]
+  residentOnboarding ResidentOnboarding?
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
   @@index([organizationId, status])
   @@map("users")
+}
+
+/// Resident onboarding draft: created by an admin (first name + property
+/// assignment, email/phone optional) and completed by the resident
+/// out-of-band. The access code is persistent — no TTL, no attempt cap,
+/// not single-use — so a resident can return and resume at any time.
+/// Only the SHA-256 hash of the code is stored; the plaintext is returned
+/// to the admin (who may re-share it) and reused by the resident.
+///
+/// The actual `User` row is created only after verified payment
+/// (`paymentStatus = PAID` + all resident fields + ID document), linking
+/// via `userId`.
+model ResidentOnboarding {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  /// The assigned property/estate location.
+  propertyId     String @map("property_id") @db.Uuid
+
+  /// PENDING (in progress) or COMPLETED (User account created).
+  status   String @default("PENDING") @db.VarChar(20)
+  /// SHA-256 hex of the persistent access code.
+  codeHash String @unique @map("code_hash") @db.VarChar(64)
+  /// Plaintext onboarding code, stored so the admin can re-share it on the
+  /// Residents screen at any time. Null for rows created before this field
+  /// was added.
+  onboardingCode String? @map("onboarding_code") @db.VarChar(32)
+
+  // --- Admin-provided (prefilled; read-only to the resident) ---------------
+  firstName String  @map("first_name") @db.VarChar(120)
+  email     String? @db.VarChar(255)
+  phone     String? @db.VarChar(40)
+
+  // --- Resident-provided (autosaved as the resident works) ------------------
+  gender         String? @db.VarChar(16)
+  maritalStatus  String? @map("marital_status") @db.VarChar(16)
+  /// Unit type key within the assigned property, when the property supports
+  /// units. Null for top-level (house/plot) assignments.
+  propertyType   String? @map("property_type") @db.VarChar(48)
+  nextOfKinName  String? @map("next_of_kin_name") @db.VarChar(160)
+  nextOfKinPhone String? @map("next_of_kin_phone") @db.VarChar(40)
+  nextOfKinEmail String? @map("next_of_kin_email") @db.VarChar(255)
+  idType         String? @map("id_type") @db.VarChar(32)
+  /// Public URL of the uploaded ID document (MediaFile).
+  idDocumentUrl  String? @map("id_document_url") @db.VarChar(2048)
+
+  // --- Payment --------------------------------------------------------------
+  /// UNPAID or PAID. Set to PAID by the admin (provider NONE) or a
+  /// provider webhook; completion requires PAID.
+  paymentStatus String    @default("UNPAID") @map("payment_status") @db.VarChar(16)
+  paymentRef    String?   @map("payment_ref") @db.VarChar(120)
+  paidAt        DateTime? @map("paid_at") @db.Timestamptz(6)
+
+  /// Set when the account is created after payment.
+  userId      String?   @unique @map("user_id") @db.Uuid
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  estate       Estate?      @relation(fields: [estateId], references: [id])
+  estateId     String?      @db.Uuid
+
+  @@index([organizationId, status])
+  @@index([propertyId])
+  @@map("resident_onboardings")
+}
+
+/// A media file stored on the local volume (cloud storage — R2 — will be
+/// plugged in via the same model when the deployment moves to Vercel).
+/// `relativePath` is relative to the configured uploads root; the public
+/// URL is `baseUrl + relativePath`.
+model MediaFile {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  relativePath   String   @unique @map("relative_path") @db.VarChar(255)
+  mimeType       String   @map("mime_type") @db.VarChar(120)
+  sizeBytes      Int      @map("size_bytes")
+  originalName   String?  @map("original_name") @db.VarChar(255)
+  uploadedById   String?  @map("uploaded_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy   User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("media_files")
 }
 
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
@@ -183,9 +281,10 @@ model Estate {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  properties    Property[]
-  importBatches ImportBatch[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  properties          Property[]
+  importBatches       ImportBatch[]
+  residentOnboardings ResidentOnboarding[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
@@ -214,13 +313,17 @@ model Property {
   /// Structured address component values, keyed by configured component key.
   /// Leading zeros are preserved (string values, never coerced to numbers).
   addressComponents Json     @default("{}") @map("address_components")
+  /// Human-facing name the organization gives this property. Distinct from
+  /// the derived `identifier`; null for legacy/import-created records.
+  name              String?  @db.VarChar(120)
   status            String   @default("ACTIVE") @db.VarChar(20)
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  estate          Estate     @relation(fields: [estateId], references: [id], onDelete: Cascade)
-  parentProperty  Property?  @relation("propertyHierarchy", fields: [parentPropertyId], references: [id], onDelete: SetNull)
-  childProperties Property[] @relation("propertyHierarchy")
+  estate              Estate               @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  parentProperty      Property?            @relation("propertyHierarchy", fields: [parentPropertyId], references: [id], onDelete: SetNull)
+  childProperties     Property[]           @relation("propertyHierarchy")
+  residentOnboardings ResidentOnboarding[]
 
   /// The canonical identifier is unique within its estate. This is the
   /// backstop for all identifier-collision handling: the application pre-checks
@@ -288,8 +391,8 @@ model ImportRow {
 
   batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
-  @@index([batchId, status])
   @@unique([batchId, rowNumber])
+  @@index([batchId, status])
   @@map("import_rows")
 }
 
@@ -312,16 +415,29 @@ enum AuditEventType {
   account_reactivated
   account_disabled
   user_role_changed
+  user_deleted
   admin_bootstrap
   // Phase 2 — estate / property / import audit events.
   estate_created
   estate_updated
   estate_status_changed
+  estate_deleted
   property_created
   property_updated
   property_status_changed
+  property_deleted
   import_previewed
   import_completed
   import_commit_failed
   property_options_updated
+  user_registered
+  user_onboarding_completed
+  // Phase 2 — resident onboarding (persistent code, payment-gated).
+  resident_registered
+  resident_onboarding_completed
+  resident_payment_recorded
+  resident_payment_submitted
+  resident_deleted
+  // Phase 3 — resident dashboard.
+  resident_profile_updated
 }
