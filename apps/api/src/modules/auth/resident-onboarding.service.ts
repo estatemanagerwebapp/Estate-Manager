@@ -62,6 +62,13 @@ export interface PropertyDetail {
   estate: { name: string; slug: string };
 }
 
+export interface OnAccountCreatedHook {
+  organizationId: string;
+  userId: string;
+  propertyId: string | null;
+  requestId: string | null;
+}
+
 export class ResidentOnboardingService {
   constructor(
     private readonly users: PrismaUserRepository,
@@ -75,6 +82,12 @@ export class ResidentOnboardingService {
       organizationId: string,
       propertyId: string,
     ) => Promise<PropertyDetail | null>,
+    /**
+     * Optional post-account-creation hook (S3: finance seed). Wired in
+     * production to seed the registration-fee invoice + payment +
+     * transaction; omitted in tests that don't exercise the finance domain.
+     */
+    private readonly onAccountCreated?: (hook: OnAccountCreatedHook) => Promise<void>,
   ) {}
 
   // --- Admin registration ----------------------------------------------------
@@ -568,6 +581,15 @@ export class ResidentOnboardingService {
       updatedAt: user.updatedAt.toISOString(),
       lastPasswordChangedAt: user.lastPasswordChangedAt?.toISOString() ?? null,
     };
+
+    // S3: seed the registration-fee invoice + payment + transaction so the
+    // resident's finance ledger is never empty. No-op when not wired.
+    await this.onAccountCreated?.({
+      organizationId,
+      userId: user.id,
+      propertyId: record.propertyId,
+      requestId: context.requestId,
+    });
 
     return { user: dto, demoPassword };
   }

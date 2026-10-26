@@ -38,6 +38,9 @@ model Organization {
   estates             Estate[]
   residentOnboardings ResidentOnboarding[]
   mediaFiles          MediaFile[]
+  invoices            Invoice[]
+  payments            Payment[]
+  transactions        Transaction[]
 
   @@map("organizations")
 }
@@ -96,6 +99,9 @@ model User {
   auditEvents        AuditEvent[]
   mediaFiles         MediaFile[]
   residentOnboarding ResidentOnboarding?
+  invoices           Invoice[]
+  payments           Payment[]
+  transactions       Transaction[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -190,6 +196,76 @@ model MediaFile {
 
   @@index([organizationId])
   @@map("media_files")
+}
+
+// --- Phase 3 — resident finance (S3) ------------------------------------------
+// Additive models for the resident billing domain. No changes to existing
+// tables. The registration fee seeds the first invoice + payment +
+// transaction when the resident account is created (config-driven amount).
+
+model Invoice {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  propertyId     String?  @map("property_id") @db.Uuid
+  /// Billing period label, e.g. "Registration fee" or "2026-11".
+  period         String   @db.VarChar(48)
+  amountKobo     Int      @map("amount_kobo")
+  currency       String   @default("NGN") @db.VarChar(8)
+  /// UNPAID | PAID | OVERDUE | VOID.
+  status         String   @default("UNPAID") @db.VarChar(16)
+  dueAt          DateTime @map("due_at") @db.Timestamptz(6)
+  issuedAt       DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+
+  @@index([organizationId, userId, status])
+  @@map("invoices")
+}
+
+model Payment {
+  id         String   @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  invoiceId  String   @map("invoice_id") @db.Uuid
+  amountKobo Int      @map("amount_kobo")
+  method     String   @db.VarChar(32)
+  reference  String?  @db.VarChar(120)
+  paidAt     DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+model Transaction {
+  id           String   @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  /// INVOICE | PAYMENT | REFUND | FEE.
+  kind         String   @db.VarChar(16)
+  amountKobo   Int      @map("amount_kobo")
+  /// Signed amount: positive = credit (incoming), negative = debit (outgoing).
+  signed       Int
+  memo         String? @db.VarChar(255)
+  reference    String? @db.VarChar(120)
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, occurredAt(sort: Desc)])
+  @@map("transactions")
 }
 
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row
@@ -324,6 +400,7 @@ model Property {
   parentProperty      Property?            @relation("propertyHierarchy", fields: [parentPropertyId], references: [id], onDelete: SetNull)
   childProperties     Property[]           @relation("propertyHierarchy")
   residentOnboardings ResidentOnboarding[]
+  invoices            Invoice[]
 
   /// The canonical identifier is unique within its estate. This is the
   /// backstop for all identifier-collision handling: the application pre-checks
@@ -440,4 +517,5 @@ enum AuditEventType {
   resident_deleted
   // Phase 3 — resident dashboard.
   resident_profile_updated
+  resident_invoice_created
 }

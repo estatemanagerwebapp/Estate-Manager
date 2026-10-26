@@ -23,6 +23,8 @@ import { requireResident, getResidentContext } from '../../middleware/resident-g
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { ResidentProfileService } from './profile.service.js';
+import { ResidentPropertiesService } from './properties.service.js';
+import { ResidentFinanceService } from './finance.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -30,6 +32,10 @@ export interface ResidentRouteOptions {
   organizationId: string;
   /** S1: resident profile (self-scoped view + update). */
   profile?: ResidentProfileService;
+  /** S2: the resident's assigned property (self-scoped view). */
+  properties?: ResidentPropertiesService;
+  /** S3: resident finance — invoices, payments, transactions. */
+  finance?: ResidentFinanceService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -147,6 +153,114 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         organizationId,
         ctx.userId,
         body.data,
+        makeContext(req, res).requestId,
+      );
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- S2: My Properties -------------------------------------------------------
+  // GET /properties — the acting resident's assigned property(ies). One today;
+  // the list-shaped response keeps a future multi-property assignment
+  // non-breaking. Self-scoped: the property is resolved through the
+  // acting user's onboarding draft, never from a path param.
+
+  const propertyViewGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'property.view'),
+  );
+
+  router.get(
+    '/properties',
+    authGuard,
+    residentGuard,
+    propertyViewGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.properties) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Properties service not wired'));
+        return;
+      }
+      const view = await options.properties.list(organizationId, ctx.userId);
+      res.status(200).json({ data: view });
+    }),
+  );
+
+  // --- S3: Invoices & Payments ---------------------------------------------------
+  // GET  /finance        — the acting resident's finance view (4 sections).
+  // POST /payments       — record a payment against one of the acting
+  //                        resident's invoices (ownership verified; 404
+  //                        otherwise). Provider is NONE: the payment is
+  //                        recorded as a reference and the invoice flips to
+  //                        PAID when covered.
+  //
+  // All endpoints are self-scoped: the acting user id comes from the
+  // session; a resident can never address another resident's data.
+
+  const invoiceViewGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'invoice.view'),
+  );
+  const paymentCreateGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'payment.create'),
+  );
+
+  router.get(
+    '/finance',
+    authGuard,
+    residentGuard,
+    invoiceViewGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.finance) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Finance service not wired'));
+        return;
+      }
+      const view = await options.finance.view(organizationId, ctx.userId);
+      res.status(200).json({ data: view });
+    }),
+  );
+
+  router.post(
+    '/payments',
+    authGuard,
+    residentGuard,
+    paymentCreateGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.finance) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Finance service not wired'));
+        return;
+      }
+      const body = z
+        .object({
+          invoiceId: z.string().trim().min(1),
+          method: z.string().trim().min(1).max(32).optional(),
+          reference: z.string().trim().max(120).nullish(),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid payment input'));
+        return;
+      }
+      const response = await options.finance.createPayment(
+        organizationId,
+        ctx.userId,
+        {
+          invoiceId: body.data.invoiceId,
+          method: body.data.method,
+          reference: body.data.reference ?? null,
+        },
         makeContext(req, res).requestId,
       );
       res.status(200).json({ data: response });

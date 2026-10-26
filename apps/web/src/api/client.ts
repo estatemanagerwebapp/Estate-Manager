@@ -42,6 +42,10 @@ import type {
   ResidentProfileView,
   ResidentProfileUpdateInput,
   ResidentProfileUpdateResponse,
+  ResidentPropertiesResponse,
+  ResidentFinanceView,
+  ResidentCreatePaymentInput,
+  ResidentCreatePaymentResponse,
 } from '@silverstone/shared';
 
 /**
@@ -502,6 +506,21 @@ export const api = {
   updateResidentProfile: (input: ResidentProfileUpdateInput) =>
     request<ResidentProfileUpdateResponse>('/api/v1/resident/profile', {
       method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  /** S2: the acting resident's assigned property(ies). */
+  getResidentProperties: () =>
+    request<ResidentPropertiesResponse>('/api/v1/resident/properties'),
+
+  /** S3: the acting resident's finance view (4 sections). */
+  getResidentFinance: () =>
+    request<ResidentFinanceView>('/api/v1/resident/finance'),
+
+  /** S3: record a payment against one of the acting resident's invoices. */
+  createResidentPayment: (input: ResidentCreatePaymentInput) =>
+    request<ResidentCreatePaymentResponse>('/api/v1/resident/payments', {
+      method: 'POST',
       body: JSON.stringify(input),
     }),
 

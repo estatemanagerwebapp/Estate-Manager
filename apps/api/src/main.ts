@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { ResidentProfileService } from './modules/resident/profile.service.js';
+import { ResidentPropertiesService } from './modules/resident/properties.service.js';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
@@ -93,6 +94,13 @@ async function main(): Promise<void> {
           return { identifier: detail.identifier, estate: detail.estate };
         },
       }),
+      properties: new ResidentPropertiesService({
+        drafts: deps.residentOnboarding,
+        properties: deps.properties,
+        estates: deps.estates,
+        loadConfig: deps.loadConfig,
+      }),
+      finance: deps.residentFinanceService,
     },
   });
 

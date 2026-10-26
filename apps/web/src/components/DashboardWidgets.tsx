@@ -262,6 +262,7 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'import.commit_failed': 'an import commit failed',
   'propertyOptions.updated': 'updated property options',
   'resident.profile_updated': 'updated their profile',
+  'resident.invoice_created': 'created a resident invoice',
 };
 
 type ActivityTone = 'success' | 'danger' | 'warning' | 'neutral';

@@ -29,9 +29,11 @@ import { UserService } from './modules/auth/user.service.js';
 import { PrismaResidentOnboardingRepository } from './modules/auth/resident-onboarding-repository.js';
 import { ResidentOnboardingService } from './modules/auth/resident-onboarding.service.js';
 import { ResidentProfileService } from './modules/resident/profile.service.js';
+import { ResidentPropertiesService } from './modules/resident/properties.service.js';
 import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
+import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 
 let prisma: PrismaClient;
 let app: Express;
@@ -95,10 +97,52 @@ beforeAll(async () => {
     identifier: `PF-${uniqueSuffix()}`,
     unitTypeKey: null,
     parentPropertyId: null,
-    addressComponents: {},
+    addressComponents: { plot: '12', street: 'Bishop Road', city: 'Lagos' },
     name: null,
   });
   propertyId = property.id;
+
+  // Fake property config snapshot (asset types + address component labels),
+  // matching the bootstrap shape the services consume.
+  const loadConfigForTest = async (): Promise<PropertyConfigSnapshot> => ({
+    assetTypes: [
+      {
+        key: 'house',
+        label: 'House',
+        detailKind: 'PROPERTY',
+        active: true,
+      },
+    ],
+    unitTypes: [],
+    propertyOptions: {
+      addressComponents: [
+        {
+          key: 'plot',
+          label: 'Plot Number',
+          requiredFor: [],
+          notApplicableFor: [],
+          maxLength: 64,
+        },
+        {
+          key: 'street',
+          label: 'Street',
+          requiredFor: [],
+          notApplicableFor: [],
+          maxLength: 120,
+        },
+        {
+          key: 'city',
+          label: 'City',
+          requiredFor: [],
+          notApplicableFor: [],
+          maxLength: 80,
+        },
+      ],
+      identifierTemplate: '{estate_slug}-{{plot}}',
+      identifierMax: 64,
+    },
+    configVersion: 1,
+  });
 
   const authService = new AuthService(
     users,
@@ -173,6 +217,12 @@ beforeAll(async () => {
           })();
           return detail;
         },
+      }),
+      properties: new ResidentPropertiesService({
+        drafts,
+        properties,
+        estates,
+        loadConfig: loadConfigForTest,
       }),
     },
   });
@@ -335,5 +385,64 @@ describe('resident profile (S1)', () => {
       .set('Cookie', residentCookie);
     expect(response.status).toBe(200);
     expect(response.body.data.profile.email).toBeDefined();
+  });
+});
+
+describe('resident properties (S2)', () => {
+  it('rejects the properties route without a session', async () => {
+    expect((await request(app).get('/api/v1/resident/properties')).status).toBe(401);
+  });
+
+  it('returns the acting resident\'s assigned property with formatted address', async () => {
+    const response = await request(app)
+      .get('/api/v1/resident/properties')
+      .set('Cookie', residentCookie);
+    expect(response.status).toBe(200);
+
+    const { properties } = response.body.data;
+    expect(properties).toHaveLength(1);
+
+    const property = properties[0];
+    expect(property.identifier).toMatch(/^PF-/);
+    expect(property.typeKey).toBe('house');
+    expect(property.typeLabel).toBe('House');
+    expect(property.status).toBe('ACTIVE');
+    expect(property.estate.name).toBe('Profile Estate');
+
+    // The full address joins the component values in config order
+    // (plot → street → city), matching the stored components.
+    expect(property.fullAddress).toBe('12, Bishop Road, Lagos');
+    expect(property.addressComponents).toEqual({
+      plot: '12',
+      street: 'Bishop Road',
+      city: 'Lagos',
+    });
+  });
+
+  it('returns an empty list for a user without an onboarding draft', async () => {
+    // Create a RESIDENT user with no linked draft: no property is resolvable.
+    const orphan = await prisma.user.create({
+      data: {
+        organizationId,
+        email: `orphan_${uniqueSuffix()}@example.com`,
+        passwordHash: await hashPassword('Orphan1234!'),
+        role: 'RESIDENT',
+        status: 'ACTIVE',
+        lastPasswordChangedAt: new Date(),
+      },
+    });
+
+    const login = await request(app).post('/api/v1/auth/login').send({
+      email: orphan.email,
+      password: 'Orphan1234!',
+    });
+    expect(login.status).toBe(200);
+    const orphanCookie = cookieFrom(login);
+
+    const response = await request(app)
+      .get('/api/v1/resident/properties')
+      .set('Cookie', orphanCookie);
+    expect(response.status).toBe(200);
+    expect(response.body.data.properties).toEqual([]);
   });
 });

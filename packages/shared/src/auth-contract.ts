@@ -263,6 +263,8 @@ export const AUDIT_EVENT_TYPES = [
   'propertyOptions.updated',
   // Phase 3 — resident dashboard.
   'resident.profile_updated',
+  'resident.payment_recorded',
+  'resident.invoice_created',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

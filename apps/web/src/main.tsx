@@ -181,6 +181,7 @@ createRoot(container).render(
               }
             />
             <Route
+              path="/resident/app"
               element={
                 <RequireAuth>
                   <ResidentAppShell />

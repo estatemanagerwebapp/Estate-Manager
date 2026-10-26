@@ -25,7 +25,6 @@ import { useAuth } from '../auth/AuthContext';
 
 const NAV_ITEMS = [
   { to: '/resident/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/resident/app/profile', label: 'Profile', icon: User },
   { to: '/resident/app/properties', label: 'My Properties', icon: Home },
   { to: '/resident/app/invoices', label: 'Invoices & Payments', icon: FileText },
   { to: '/resident/app/codes', label: 'Access Codes', icon: KeyRound },
@@ -36,6 +35,7 @@ const NAV_ITEMS = [
   { to: '/resident/app/bookings', label: 'Bookings', icon: CalendarDays },
   { to: '/resident/app/sos', label: 'Emergency / SOS', icon: Siren },
   { to: '/resident/app/notifications', label: 'Notifications', icon: Bell },
+  { to: '/resident/app/profile', label: 'Profile', icon: User },
 ] as const;
 
 export function ResidentAppShell() {

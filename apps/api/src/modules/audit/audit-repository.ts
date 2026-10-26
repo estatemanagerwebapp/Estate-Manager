@@ -52,6 +52,7 @@ const AUDIT_EVENT_DB_MAP = {
   'resident.deleted': 'resident_deleted',
   // Phase 3 — resident dashboard.
   'resident.profile_updated': 'resident_profile_updated',
+  'resident.invoice_created': 'resident_invoice_created',
 } as const;
 
 export interface RecordAuditEventInput {

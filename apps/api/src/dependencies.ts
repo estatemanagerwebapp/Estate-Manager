@@ -18,6 +18,8 @@ import { PrismaUserRepository } from './modules/auth/user-repository.js';
 import { PrismaSessionRepository } from './modules/auth/session-repository.js';
 import { PrismaPasswordResetRepository } from './modules/auth/reset-token-repository.js';
 import { PrismaResidentOnboardingRepository } from './modules/auth/resident-onboarding-repository.js';
+import { PrismaFinanceRepository } from './modules/resident/finance-repository.js';
+import { ResidentFinanceService } from './modules/resident/finance.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -69,6 +71,8 @@ export interface AppDependencies {
   propertyOptionsService: PropertyOptionsService;
   /** Phase 2 — resident onboarding (persistent code, payment-gated). */
   residentOnboardingService: ResidentOnboardingService;
+  /** Phase 3 (S3) — resident finance (invoices, payments, transactions). */
+  residentFinanceService: ResidentFinanceService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -168,6 +172,16 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     };
   };
 
+  const financeRepo = new PrismaFinanceRepository(prisma);
+  const residentFinanceService = new ResidentFinanceService({
+    finance: financeRepo,
+    audit,
+    registrationFee: async () => {
+      const config = (await configService.resolve()).config;
+      return config.fees?.registration ?? { amountKobo: 0, currency: 'NGN' };
+    },
+  });
+
   const residentOnboardingService = new ResidentOnboardingService(
     users,
     residentDrafts,
@@ -175,6 +189,14 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     permissions,
     async () => (await configService.resolve()).config,
     loadPropertyDetail,
+    async (hook) => {
+      await residentFinanceService.seedRegistrationFee(
+        hook.organizationId,
+        hook.userId,
+        hook.propertyId,
+        hook.requestId,
+      );
+    },
   );
 
   return {
@@ -199,6 +221,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     importService,
     propertyOptionsService,
     residentOnboardingService,
+    residentFinanceService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,
