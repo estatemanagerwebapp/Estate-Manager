@@ -9,6 +9,7 @@ export {
   CUSTOM_FIELD_TYPES,
   CustomFieldSchema,
   DEFAULT_ASSET_TYPES,
+  DEFAULT_HOUSE_TYPES,
   DEFAULT_UNIT_TYPES,
   FEE_CADENCES,
   FeeSchema,

@@ -83,6 +83,24 @@ const slug = (label: string) =>
 
 const label = (max = 80) => z.string().trim().min(1, 'Label is required').max(max);
 
+/**
+ * A reference to an asset type or a nested house sub-type.
+ *
+ * Asset types are plain slugs (`land`, `house`); house sub-types are
+ * referenced with their namespaced form (`house.bungalow`), matching the
+ * keys built by the cross-field validation below.
+ */
+const typeKeyRef = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required`)
+    .max(64, `${label} must be 64 characters or fewer`)
+    .regex(
+      /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)?$/,
+      `${label} must start with a lowercase letter and contain only a-z, 0-9, _ and an optional . namespace`,
+    );
+
 const hexColor = z
   .string()
   .regex(/^#[0-9A-Fa-f]{6}$/, 'Must be a six-digit hex colour such as #FF5A1F');
@@ -128,28 +146,8 @@ export const DEFAULT_UNIT_TYPES: UnitType[] = [
 ];
 
 export const DEFAULT_ASSET_TYPES: AssetType[] = [
+  AssetTypeSchema.parse({ key: 'land', label: 'Land', detailKind: 'LAND_PARCEL' }),
   AssetTypeSchema.parse({ key: 'house', label: 'House', detailKind: 'PROPERTY' }),
-  AssetTypeSchema.parse({
-    key: 'apartment_block',
-    label: 'Apartment block',
-    detailKind: 'PROPERTY',
-    requiresUnits: true,
-    unitTypeKeys: [
-      'studio',
-      'one_bedroom',
-      'two_bedroom',
-      'three_bedroom',
-      'four_bedroom',
-      'penthouse',
-    ],
-    defaultUnitTypeKey: 'two_bedroom',
-  }),
-  AssetTypeSchema.parse({ key: 'land_plot', label: 'Land plot', detailKind: 'LAND_PARCEL' }),
-  AssetTypeSchema.parse({
-    key: 'both',
-    label: 'Both (land & house)',
-    detailKind: 'PROPERTY',
-  }),
 ];
 
 export const AssetModelFields = z.object({
@@ -158,6 +156,20 @@ export const AssetModelFields = z.object({
   allowMultipleAssetsPerResident: z.boolean().default(true),
   requireApprovalForAssignmentChanges: z.boolean().default(true),
 });
+
+export const HouseTypeSchema = z.object({
+  key: slug('House type key'),
+  label: label(80),
+  active: z.boolean().default(true),
+});
+
+export const DEFAULT_HOUSE_TYPES: HouseType[] = [
+  HouseTypeSchema.parse({ key: 'bungalow', label: 'Bungalow' }),
+  HouseTypeSchema.parse({ key: 'terrace', label: 'Terrace' }),
+  HouseTypeSchema.parse({ key: 'duplex', label: 'Duplex' }),
+  HouseTypeSchema.parse({ key: 'apartment', label: 'Apartment' }),
+  HouseTypeSchema.parse({ key: 'flat', label: 'Flat' }),
+];
 
 export const AssetModelSchema = defaulted(AssetModelFields, {
   types: DEFAULT_ASSET_TYPES,
@@ -323,16 +335,26 @@ export const AddressComponentSchema = z.object({
   key: slug('Address component key'),
   label: label(80),
   /** Asset type keys that require this component. Empty = every type. */
-  requiredFor: z.array(slug('Asset type key')).default([]),
+  requiredFor: z.array(typeKeyRef('Asset type key')).default([]),
   /** Asset type keys where this component does not apply (overrides required). */
-  notApplicableFor: z.array(slug('Asset type key')).default([]),
+  notApplicableFor: z.array(typeKeyRef('Asset type key')).default([]),
   /** Optional regex the component value must match when supplied. */
   pattern: z
     .string()
     .trim()
     .min(1)
     .max(200)
-    .regex(/^[\w\s\-./]+$/, 'Pattern must be a simple regex character set')
+    .refine(
+      (value) => {
+        try {
+          new RegExp(value);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Pattern must be a valid regular expression' },
+    )
     .nullish(),
   maxLength: z.number().int().min(1).max(120).default(64),
 });
@@ -379,6 +401,8 @@ export const DEFAULT_PROPERTY_OPTIONS = {
 
 export const PropertyOptionsFields = z.object({
   addressComponents: z.array(AddressComponentSchema).default([]),
+  houseTypes: z.array(HouseTypeSchema).default(DEFAULT_HOUSE_TYPES),
+  /** Per-type identifier formulas are code-defaulted and not editable. */
   identifierTemplate: z
     .string()
     .trim()
@@ -492,12 +516,21 @@ export const OrganizationConfigSchema = z
         });
       }
       componentKeys.add(component.key);
+
+      // House type keys (e.g. "house.bungalow") and asset type keys (e.g.
+      // "land", "house") are both valid targets for requiredFor /
+      // notApplicableFor.
+      const houseTypeKeys = new Set<string>();
+      for (const houseType of config.propertyOptions?.houseTypes ?? []) {
+        houseTypeKeys.add(`house.${houseType.key}`);
+      }
+      const validTypeKeys = new Set([...assetKeys, ...houseTypeKeys]);
       for (const typeKey of [...component.requiredFor, ...component.notApplicableFor]) {
-        if (!assetKeys.has(typeKey)) {
+        if (!validTypeKeys.has(typeKey)) {
           ctx.addIssue({
             code: 'custom',
             path: ['propertyOptions', 'addressComponents', index, 'requiredFor'],
-            message: `Address component "${component.key}" references unknown asset type "${typeKey}"`,
+            message: `Address component "${component.key}" references unknown type "${typeKey}"`,
           });
         }
       }
@@ -584,6 +617,7 @@ export type OrganizationIdentity = z.output<typeof OrganizationIdentitySchema>;
 export type Branding = z.output<typeof BrandingSchema>;
 export type AssetType = z.output<typeof AssetTypeSchema>;
 export type UnitType = z.output<typeof UnitTypeSchema>;
+export type HouseType = z.output<typeof HouseTypeSchema>;
 export type CustomField = z.output<typeof CustomFieldSchema>;
 export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
 export type ConfigEntityKind = (typeof CONFIG_ENTITY_KINDS)[number];

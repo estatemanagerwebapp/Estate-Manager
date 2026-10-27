@@ -90,6 +90,7 @@ export class ImportService {
         deriveIdentifier({
           estateSlug,
           typeKey,
+          houseTypeKey: null,
           addressComponents,
           propertyOptions: config.propertyOptions,
         }),
@@ -163,6 +164,7 @@ export class ImportService {
           ? (deriveIdentifier({
               estateSlug: estate.slug,
               typeKey: row.raw['type'] ?? '',
+              houseTypeKey: null,
               addressComponents: row.raw,
               propertyOptions: config.propertyOptions,
             }).identifier ?? '')
@@ -351,6 +353,7 @@ export class ImportService {
               organizationId: context.organizationId,
               identifier,
               typeKey,
+              houseTypeKey: null,
               unitTypeKey,
               parentPropertyId: null,
               addressComponents: rowData as Record<string, string>,

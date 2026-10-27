@@ -655,6 +655,9 @@ model Property {
   /// For a unit property: the configured unit type key from the parent's
   /// permitted unit types. Null for top-level properties.
   unitTypeKey       String?  @map("unit_type_key") @db.VarChar(48)
+  /// For a house property: the configured nested house type (bungalow,
+  /// terrace, duplex, apartment, flat). Null for land properties.
+  houseTypeKey      String?  @map("house_type_key") @db.VarChar(48)
   /// Parent property for unit-in-building relationships. Depth 1: a
   /// property that has a parent cannot itself have children.
   parentPropertyId  String?  @map("parent_property_id") @db.Uuid

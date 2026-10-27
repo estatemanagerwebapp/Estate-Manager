@@ -93,6 +93,8 @@ export class PropertyService {
     input: {
       estateId: string;
       typeKey: string;
+      /** For house properties: the nested house type key (bungalow, terrace, …). */
+      houseTypeKey?: string | null;
       parentPropertyId?: string;
       name?: string;
       addressComponents?: Record<string, string>;
@@ -107,8 +109,9 @@ export class PropertyService {
     }
 
     const typeKey = assertConfiguredTypeKey(config, input.typeKey);
+    const houseTypeKey = assertHouseTypeKey(config, typeKey, input.houseTypeKey);
     const addressComponents = input.addressComponents ?? {};
-    validateAddressComponents(config, typeKey, addressComponents);
+    validateAddressComponents(config, typeKey, houseTypeKey, addressComponents);
 
     // Hierarchy validation (depth-1, parent type supports units, unit type allowed).
     let parentRecord: PropertyRecord | null = null;
@@ -136,10 +139,11 @@ export class PropertyService {
       }
     }
 
-    // Derive the canonical identifier from the configured template.
+    // Derive the canonical identifier from the per-type code-defaulted template.
     const derived = deriveIdentifier({
       estateSlug: estate.slug,
       typeKey,
+      houseTypeKey,
       addressComponents,
       propertyOptions: config.propertyOptions,
     });
@@ -167,6 +171,7 @@ export class PropertyService {
       organizationId: context.organizationId,
       identifier: derived.identifier,
       typeKey,
+      houseTypeKey,
       unitTypeKey: input.parentPropertyId ? (addressComponents['unit_type_key'] ?? null) : null,
       parentPropertyId: input.parentPropertyId ?? null,
       addressComponents,
@@ -181,7 +186,7 @@ export class PropertyService {
       targetId: record.id,
       requestId: context.requestId,
       outcome: 'success',
-      metadata: { identifier: record.identifier, typeKey: record.typeKey, estateId: estate.id },
+      metadata: { identifier: record.identifier, typeKey: record.typeKey, houseTypeKey: record.houseTypeKey, estateId: estate.id },
     });
 
     return this.toDto(record, config);
@@ -302,6 +307,11 @@ export class PropertyService {
   private toDto(record: PropertyRecord, config?: PropertyConfigSnapshot): PropertyDto {
     const typeLabel =
       config?.assetTypes.find((type) => type.key === record.typeKey)?.label ?? record.typeKey;
+    const houseTypeLabel =
+      record.houseTypeKey && config?.propertyOptions?.houseTypes
+        ? config.propertyOptions.houseTypes.find((type) => type.key === record.houseTypeKey)?.label ??
+          record.houseTypeKey
+        : null;
     const parentProperty =
       record.parentPropertyId && record.parentProperty
         ? { id: record.parentProperty.id, identifier: record.parentProperty.identifier }
@@ -313,6 +323,8 @@ export class PropertyService {
       name: record.name,
       typeKey: record.typeKey,
       typeLabel,
+      houseTypeKey: record.houseTypeKey,
+      houseTypeLabel,
       status: record.status as PropertyStatus,
       parentPropertyId: record.parentPropertyId,
       parentProperty,
@@ -329,9 +341,11 @@ export class PropertyService {
 export function validateAddressComponents(
   config: PropertyConfigSnapshot,
   typeKey: string,
+  houseTypeKey: string | null,
   values: Record<string, string>,
 ): void {
   const components = config.propertyOptions.addressComponents;
+  const houseType = houseTypeKey ? `${typeKey}.${houseTypeKey}` : null;
   const configuredKeys = new Set(components.map((component) => component.key));
   const rejectField = (key: string, message: string): never => {
     throw new AppError(400, 'VALIDATION_ERROR', message, {
@@ -349,9 +363,25 @@ export function validateAddressComponents(
   for (const component of components) {
     const value = values[component.key]?.trim() ?? '';
     const notApplicable = component.notApplicableFor.includes(typeKey);
+    const notApplicableForHouseType =
+      houseType !== null && component.notApplicableFor.includes(houseType);
+    if (notApplicable || notApplicableForHouseType) {
+      if (value !== '') {
+        rejectField(
+          component.key,
+          `Address component "${component.label}" is not applicable to this property type`,
+        );
+      }
+      continue;
+    }
+    const appliesToAll = component.requiredFor.length === 0;
+    const explicitlyRequired =
+      component.requiredFor.includes(typeKey)
+      || (houseType && component.requiredFor.includes(houseType));
     const required =
-      !notApplicable &&
-      (component.requiredFor.length === 0 || component.requiredFor.includes(typeKey));
+      !component.notApplicableFor.includes(typeKey)
+      && !component.notApplicableFor.includes(houseType ?? '')
+      && (appliesToAll || explicitlyRequired);
     if (required && value === '') {
       rejectField(component.key, `Address component "${component.label}" is required`);
     }
@@ -401,4 +431,49 @@ function assertConfiguredTypeKey(config: PropertyConfigSnapshot, typeKey: string
     );
   }
   return typeKey;
+}
+
+/**
+ * Validates the nested house type key: required when typeKey is `house`,
+ * optional otherwise. Must reference an active configured house type.
+ */
+function assertHouseTypeKey(
+  config: PropertyConfigSnapshot,
+  typeKey: string,
+  houseTypeKey: string | null | undefined,
+): string | null {
+  const houseTypes = config.propertyOptions?.houseTypes ?? [];
+  if (typeKey === 'house') {
+    if (!houseTypeKey) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'A house property must declare a house type (e.g. bungalow, terrace, duplex, apartment, flat)',
+      );
+    }
+    const houseType = houseTypes.find((ht) => ht.key === houseTypeKey);
+    if (!houseType) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `Unknown house type "${houseTypeKey}"; it is not in the configured house types`,
+      );
+    }
+    if (!houseType.active) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        `House type "${houseType.label}" is not active; it cannot be assigned to new properties`,
+      );
+    }
+    return houseTypeKey;
+  }
+  if (houseTypeKey) {
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      `House type "${houseTypeKey}" can only be set when the property type is "house"`,
+    );
+  }
+  return null;
 }

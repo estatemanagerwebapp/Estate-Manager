@@ -1,5 +1,9 @@
 import { AppError } from '../../lib/errors.js';
-import { PropertyOptionsSchema, type OrganizationConfig } from '@silverstone/config-schema';
+import {
+  OrganizationConfigSchema,
+  PropertyOptionsSchema,
+  type OrganizationConfig,
+} from '@silverstone/config-schema';
 import { identifierConfigured } from '../../lib/property-identifier.js';
 import type { PropertyOptionsView, UpdatePropertyOptionsRequest } from '@silverstone/shared';
 import type { PrismaOrganizationConfigRepository } from './config.service.js';
@@ -77,14 +81,21 @@ export class PropertyOptionsService {
     // Build the new full config document: carry over everything except
     // propertyOptions from the active version.
     const resolved = await this.configService.resolve();
-    const updatedConfig: OrganizationConfig = {
+    const updatedConfig = OrganizationConfigSchema.safeParse({
       ...resolved.config,
       propertyOptions: parsed.data,
-    };
+    });
+    if (!updatedConfig.success) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        updatedConfig.error.issues.map((issue) => issue.message).join('; '),
+      );
+    }
 
     const created = await this.configRepository.createRecord({
       organizationSlug: this.organizationSlug,
-      config: updatedConfig,
+      config: updatedConfig.data as OrganizationConfig,
       createdBy: context.actorId ?? undefined,
     });
 
@@ -124,11 +135,17 @@ function buildPropertyOptionsView(snapshot: PropertyConfigSnapshot): PropertyOpt
   for (const type of assetTypes) {
     typeKeyToLabel.set(type.key, type.label);
   }
+  const houseTypeKeyToLabel = new Map<string, string>();
+  for (const houseType of propertyOptions.houseTypes ?? []) {
+    houseTypeKeyToLabel.set(`house.${houseType.key}`, houseType.label);
+  }
 
   const addressComponents = propertyOptions.addressComponents.map((component) => ({
     key: component.key,
     label: component.label,
-    requiredForLabels: (component.requiredFor ?? []).map((key) => typeKeyToLabel.get(key) ?? key),
+    requiredForLabels: (component.requiredFor ?? []).map(
+      (key) => typeKeyToLabel.get(key) ?? houseTypeKeyToLabel.get(key) ?? key,
+    ),
     notApplicableFor: component.notApplicableFor ?? [],
     pattern: component.pattern ?? null,
     maxLength: component.maxLength ?? 64,
@@ -151,6 +168,11 @@ function buildPropertyOptionsView(snapshot: PropertyConfigSnapshot): PropertyOpt
       label: unit.label,
       bedrooms: unit.bedrooms,
       active: unit.active,
+    })),
+    houseTypes: (propertyOptions.houseTypes ?? []).map((houseType) => ({
+      key: houseType.key,
+      label: houseType.label,
+      active: houseType.active,
     })),
   };
 }
