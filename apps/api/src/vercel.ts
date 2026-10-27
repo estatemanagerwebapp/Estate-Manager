@@ -1,25 +1,35 @@
-import { ResidentProfileService } from './modules/resident/profile.service.js';
-import { ResidentPropertiesService } from './modules/resident/properties.service.js';
-import { ResidentDashboardService } from './modules/resident/dashboard.service.js';
-import express, { type Express, type Request, type Response } from 'express';
-import { createApp } from './app.js';
-import { EnvironmentError, getEnv } from './config/env.js';
-import { createAppDependencies } from './dependencies.js';
-import { getPasswordHashAlgorithm, getPasswordHashPolicy } from './lib/password.js';
-import { logger } from './lib/logger.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /**
  * Vercel serverless entry point for the Silverstone API.
  *
- * Mirrors `src/main.ts` exactly (same dependency wiring, same route
- * registration) but instead of `server.listen()` it exports the Express
- * app, which Vercel's Node.js runtime invokes as a request handler.
+ * Mirrors `src/main.ts` (same dependency wiring, same route registration) but
+ * instead of `server.listen()` it exports a request handler for Vercel's
+ * Node.js runtime.
+ *
+ * This module deliberately has no static imports from the application graph.
+ * Every part of the app is loaded inside `buildApp()` so that a failure while
+ * loading it (a missing native module, an invalid environment, a broken
+ * workspace package) is caught and reported as JSON. A static import failure
+ * happens before any handler exists, which the platform can only surface as an
+ * opaque FUNCTION_INVOCATION_FAILED response.
  *
  * Environment variables must be set in the Vercel project settings
  * (see docs/environment.md); DATABASE_URL is required.
  */
 
-async function buildApp() {
+type HttpHandler = (req: IncomingMessage, res: ServerResponse) => void;
+
+async function buildApp(): Promise<HttpHandler> {
+  const { getEnv } = await import('./config/env.js');
+  const { createAppDependencies } = await import('./dependencies.js');
+  const { getPasswordHashAlgorithm, getPasswordHashPolicy } = await import('./lib/password.js');
+  const { logger } = await import('./lib/logger.js');
+  const { createApp } = await import('./app.js');
+  const { ResidentProfileService } = await import('./modules/resident/profile.service.js');
+  const { ResidentPropertiesService } = await import('./modules/resident/properties.service.js');
+  const { ResidentDashboardService } = await import('./modules/resident/dashboard.service.js');
+
   const env = getEnv();
 
   // Resolve the hashing backend before serving so a strict policy fails
@@ -60,7 +70,7 @@ async function buildApp() {
     notifications: deps.residentNotificationsService,
   });
 
-  return createApp({
+  const app = createApp({
     checkDatabase: deps.checkDatabase,
     configService: deps.configService,
     auth: {
@@ -135,59 +145,72 @@ async function buildApp() {
       dashboard: residentDashboardService,
     },
   });
+
+  return app as unknown as HttpHandler;
 }
 
-/**
- * A misconfigured deployment must not answer every request with an opaque
- * FUNCTION_INVOCATION_FAILED. Build a minimal app that reports the startup
- * problem in the standard error envelope instead. Environment issues are
- * safe to expose (variable names and static messages only); other errors are
- * logged and only a redacted message is returned.
- */
-function startupFailureApp(error: unknown): Express {
-  const message =
-    error instanceof EnvironmentError
-      ? error.issues.map((issue) => `${issue.variable}: ${issue.message}`).join('; ')
-      : redactStartupMessage(error);
+function describeStartupError(error: unknown): string {
+  const issues = (error as { issues?: unknown }).issues;
+  if (Array.isArray(issues) && issues.length > 0) {
+    return issues
+      .map((issue) => {
+        const item = issue as { variable?: unknown; message?: unknown };
+        const variable = typeof item.variable === 'string' ? item.variable : 'configuration';
+        const message = typeof item.message === 'string' ? item.message : '';
+        return `${variable}: ${message}`;
+      })
+      .join('; ');
+  }
 
-  const failure = express();
-  failure.use((_req, res) => {
-    res.status(503).json({
-      error: {
-        code: 'STARTUP_FAILED',
-        message,
-      },
-    });
-  });
-  return failure;
-}
-
-function redactStartupMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
-  return raw
-    .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, 'postgresql://[redacted]@')
-    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
-    .slice(0, 1000);
+  return (
+    raw
+      .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, 'postgresql://[redacted]@')
+      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+      .slice(0, 1000) || 'The API failed to start.'
+  );
 }
 
-let appPromise: Promise<Express> | undefined;
+function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
+  const payload = JSON.stringify(body);
+  res.statusCode = statusCode;
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  res.setHeader('content-length', Buffer.byteLength(payload));
+  res.end(payload);
+}
 
-function loadApp(): Promise<Express> {
+let appPromise: Promise<HttpHandler> | undefined;
+
+function loadApp(): Promise<HttpHandler> {
   appPromise ??= buildApp().catch((error: unknown) => {
-    logger.fatal({ err: error }, 'API failed to start');
-    return startupFailureApp(error);
+    // Never let the diagnostic path throw. The logger may itself be the part
+    // that cannot load.
+    void import('./lib/logger.js')
+      .then(({ logger }) => logger.fatal({ err: error }, 'API failed to start'))
+      .catch(() => undefined);
+    throw error;
   });
   return appPromise;
 }
 
 /**
  * Vercel invokes this per request. The Express app is built lazily so a
- * startup failure is reported as JSON instead of crashing module evaluation
- * (which the platform surfaces as an opaque FUNCTION_INVOCATION_FAILED).
- * Keeping module evaluation synchronous also avoids relying on top-level
- * await support in the function bundler.
+ * startup failure is reported as JSON instead of crashing module evaluation.
  */
-export default async function handler(req: Request, res: Response): Promise<void> {
-  const app = await loadApp();
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let app: HttpHandler;
+  try {
+    app = await loadApp();
+  } catch (error) {
+    sendJson(res, 503, {
+      error: {
+        code: 'STARTUP_FAILED',
+        message: describeStartupError(error),
+      },
+    });
+    return;
+  }
+
   app(req, res);
 }
