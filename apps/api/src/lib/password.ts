@@ -1,19 +1,42 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { pbkdf2Sync } from 'node:crypto';
+import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { logger } from './logger.js';
 
 /**
- * Password hashing.
+ * Password hashing (ADR-0005).
  *
- * Preference (ADR-0005): Argon2id via the `argon2` package (a native module
- * compiled from source in this workspace). When the native binary is
- * unavailable at runtime — a minimal runner without a build toolchain, or a
- * platform without a prebuilt binary — the documented fallback is
- * PBKDF2-SHA256 with 600 000 iterations. Both backends produce
- * self-describing hashes, and `verifyPassword` always routes to the backend
- * that matches the stored scheme, so credentials survive backend switches.
+ * Primary backend: Argon2id via the `argon2` native module.
+ * Approved fallback: PBKDF2-SHA256 at 600 000 iterations.
+ *
+ * Which of the two is allowed is an explicit policy decision, not an accident
+ * of the environment:
+ *
+ * - `PASSWORD_HASH_POLICY=allow-fallback` (default) — use Argon2id when the
+ *   native module loads; otherwise fall back to PBKDF2-SHA256 and emit a
+ *   single, secret-free warning so the downgrade is visible in the logs.
+ * - `PASSWORD_HASH_POLICY=argon2id-required` — never hash with PBKDF2. If the
+ *   native module cannot load, hashing fails with a clear, actionable error
+ *   instead of silently weakening stored credentials.
+ *
+ * Both backends produce self-describing hashes, and verification always routes
+ * by the stored scheme rather than by the active backend, so credentials remain
+ * verifiable after a dependency, platform, or policy change.
  */
 
+export type PasswordHashAlgorithm = 'argon2id' | 'pbkdf2-sha256';
+export type PasswordHashPolicy = 'allow-fallback' | 'argon2id-required';
+
+/** Environment variable that selects the policy. Validated by `config/env.ts`. */
+export const PASSWORD_HASH_POLICY_ENV = 'PASSWORD_HASH_POLICY';
+
+const DEFAULT_POLICY: PasswordHashPolicy = 'allow-fallback';
+
+const PBKDF2_SCHEME = 'pbkdf2-sha256';
 const PBKDF2_ITERATIONS = 600_000;
+/** Bounds applied when reading iterations from a stored hash (tamper/DoS guard). */
+const PBKDF2_MIN_ITERATIONS = 100_000;
+const PBKDF2_MAX_ITERATIONS = 10_000_000;
+const PBKDF2_KEY_LENGTH = 32;
+const PBKDF2_SALT_BYTES = 16;
 
 // Argon2id tuning: 19 MiB memory, 4 parallelism, 3 time cost, 16-byte salt.
 // The `type` field is filled in per-backend from the `argon2` module's own
@@ -26,8 +49,30 @@ const ARGON2_TUNING = {
   hashLength: 32,
 } as const;
 
+/**
+ * A well-formed Argon2id hash of a value that is not a valid password. Used for
+ * timing equalization on unknown-account logins (see `AuthService.login`).
+ * Verification against it always returns `false` but performs the full KDF.
+ */
+const ARGON2_DUMMY_HASH =
+  '$argon2id$v=19$m=19456,t=3,p=4$ZHVtbXlzb2x0c2FsdGJ5dGU$ZHVtbXl0YWdtYWhzaGFzaHZhbHVl';
+
+/** Raised when Argon2id is required but the native module cannot be loaded. */
+export class PasswordBackendUnavailableError extends Error {
+  override readonly cause: unknown;
+  readonly code = 'PASSWORD_BACKEND_UNAVAILABLE';
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = 'PasswordBackendUnavailableError';
+    this.cause = options?.cause;
+  }
+}
+
 interface HashBackend {
-  readonly name: 'argon2id' | 'pbkdf2-sha256';
+  readonly name: PasswordHashAlgorithm;
+  /** Self-describing dummy hash matching this backend (timing equalization). */
+  readonly dummyHash: string;
   hash(password: string): Promise<string>;
   verify(stored: string, candidate: string): Promise<boolean>;
 }
@@ -36,90 +81,210 @@ import type * as argon2Module from 'argon2';
 type Argon2Module = typeof argon2Module;
 
 let cachedBackend: HashBackend | undefined;
+let cachedArgon2: Argon2Module | null | undefined;
+let argon2LoadError: unknown;
+let fallbackWarningEmitted = false;
 
-async function loadBackend(): Promise<HashBackend> {
+/**
+ * Reads the configured policy. `config/env.ts` validates the variable at
+ * startup; this guard keeps direct library use (tests, scripts) honest.
+ */
+export function getPasswordHashPolicy(): PasswordHashPolicy {
+  const raw = process.env[PASSWORD_HASH_POLICY_ENV]?.trim();
+  if (!raw) return DEFAULT_POLICY;
+  if (raw === 'allow-fallback' || raw === 'argon2id-required') return raw;
+  throw new Error(
+    `Invalid ${PASSWORD_HASH_POLICY_ENV}="${raw}". Supported values: allow-fallback, argon2id-required.`,
+  );
+}
+
+async function loadArgon2(): Promise<Argon2Module | null> {
+  if (cachedArgon2 !== undefined) return cachedArgon2;
+  try {
+    cachedArgon2 = await import('argon2');
+    argon2LoadError = undefined;
+  } catch (error) {
+    cachedArgon2 = null;
+    argon2LoadError = error;
+  }
+  return cachedArgon2;
+}
+
+function argon2UnavailableReason(): string {
+  return argon2LoadError instanceof Error ? argon2LoadError.message : 'unknown loader error';
+}
+
+function argon2RequiredError(): PasswordBackendUnavailableError {
+  return new PasswordBackendUnavailableError(
+    'Argon2id is required (PASSWORD_HASH_POLICY=argon2id-required) but the argon2 native ' +
+      'module failed to load. Install a C++ toolchain and allow the argon2 install script ' +
+      `(npm install-scripts approve argon2), then reinstall. Loader error: ${argon2UnavailableReason()}`,
+    { cause: argon2LoadError },
+  );
+}
+
+function warnOnceAboutFallback(): void {
+  if (fallbackWarningEmitted) return;
+  fallbackWarningEmitted = true;
+  // Deliberately secret-free: algorithm, iteration count, policy, loader error.
+  logger.warn(
+    {
+      algorithm: 'pbkdf2-sha256',
+      iterations: PBKDF2_ITERATIONS,
+      policy: getPasswordHashPolicy(),
+      reason: argon2UnavailableReason(),
+    },
+    'Argon2id native module unavailable; hashing new passwords with PBKDF2-SHA256 (ADR-0005). ' +
+      'Existing Argon2id hashes cannot be verified in this process.',
+  );
+}
+
+function argon2Backend(mod: Argon2Module): HashBackend {
+  return {
+    name: 'argon2id',
+    dummyHash: ARGON2_DUMMY_HASH,
+    hash: (password) => mod.hash(password, { ...ARGON2_TUNING, type: mod.argon2id }),
+    async verify(stored, candidate) {
+      try {
+        return await mod.verify(stored, candidate);
+      } catch {
+        // A malformed hash is a verification failure, never a crash.
+        return false;
+      }
+    },
+  };
+}
+
+function derivePbkdf2(password: string, saltBase64: string, iterations: number): string {
+  return pbkdf2Sync(password, saltBase64, iterations, PBKDF2_KEY_LENGTH, 'sha256').toString(
+    'base64',
+  );
+}
+
+function formatPbkdf2Hash(password: string, iterations = PBKDF2_ITERATIONS): string {
+  const salt = randomBytes(PBKDF2_SALT_BYTES).toString('base64');
+  return `${PBKDF2_SCHEME}:${iterations}:${salt}:${derivePbkdf2(password, salt, iterations)}`;
+}
+
+type ParsedPbkdf2Hash = { iterations: number; salt: string; digest: string };
+
+/** Strict, allocation-free parse of `pbkdf2-sha256:<iterations>:<salt>:<digest>`. */
+function parsePbkdf2Hash(stored: string): ParsedPbkdf2Hash | null {
+  const parts = stored.split(':');
+  if (parts.length !== 4) return null;
+  const [scheme, iterationsRaw, salt, digest] = parts;
+  if (scheme !== PBKDF2_SCHEME || !iterationsRaw || !salt || !digest) return null;
+  if (!/^[0-9]+$/.test(iterationsRaw)) return null;
+  const iterations = Number(iterationsRaw);
+  if (iterations < PBKDF2_MIN_ITERATIONS || iterations > PBKDF2_MAX_ITERATIONS) return null;
+  return { iterations, salt, digest };
+}
+
+function verifyPbkdf2(stored: string, candidate: string): boolean {
+  const parsed = parsePbkdf2Hash(stored);
+  if (!parsed) return false;
+  const expected = Buffer.from(parsed.digest, 'base64');
+  const actual = Buffer.from(derivePbkdf2(candidate, parsed.salt, parsed.iterations), 'base64');
+  if (expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+}
+
+function pbkdf2Backend(): HashBackend {
+  return {
+    name: 'pbkdf2-sha256',
+    // Fresh random material: no real password can match this hash.
+    dummyHash: formatPbkdf2Hash(randomBytes(32).toString('hex')),
+    hash: async (password) => formatPbkdf2Hash(password),
+    verify: async (stored, candidate) => verifyPbkdf2(stored, candidate),
+  };
+}
+
+async function selectBackend(): Promise<HashBackend> {
   if (cachedBackend) return cachedBackend;
 
-  let mod: Argon2Module | undefined;
-  try {
-    mod = await import('argon2');
-  } catch {
-    mod = undefined;
-  }
-
+  const mod = await loadArgon2();
   if (mod) {
-    const { argon2id } = mod;
-    cachedBackend = {
-      name: 'argon2id',
-      hash: (password) => mod.hash(password, { ...ARGON2_TUNING, type: argon2id }),
-      async verify(stored, candidate) {
-        try {
-          return await mod.verify(stored, candidate);
-        } catch {
-          // A malformed hash is a verification failure, never a crash.
-          return false;
-        }
-      },
-    };
+    cachedBackend = argon2Backend(mod);
     return cachedBackend;
   }
 
-  cachedBackend = {
-    name: 'pbkdf2-sha256',
-    hash: async (password) => {
-      const salt = randomBytes(16).toString('base64');
-      const derived = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, 'sha256').toString(
-        'base64',
-      );
-      return `pbkdf2-sha256:${PBKDF2_ITERATIONS}:${salt}:${derived}`;
-    },
-    verify: async (stored, candidate) => {
-      const [scheme, iterations, salt, digest] = stored.split(':');
-      if (scheme !== 'pbkdf2-sha256' || !iterations || !salt || !digest) return false;
-      const derived = pbkdf2Sync(candidate, salt, Number(iterations), 32, 'sha256').toString(
-        'base64',
-      );
-      const a = Buffer.from(digest, 'base64');
-      const b = Buffer.from(derived, 'base64');
-      if (a.length !== b.length) return false;
-      return timingSafeEqual(a, b);
-    },
-  };
+  if (getPasswordHashPolicy() === 'argon2id-required') {
+    throw argon2RequiredError();
+  }
+
+  warnOnceAboutFallback();
+  cachedBackend = pbkdf2Backend();
   return cachedBackend;
 }
 
 /**
- * Hash a password with the configured backend. Argon2 outputs PHC-formatted
- * `$argon2id$...` strings; the fallback outputs
+ * The algorithm that will be used for new hashes. Triggers backend selection,
+ * so calling it at startup surfaces a misconfigured `argon2id-required` policy
+ * before the server accepts traffic.
+ */
+export async function getPasswordHashAlgorithm(): Promise<PasswordHashAlgorithm> {
+  return (await selectBackend()).name;
+}
+
+/**
+ * A dummy hash matching the active backend. Used to keep unknown-account logins
+ * as slow as real ones; without it, PBKDF2-deployed instances would answer
+ * unknown emails faster than known ones (account enumeration).
+ */
+export async function getDummyPasswordHash(): Promise<string> {
+  return (await selectBackend()).dummyHash;
+}
+
+/**
+ * Hash a password with the active backend. Argon2id outputs PHC-formatted
+ * `$argon2id$...` strings; PBKDF2 outputs
  * `pbkdf2-sha256:<iterations>:<salt>:<digest>`.
  */
 export async function hashPassword(password: string): Promise<string> {
-  const backend = await loadBackend();
+  const backend = await selectBackend();
   return backend.hash(password);
 }
 
 /**
  * Verify a candidate against a stored hash. The scheme prefix decides which
  * backend performs the check, so a deployment can switch backends without
- * invalidating existing credentials.
+ * invalidating existing credentials. Argon2id hashes are still checked against
+ * Argon2id even when new hashes are being written with PBKDF2.
  */
 export async function verifyPassword(storedHash: string, candidate: string): Promise<boolean> {
   if (storedHash.startsWith('$argon2')) {
-    let argon2: Argon2Module | undefined;
-    try {
-      argon2 = await import('argon2');
-    } catch {
+    const mod = await loadArgon2();
+    if (!mod) {
+      if (getPasswordHashPolicy() === 'argon2id-required') {
+        throw argon2RequiredError();
+      }
+      warnOnceAboutFallback();
       return false;
     }
-    if (!argon2) return false;
     try {
-      return await argon2.verify(storedHash, candidate);
+      return await mod.verify(storedHash, candidate);
     } catch {
       return false;
     }
   }
-  const backend = await loadBackend();
-  return backend.verify(storedHash, candidate);
+
+  if (storedHash.startsWith(`${PBKDF2_SCHEME}:`)) {
+    return verifyPbkdf2(storedHash, candidate);
+  }
+
+  // Unknown or legacy scheme: fail closed.
+  return false;
+}
+
+/**
+ * Clears backend selection caches. Tests use this to exercise both the
+ * Argon2id and the PBKDF2 path in one process; production code never calls it.
+ */
+export function resetPasswordBackendCacheForTests(): void {
+  cachedBackend = undefined;
+  cachedArgon2 = undefined;
+  argon2LoadError = undefined;
+  fallbackWarningEmitted = false;
 }
 
 // --- Opaque secrets ---------------------------------------------------------

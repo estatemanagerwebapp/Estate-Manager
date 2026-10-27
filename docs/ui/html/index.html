@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>UI designs · Silverstone</title>
+    <meta name="viewport" content="width=1440" />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      body {
+        background: #f8fafc;
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        color: #0f172a;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 24px 64px;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .sub {
+        color: #475569;
+        font-size: 14px;
+        margin: 8px 0 28px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 18px 20px;
+        text-decoration: none;
+        color: inherit;
+        box-shadow:
+          0 1px 2px rgb(15 23 42 / 0.04),
+          0 4px 14px -4px rgb(15 23 42 / 0.08);
+        display: block;
+        transition:
+          border-color 0.15s,
+          transform 0.15s;
+      }
+      .card:hover {
+        border-color: #ff5a1f;
+        transform: translateY(-1px);
+      }
+      .card .n {
+        display: inline-grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        background: #fff1ea;
+        color: #d6400f;
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 10px;
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .card p {
+        margin: 4px 0 0;
+        font-size: 13px;
+        color: #475569;
+      }
+      @media (max-width: 700px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Silverstone Operators Console · HTML designs</h1>
+      <p class="sub">
+        Static design iterations, built before the React port. Each file is a standalone screen
+        sharing one <code>styles.css</code> (the future design-token baseline). Open them in any
+        browser — no build step, no JS required.
+      </p>
+      <div class="grid">
+        <a class="card" href="dashboard.html">
+          <span class="n">0</span>
+          <h3>App shell + Overview</h3>
+          <p>
+            Sidebar with module gating, top bar with ⌘K search and config indicator, KPI cards,
+            activity/attention panels, skeleton + empty states.
+          </p>
+        </a>
+        <a class="card" href="residents.html">
+          <span class="n">1</span>
+          <h3>Residents — list</h3>
+          <p>
+            Filter bar (search + status chips + estate select), data table, pagination, empty state,
+            "Invite resident" primary action.
+          </p>
+        </a>
+        <a class="card" href="invite-wizard.html">
+          <span class="n">2</span>
+          <h3>Invite resident — wizard</h3>
+          <p>
+            Stepper, cascading estate → property → unit selects, read-only fees + code policy from
+            config, review &amp; send, status rail.
+          </p>
+        </a>
+        <a class="card" href="resident-detail.html">
+          <span class="n">3</span>
+          <h3>Resident — detail</h3>
+          <p>
+            Entity header + status rail, tabs (Overview / Payments / Activity), dependants, payments
+            table, activity log, 480px drawer preview.
+          </p>
+        </a>
+        <a class="card" href="properties.html">
+          <span class="n">4</span>
+          <h3>Properties — tree list</h3>
+          <p>
+            Estate → property → unit expansion, occupancy bars, asset-type chips, status vocabulary
+            (Active / Renovating / Occupied).
+          </p>
+        </a>
+        <a class="card" href="invoices.html">
+          <span class="n">5</span>
+          <h3>Billing — invoices</h3>
+          <p>
+            Summary strip (outstanding / due today / overdue), status chipfilters, table,
+            pagination, detail-drawer anchor.
+          </p>
+        </a>
+      </div>
+    </div>
+  </body>
+</html>

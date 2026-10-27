@@ -24,6 +24,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Build workspace packages
+        run: npm run build:packages
+
       - name: Format check
         run: npm run format:check
 
@@ -32,9 +35,6 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
-
-      - name: Test
-        run: npm run test
 
       - name: Build
         run: npm run build
@@ -73,6 +73,9 @@ jobs:
       - name: Prisma generate
         run: npm run prisma:generate
 
+      - name: Build workspace packages
+        run: npm run build:packages
+
       - name: Apply migrations
         run: npm run db:deploy
 
@@ -85,8 +88,11 @@ jobs:
       - name: Create the test database
         run: psql "postgresql://postgres:postgres@localhost:5432" -c 'CREATE DATABASE silverstone_test'
 
-      - name: Run the Phase 1 integration suite against the test database
-        run: npm test -w @silverstone/api
+      - name: Run the test suite against the test database
+        run: npm run test
+
+      - name: Build the API
+        run: npm run build:api
 
       - name: Boot the API and probe readiness
         run: |

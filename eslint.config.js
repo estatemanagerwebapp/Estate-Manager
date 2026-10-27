@@ -47,7 +47,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.config.{ts,js,mjs}', 'eslint.config.js', 'prisma/**/*.ts', 'scripts/**/*.ts'],
+    files: [
+      '**/*.config.{ts,js,mjs}',
+      'eslint.config.js',
+      'prisma/**/*.ts',
+      'scripts/**/*.ts',
+      '**/scripts/**/*.mjs',
+      'apps/api/src/e2e/**/*.ts',
+      'apps/web/e2e/**/*.ts',
+    ],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -59,6 +67,12 @@ export default tseslint.config(
   },
   {
     files: ['**/*.test.{ts,tsx}', '**/test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  {
+    files: ['**/*.spec.ts', 'apps/web/e2e/**/*.ts'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
     },

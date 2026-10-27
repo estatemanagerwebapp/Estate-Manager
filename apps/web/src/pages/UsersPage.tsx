@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Search, ShieldOff, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Users, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
 import {
   ROLE_KEYS,
   ROLE_LABELS,
@@ -8,10 +8,15 @@ import {
 } from '@silverstone/shared';
 import { api, ApiRequestError, type UserFilter } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { useToast } from '../toast/Toast';
+import { useConfirm } from '../components/dialog';
 
 /**
- * User administration for operators with `user.manage`. Lists staff
- * accounts, suspends / re-enables them, and assigns roles.
+ * User administration for operators with `user.manage`.
+ *
+ * This screen lists *accounts* — every row here can sign in. Residents that
+ * have not finished onboarding live on the Residents screen; a resident only
+ * appears here once their account has been created (payment verified).
  *
  * What is shown here is convenience only — every mutation is re-validated
  * on the server (including the last-super-admin guard), so the page may
@@ -19,12 +24,15 @@ import { useAuth } from '../auth/AuthContext';
  */
 export function UsersPage() {
   const { user: actor } = useAuth();
+  const toast = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [users, setUsers] = useState<UserListItemDto[]>([]);
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async (filter: UserFilter) => {
     setError(null);
@@ -88,8 +96,34 @@ export function UsersPage() {
     }
   }
 
+  async function deleteUser(target: UserListItemDto) {
+    const label = target.fullName ?? target.email;
+    const ok = await confirm({
+      title: 'Permanently delete this user?',
+      body: `The account "${label}" will be deleted along with its sessions. This cannot be undone. Residents created from this account keep their resident record, but lose the account.`,
+      danger: true,
+    });
+    if (!ok) return;
+
+    setDeletingId(target.id);
+    try {
+      await api.deleteUser(target.id);
+      toast.success('User deleted.');
+      setUsers((current) => current.filter((user) => user.id !== target.id));
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the user.');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const visibleUsers = search.trim()
-    ? users.filter((user) => user.email.toLowerCase().includes(search.trim().toLowerCase()))
+    ? users.filter((user) => {
+        const query = search.trim().toLowerCase();
+        const emailMatch = user.email?.toLowerCase().includes(query);
+        const nameMatch = user.fullName?.toLowerCase().includes(query);
+        return emailMatch || nameMatch;
+      })
     : users;
 
   return (
@@ -101,8 +135,8 @@ export function UsersPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Users</h1>
           <p className="text-sm text-(--color-ink-muted)">
-            {actor ? `Signed in as ${ROLE_LABELS[actor.role]}` : ''} · suspending or demoting signs
-            the affected user out immediately
+            {actor ? `Signed in as ${ROLE_LABELS[actor.role]}` : ''} · suspending, demoting or
+            deleting signs the affected user out immediately
           </p>
         </div>
       </header>
@@ -118,8 +152,8 @@ export function UsersPage() {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by email"
-            aria-label="Search users by email"
+            placeholder="Search by name or email"
+            aria-label="Search users by name or email"
             className="w-56 rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft)"
           />
         </div>
@@ -171,7 +205,10 @@ export function UsersPage() {
             <thead className="border-b border-slate-200/80 bg-(--color-surface) text-xs text-(--color-ink-muted)">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">
-                  Email
+                  Name
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Contact
                 </th>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Role
@@ -190,14 +227,18 @@ export function UsersPage() {
                   key={target.id}
                   target={target}
                   isSelf={target.id === actor?.id}
+                  deleting={deletingId === target.id}
                   onStatus={(status, reason) => void applyStatus(target, status, reason)}
                   onRole={(role) => void applyRole(target, role)}
+                  onDelete={() => void deleteUser(target)}
                 />
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {confirmDialog}
     </div>
   );
 }
@@ -205,13 +246,17 @@ export function UsersPage() {
 function UserRow({
   target,
   isSelf,
+  deleting,
   onStatus,
   onRole,
+  onDelete,
 }: {
   target: UserListItemDto;
   isSelf: boolean;
+  deleting: boolean;
   onStatus: (status: string, reason: string) => void;
   onRole: (role: string) => void;
+  onDelete: () => void;
 }) {
   const active = target.status === 'ACTIVE';
   const [reason, setReason] = useState('');
@@ -219,19 +264,30 @@ function UserRow({
   return (
     <tr>
       <td className="px-4 py-3">
-        <span className="font-medium">{target.email}</span>
+        <span className="font-medium">{target.fullName ?? target.email}</span>
         {isSelf && (
           <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-(--color-ink-muted)">
             you
           </span>
         )}
+        {target.mustChangePassword && (
+          <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+            set password
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex flex-col gap-0.5 text-[12px] text-(--color-ink-muted)">
+          <span>{target.email}</span>
+          {target.phone ? <span>{target.phone}</span> : null}
+        </div>
       </td>
       <td className="px-4 py-3">
         <select
           value={target.role}
           onChange={(event) => onRole(event.target.value)}
           disabled={isSelf}
-          aria-label={`Role for ${target.email}`}
+          aria-label={`Role for ${target.fullName ?? target.email}`}
           className="rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-(--color-primary) disabled:cursor-not-allowed disabled:opacity-60"
         >
           {ROLE_KEYS.map((role) => (
@@ -252,42 +308,54 @@ function UserRow({
         </span>
       </td>
       <td className="px-4 py-3">
-        {isSelf ? (
-          <span className="text-[11px] text-(--color-ink-muted)">
-            Self — changes blocked by policy
-          </span>
-        ) : active ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Reason (optional)"
-              aria-label={`Suspend reason for ${target.email}`}
-              maxLength={280}
-              className="w-40 rounded-md border border-slate-300 px-2 py-1.5 text-[11px] outline-none focus:border-(--color-primary)"
-            />
+        <div className="flex items-center gap-2">
+          {isSelf ? (
+            <span className="text-[11px] text-(--color-ink-muted)">
+              Self — changes blocked by policy
+            </span>
+          ) : active ? (
+            <>
+              <input
+                type="text"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Reason (optional)"
+                aria-label={`Suspend reason for ${target.fullName ?? target.email}`}
+                maxLength={280}
+                className="w-40 rounded-md border border-slate-300 px-2 py-1.5 text-[11px] outline-none focus:border-(--color-primary)"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  onStatus('SUSPENDED', reason);
+                  setReason('');
+                }}
+                className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-medium text-rose-700 hover:bg-rose-100"
+              >
+                Suspend
+              </button>
+            </>
+          ) : (
             <button
               type="button"
-              onClick={() => {
-                onStatus('SUSPENDED', reason);
-                setReason('');
-              }}
-              className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-medium text-rose-700 hover:bg-rose-100"
+              onClick={() => onStatus('ACTIVE', '')}
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
             >
-              Suspend
+              Re-enable
             </button>
-          </div>
-        ) : (
+          )}
           <button
             type="button"
-            onClick={() => onStatus('ACTIVE', '')}
-            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+            onClick={onDelete}
+            disabled={isSelf || deleting}
+            title={isSelf ? 'You cannot delete your own account' : 'Delete user'}
+            aria-label={`Delete ${target.fullName ?? target.email}`}
+            className="rounded-md border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw aria-hidden size={12} />
-            Re-enable
+            <Trash2 aria-hidden size={12} />
+            <span className="sr-only">Delete</span>
           </button>
-        )}
+        </div>
       </td>
     </tr>
   );

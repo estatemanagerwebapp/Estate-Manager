@@ -62,7 +62,7 @@ export function lastAdminGuardApplies(target: UserRecord, isLast: boolean): bool
   return true;
 }
 
-export function lastAdminGuardMessage(action: 'suspend' | 'disable' | 'demote'): string {
+export function lastAdminGuardMessage(action: 'suspend' | 'disable' | 'demote' | 'delete'): string {
   switch (action) {
     case 'suspend':
       return 'The last active super administrator cannot be suspended';
@@ -70,6 +70,8 @@ export function lastAdminGuardMessage(action: 'suspend' | 'disable' | 'demote'):
       return 'The last active super administrator cannot be disabled';
     case 'demote':
       return 'The last active super administrator cannot be demoted';
+    case 'delete':
+      return 'The last active super administrator cannot be deleted';
   }
 }
 
@@ -101,6 +103,25 @@ export function assertNewRoleAllowed(
 
 export function assertNewStatusAllowed(newStatus: string): void {
   assertStatus(newStatus);
+}
+
+/**
+ * An actor may not delete their own account, and may only delete accounts
+ * they are otherwise allowed to manage (same role hierarchy as status and
+ * role changes). Deletion is permanent, so the checks fail closed.
+ */
+export function assertMayDelete(
+  actorRole: string,
+  target: UserRecord,
+  actorId: string,
+  targetId: string,
+): void {
+  if (actorId === targetId) {
+    throw new AppError(403, 'FORBIDDEN', 'You cannot delete your own account');
+  }
+  if (!canManageRole(actorRole, target.role)) {
+    throw new AppError(403, 'FORBIDDEN', 'You do not have permission to delete this user');
+  }
 }
 
 /** Roles the UI may offer as a "promote to" choice for a given actor role. */

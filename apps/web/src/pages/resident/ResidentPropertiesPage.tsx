@@ -1,0 +1,142 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Home, MapPin, Building2 } from 'lucide-react';
+import type { ResidentPropertiesResponse } from '@silverstone/shared';
+import { api, ApiRequestError } from '../../api/client';
+import {
+  Card,
+  CardHeader,
+  CardBody,
+  Badge,
+  Skeleton,
+  EmptyState,
+  ErrorBanner,
+} from '../../components/ui';
+
+/**
+ * Resident's assigned property page (S2).
+ *
+ * Self-scoped: the API resolves the acting resident's property from their
+ * onboarding draft. The page renders the single assigned property with the
+ * full formatted address (the server joins the configured component values
+ * in config order), plus the raw address components with their labels from
+ * `usePropertyOptions` — the same display rule as the operator property
+ * detail page.
+ */
+export function ResidentPropertiesPage() {
+  const [response, setResponse] = useState<ResidentPropertiesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await api.getResidentProperties();
+      setResponse(data);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your property.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <PageHeading />
+        <Skeleton className="h-40" />
+      </div>
+    );
+  }
+
+  if (error && !response) {
+    return (
+      <div className="space-y-4">
+        <PageHeading />
+        <ErrorBanner message={error} onRetry={() => void load()} />
+      </div>
+    );
+  }
+
+  const properties = response?.properties ?? [];
+
+  return (
+    <div className="space-y-4">
+      <PageHeading />
+
+      {error && <ErrorBanner message={error} />}
+
+      {properties.length === 0 ? (
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="No property assigned"
+              body="Your estate manager will assign a property shortly."
+            />
+          </CardBody>
+        </Card>
+      ) : (
+        properties.map((property) => (
+          <Card key={property.identifier}>
+            <CardHeader
+              title={
+                <span className="flex items-center gap-2">
+                  <Building2 aria-hidden size={15} className="text-(--color-primary)" />
+                  {property.identifier}
+                </span>
+              }
+              subtitle="Your assigned property."
+            />
+            <CardBody>
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Fact label="Type">
+                  <span className="font-medium">{property.typeLabel}</span>
+                </Fact>
+                <Fact label="Estate">
+                  <Badge tone="neutral">{property.estate.name}</Badge>
+                </Fact>
+                <Fact label="Status">
+                  <Badge tone={property.status === 'ACTIVE' ? 'success' : 'neutral'}>
+                    {property.status}
+                  </Badge>
+                </Fact>
+              </dl>
+
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-(--color-ink-muted)">
+                  <MapPin aria-hidden size={12} />
+                  Address
+                </h3>
+                <p className="mt-2 text-sm text-(--color-ink)">
+                  {property.fullAddress || 'No address details on file.'}
+                </p>
+              </div>
+            </CardBody>
+          </Card>
+        ))
+      )}
+    </div>
+  );
+}
+
+function PageHeading() {
+  return (
+    <div className="flex items-center gap-3">
+      <Home aria-hidden size={20} className="text-(--color-primary)" />
+      <h1 className="text-lg font-semibold text-(--color-ink)">My Properties</h1>
+    </div>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs text-(--color-ink-muted)">{label}</dt>
+      <dd className="mt-0.5 text-sm">{children}</dd>
+    </div>
+  );
+}

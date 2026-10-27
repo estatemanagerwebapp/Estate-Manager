@@ -1,0 +1,285 @@
+<!-- PATTERN: list page (filter bar + status chips + data table + row actions)
+     SHARED: styles.css
+     STATUS VOCAB (consistent app-wide): invited · pending · active · inactive
+     OPEN: default sort = newest first? do we need bulk select for invites? -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Residents · Silverstone Operators Console</title>
+    <meta name="viewport" content="width=1440" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">S</div>
+          <div><strong>Silverstone</strong><small>Managers · Operators</small></div>
+        </div>
+        <div class="nav-label">Manage</div>
+        <a class="nav-item" href="dashboard.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Overview
+        </a>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Estates
+        </a>
+        <a class="nav-item" href="properties.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M4 21V10M20 21V10M4 21h16M4 10l8-6 8 6M8 14h2M14 14h2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Properties
+        </a>
+        <a class="nav-item active" href="residents.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="9" cy="8" r="3.5" />
+            <path
+              d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5M16 5.5a3.5 3.5 0 0 1 0 7M18.5 15.5c1.8.8 3 2.4 3.5 4.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Residents
+        </a>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M8 7h13M8 12h13M8 17h13M3.5 7h.01M3.5 12h.01M3.5 17h.01"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Assignments
+        </a>
+        <a class="nav-item" href="invoices.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M7 3h10a2 2 0 0 1 2 2v16l-3-2-3 2-3-2-3 2V5a2 2 0 0 1 2-2zM9 8h6M9 12h6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Billing
+        </a>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <rect x="3" y="6" width="18" height="13" rx="2" />
+            <path d="M3 10h18M7 15h4" stroke-linecap="round" />
+          </svg>
+          Payments
+        </a>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M4 21V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16M4 21h16M9 21v-4h6v4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Gate access
+        </a>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4L15 12l-3-3zM9 15l-1.5 1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Maintenance
+        </a>
+        <div class="spacer"></div>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2" stroke-linecap="round" />
+          </svg>
+          Settings &amp; config
+        </a>
+        <div class="user-chip">
+          <div class="avatar">AO</div>
+          <div><strong>Adaeze Okafor</strong><small>Super admin</small></div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <div class="crumbs">Silverstone HQ&nbsp; <b>/&nbsp; Residents</b></div>
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+            </svg>
+            Search…
+            <span class="kbd">⌘K</span>
+          </div>
+          <div class="env-dot"><i></i> Config v1</div>
+        </div>
+
+        <div class="content">
+          <div class="page-head">
+            <div>
+              <h1>Residents</h1>
+              <p>1,284 accounts · 41 estates · invitations, onboarding and lifecycle</p>
+            </div>
+            <div class="actions">
+              <button class="btn">Export</button>
+              <a class="btn primary" href="invite-wizard.html">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+                Invite resident
+              </a>
+            </div>
+          </div>
+
+          <!-- filter bar: search + status chipfilters + estate filter -->
+          <div class="card card-pad" style="padding: 14px 16px">
+            <div class="filterbar" style="margin: 0">
+              <input type="search" placeholder="Search name, phone, email, asset…" />
+              <span class="chipfilter sel">All <i>1,284</i></span>
+              <span class="chipfilter">Invited <i>38</i></span>
+              <span class="chipfilter">Pending payment <i>21</i></span>
+              <span class="chipfilter">Active <i>1,214</i></span>
+              <span class="chipfilter">Inactive <i>11</i></span>
+              <select class="chipfilter" style="border-radius: 8px">
+                <option>All estates</option>
+                <option>Silverstone Gate A</option>
+                <option>Silverstone Village</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 14px">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Resident</th>
+                  <th>Asset</th>
+                  <th>Status</th>
+                  <th>Since</th>
+                  <th>Balance</th>
+                  <th class="row-actions"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <b>Chinedu Eze</b>
+                    <div class="muted small">chinedu.eze@example.com · 0803 111 2233</div>
+                  </td>
+                  <td>Silverstone Gate A · 2BR-A4</td>
+                  <td>
+                    <span class="chip ok"><i></i>Active</span>
+                  </td>
+                  <td class="muted small">Mar 2025</td>
+                  <td class="money">₦0</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+                <tr>
+                  <td>
+                    <b>Amina Yusuf</b>
+                    <div class="muted small">aminy@example.com</div>
+                  </td>
+                  <td>Silverstone Gate A · 3BR-C2</td>
+                  <td>
+                    <span class="chip idle"><i></i>Invited</span>
+                  </td>
+                  <td class="muted small">—</td>
+                  <td class="money muted">—</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+                <tr>
+                  <td>
+                    <b>Tunde Balogun</b>
+                    <div class="muted small">tunde.b@example.com · 0810 445 9911</div>
+                  </td>
+                  <td>Silverstone Village · House 12</td>
+                  <td>
+                    <span class="chip warn"><i></i>Pending payment</span>
+                  </td>
+                  <td class="muted small">Jun 2026</td>
+                  <td class="money">₦50,000</td>
+                  <!-- source: 5,000,000 kobo (registration fee, ONE_OFF) -->
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+                <tr>
+                  <td>
+                    <b>Rahmat Lawal</b>
+                    <div class="muted small">0812 778 0045</div>
+                  </td>
+                  <td>Silverstone Village · 1BR-B7</td>
+                  <td>
+                    <span class="chip idle"><i></i>Inactive</span>
+                  </td>
+                  <td class="muted small">Dec 2024</td>
+                  <td class="money">₦18,500</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="row" style="margin-top: 14px; justify-content: space-between">
+            <span class="muted small">Showing 4 of 1,284 · sorted by newest</span>
+            <div class="row" style="gap: 6px">
+              <button class="btn" style="height: 32px; padding: 0 10px">‹</button>
+              <button
+                class="btn"
+                style="height: 32px; padding: 0 10px; background: var(--ink); color: #fff"
+              >
+                1
+              </button>
+              <button class="btn" style="height: 32px; padding: 0 10px">2</button>
+              <button class="btn" style="height: 32px; padding: 0 10px">3</button>
+              <button class="btn" style="height: 32px; padding: 0 10px">›</button>
+            </div>
+          </div>
+
+          <!-- empty state -->
+          <div class="card card-pad" style="margin-top: 14px; text-align: center; padding: 48px">
+            <div
+              style="
+                width: 44px;
+                height: 44px;
+                margin: 0 auto;
+                border-radius: 50%;
+                background: var(--accent-soft);
+                display: grid;
+                place-items: center;
+              "
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <h3 style="margin-top: 14px; font-size: 15px">No residents match "xyz"</h3>
+            <p class="muted small" style="margin-top: 4px">
+              Clear filters, or invite this resident directly.
+            </p>
+            <button class="btn" style="margin-top: 16px">Clear all filters</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

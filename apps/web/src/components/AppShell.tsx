@@ -1,6 +1,17 @@
 import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom';
-import { Building2, LayoutDashboard, Users, KeyRound, LogOut, Settings } from 'lucide-react';
+import {
+  Building2,
+  LayoutDashboard,
+  Users,
+  UserRound,
+  KeyRound,
+  LogOut,
+  Settings,
+  Home,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
+import { useCan } from '../auth/useCan';
 import { ROLE_LABELS } from '@silverstone/shared';
 
 /**
@@ -11,6 +22,7 @@ import { ROLE_LABELS } from '@silverstone/shared';
  */
 export function AppShell() {
   const { user, logout } = useAuth();
+  const can = useCan();
   const navigate = useNavigate();
 
   async function handleLogout() {
@@ -26,8 +38,8 @@ export function AppShell() {
     }`;
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200/80 bg-white md:flex">
+    <div className="min-h-screen">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col overflow-y-auto border-r border-slate-200/80 bg-white md:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-(--color-primary-soft)">
             <Building2 aria-hidden size={18} className="text-(--color-primary)" />
@@ -45,6 +57,38 @@ export function AppShell() {
             </span>
             Overview
           </NavLink>
+          {can['estate.read'] && (
+            <NavLink to="/app/estates" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <Home aria-hidden size={16} />
+              </span>
+              Estates
+            </NavLink>
+          )}
+          {can['property.read'] && (
+            <NavLink to="/app/properties" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <Building2 aria-hidden size={16} />
+              </span>
+              Properties
+            </NavLink>
+          )}
+          {can['property.read'] && (
+            <NavLink to="/app/property-options" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <SlidersHorizontal aria-hidden size={16} />
+              </span>
+              Property options
+            </NavLink>
+          )}
+          {canManageUsers(user) && (
+            <NavLink to="/app/residents" className={navClasses}>
+              <span className="text-(--color-primary)">
+                <UserRound aria-hidden size={16} />
+              </span>
+              Residents
+            </NavLink>
+          )}
           {canManageUsers(user) && (
             <NavLink to="/app/users" className={navClasses}>
               <span className="text-(--color-primary)">
@@ -77,7 +121,7 @@ export function AppShell() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-x-hidden">
+      <main className="md:pl-64">
         {/* Mobile header */}
         <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-4 py-3 md:hidden">
           <div className="flex items-center gap-2">
@@ -106,6 +150,26 @@ export function AppShell() {
         </div>
 
         <div className="mx-auto max-w-5xl px-6 py-8">
+          {user?.mustChangePassword && (
+            <div
+              role="alert"
+              className="mb-5 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3"
+            >
+              <span className="text-amber-600">
+                <KeyRound aria-hidden size={16} />
+              </span>
+              <p className="text-xs font-medium text-amber-800">
+                You are signed in with a temporary password.{' '}
+                <Link
+                  to="/app/account"
+                  className="underline underline-offset-2 hover:text-amber-900"
+                >
+                  Set your own password
+                </Link>{' '}
+                to finish activation.
+              </p>
+            </div>
+          )}
           <Outlet />
         </div>
       </main>

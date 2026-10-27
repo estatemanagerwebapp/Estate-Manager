@@ -36,3 +36,6 @@ prisma/generated/
 
 # local database volumes
 .docker-data/
+
+# local media uploads (served at GET /media/:org/:id until R2 migration)
+apps/api/uploads/

@@ -1,0 +1,255 @@
+<!-- PATTERN: list page (billing) with summary strip + table + actions
+     SHARED: styles.css
+     NOTES:
+       - Summary strip: 3 stat cards on top (outstanding, due today, overdue).
+       - Money in naira, sourced from kobo integers (formatNaira).
+       - Actions: pay now, record offline payment, mark paid, email reminder.
+     OPEN: should "Record offline payment" open a drawer or full form? do we show
+     fee + service charge on the same invoice row or separate columns? -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Billing · Silverstone Operators Console</title>
+    <meta name="viewport" content="width=1440" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">S</div>
+          <div><strong>Silverstone</strong><small>Managers · Operators</small></div>
+        </div>
+        <div class="nav-label">Manage</div>
+        <a class="nav-item" href="dashboard.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Overview
+        </a>
+        <a class="nav-item" href="residents.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="9" cy="8" r="3.5" />
+            <path
+              d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Residents
+        </a>
+        <a class="nav-item" href="properties.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M4 21V10M20 21V10M4 21h16M4 10l8-6 8 6M8 14h2M14 14h2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Properties
+        </a>
+        <a class="nav-item active" href="invoices.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              d="M7 3h10a2 2 0 0 1 2 2v16l-3-2-3 2-3-2-3 2V5a2 2 0 0 1 2-2zM9 8h6M9 12h6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Billing
+        </a>
+        <a class="nav-item" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <rect x="3" y="6" width="18" height="13" rx="2" />
+            <path d="M3 10h18M7 15h4" stroke-linecap="round" />
+          </svg>
+          Payments
+        </a>
+        <div class="spacer"></div>
+        <div class="user-chip">
+          <div class="avatar">AO</div>
+          <div><strong>Adaeze Okafor</strong><small>Super admin</small></div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <div class="crumbs">Silverstone HQ&nbsp; <b>/&nbsp; Billing</b></div>
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+            </svg>
+            Search invoice, resident…
+            <span class="kbd">⌘K</span>
+          </div>
+          <div class="env-dot"><i></i> Config v1</div>
+        </div>
+
+        <div class="content">
+          <div class="page-head">
+            <div>
+              <h1>Billing</h1>
+              <p>Invoices and fees across all estates</p>
+            </div>
+            <div class="actions">
+              <button class="btn">Export</button>
+              <button class="btn primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+                New invoice
+              </button>
+            </div>
+          </div>
+
+          <!-- summary strip -->
+          <div class="row" style="gap: 14px; margin-bottom: 14px">
+            <div class="card card-pad" style="flex: 1">
+              <div class="label muted small" style="font-weight: 600">Outstanding</div>
+              <div class="money" style="font-size: 22px; font-weight: 700; margin-top: 4px">
+                ₦2.41M
+              </div>
+              <div class="muted small">412 invoices</div>
+            </div>
+            <div class="card card-pad" style="flex: 1">
+              <div class="muted small" style="font-weight: 600">Due today</div>
+              <div class="money" style="font-size: 22px; font-weight: 700; margin-top: 4px">
+                ₦610K
+              </div>
+              <div class="muted small">38 residents</div>
+            </div>
+            <div class="card card-pad" style="flex: 1">
+              <div class="muted small" style="font-weight: 600">Overdue</div>
+              <div
+                class="money"
+                style="font-size: 22px; font-weight: 700; margin-top: 4px; color: var(--bad)"
+              >
+                ₦920K
+              </div>
+              <div class="muted small">128 invoices &gt; 7 days</div>
+            </div>
+          </div>
+
+          <!-- filters -->
+          <div class="card card-pad" style="padding: 14px 16px">
+            <div class="filterbar" style="margin: 0">
+              <input type="search" placeholder="Search invoice #, resident, asset…" />
+              <span class="chipfilter sel">All <i>412</i></span>
+              <span class="chipfilter">Paid <i>204</i></span>
+              <span class="chipfilter">Pending <i>98</i></span>
+              <span class="chipfilter">Overdue <i>110</i></span>
+              <select class="chipfilter" style="border-radius: 8px">
+                <option>All estates</option>
+                <option>Silverstone Gate A</option>
+                <option>Silverstone Village</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- table -->
+          <div class="card" style="margin-top: 14px">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Resident</th>
+                  <th>Item</th>
+                  <th>Cadence</th>
+                  <th>Due</th>
+                  <th>Status</th>
+                  <th class="row-actions">Amount</th>
+                  <th class="row-actions"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>INV-1042</b></td>
+                  <td>Tunde Balogun</td>
+                  <td>Registration fee</td>
+                  <td>One-off</td>
+                  <td class="muted small">Oct 23, 2026</td>
+                  <td>
+                    <span class="chip warn"><i></i>Pending</span>
+                  </td>
+                  <td class="row-actions money">₦50,000</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+                <tr>
+                  <td><b>INV-1043</b></td>
+                  <td>Chinedu Eze</td>
+                  <td>Service charge</td>
+                  <td>Monthly</td>
+                  <td class="muted small">Oct 30, 2026</td>
+                  <td>
+                    <span class="chip idle"><i></i>Draft</span>
+                  </td>
+                  <td class="row-actions money">₦25,000</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+                <tr>
+                  <td><b>INV-0988</b></td>
+                  <td>Amina Yusuf</td>
+                  <td>Gate access</td>
+                  <td>Quarterly</td>
+                  <td class="muted small">Oct 12, 2026</td>
+                  <td>
+                    <span class="chip bad"><i></i>Overdue</span>
+                  </td>
+                  <td class="row-actions money">₦35,000</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+                <tr>
+                  <td><b>INV-0970</b></td>
+                  <td>Rahmat Lawal</td>
+                  <td>Maintenance fee</td>
+                  <td>Annual</td>
+                  <td class="muted small">Sep 1, 2026</td>
+                  <td>
+                    <span class="chip ok"><i></i>Paid</span>
+                  </td>
+                  <td class="row-actions money">₦120,000</td>
+                  <td class="row-actions"><button class="btn ghost">…</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="row" style="margin-top: 14px; justify-content: space-between">
+            <span class="muted small">4 of 412 · sorted by due date</span>
+            <div class="row" style="gap: 6px">
+              <button class="btn" style="height: 32px; padding: 0 10px">‹</button>
+              <button
+                class="btn"
+                style="height: 32px; padding: 0 10px; background: var(--ink); color: #fff"
+              >
+                1
+              </button>
+              <button class="btn" style="height: 32px; padding: 0 10px">2</button>
+              <button class="btn" style="height: 32px; padding: 0 10px">3</button>
+              <button class="btn" style="height: 32px; padding: 0 10px">›</button>
+            </div>
+          </div>
+
+          <!-- invoice detail drawer anchor -->
+          <div class="card card-pad" style="margin-top: 14px">
+            <div class="row" style="justify-content: space-between">
+              <div>
+                <h3>Invoice detail pattern</h3>
+                <div class="hint">
+                  Right drawer (480px): header + line items + actions (pay, record, email reminder).
+                </div>
+              </div>
+              <button class="btn">Open INV-1042 →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

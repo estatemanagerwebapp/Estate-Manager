@@ -8,6 +8,33 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
 import { createSystemRouter } from './modules/system/system.routes.js';
 import { createAuthRouter, type AuthRouteOptions } from './modules/auth/auth.routes.js';
+import { createEstateRouter, type EstateRouteOptions } from './modules/estates/estate.routes.js';
+import {
+  createPropertyRouter,
+  type PropertyRouteOptions,
+} from './modules/properties/property.routes.js';
+import {
+  createImportEstateRouter,
+  createImportBatchRouter,
+  type ImportRouteOptions,
+} from './modules/imports/import.routes.js';
+import {
+  createPropertyOptionsRouter,
+  type PropertyOptionsRouteOptions,
+} from './modules/organization/property-options.routes.js';
+import {
+  createOnboardingRouter,
+  type OnboardingRouteOptions,
+} from './modules/auth/onboarding.routes.js';
+import { createMediaRouter, type MediaRouteOptions } from './modules/media/media.routes.js';
+import {
+  createDashboardRouter,
+  type DashboardRouteOptions,
+} from './modules/dashboard/dashboard.routes.js';
+import {
+  createResidentRouter,
+  type ResidentRouteOptions,
+} from './modules/resident/resident.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -24,6 +51,22 @@ export interface AppOptions {
    * user-management endpoints) is mounted on the versioned router.
    */
   auth?: AuthRouteOptions;
+  /** Phase 2 estate wiring. */
+  estates?: EstateRouteOptions;
+  /** Phase 2 property registry wiring. */
+  properties?: PropertyRouteOptions;
+  /** Phase 2 bulk import wiring. */
+  imports?: ImportRouteOptions;
+  /** Phase 2 property options wiring. */
+  propertyOptions?: PropertyOptionsRouteOptions;
+  /** Phase 2 resident onboarding wiring (persistent code, payment-gated). */
+  onboarding?: OnboardingRouteOptions;
+  /** Phase 2 local media upload + serving. */
+  media?: MediaRouteOptions;
+  /** Dashboard KPI + activity aggregates (operator overview). */
+  dashboard?: DashboardRouteOptions;
+  /** Phase 3 resident portal (`/resident/*`), self-scoped. */
+  resident?: ResidentRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -64,6 +107,14 @@ export function createApp(options: AppOptions = {}): Express {
     checkDatabase: options.checkDatabase,
     configService: options.configService,
     auth: options.auth,
+    estates: options.estates,
+    properties: options.properties,
+    imports: options.imports,
+    propertyOptions: options.propertyOptions,
+    onboarding: options.onboarding,
+    media: options.media,
+    dashboard: options.dashboard,
+    resident: options.resident,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -81,9 +132,29 @@ function createVersionedRoutes(options: {
   checkDatabase?: () => Promise<void>;
   configService?: OrganizationConfigService;
   auth?: AuthRouteOptions;
+  estates?: EstateRouteOptions;
+  properties?: PropertyRouteOptions;
+  imports?: ImportRouteOptions;
+  propertyOptions?: PropertyOptionsRouteOptions;
+  onboarding?: OnboardingRouteOptions;
+  media?: MediaRouteOptions;
+  dashboard?: DashboardRouteOptions;
+  resident?: ResidentRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
-  const { checkDatabase, configService, auth } = options;
+  const {
+    checkDatabase,
+    configService,
+    auth,
+    estates,
+    properties,
+    imports,
+    propertyOptions,
+    onboarding,
+    media,
+    dashboard,
+    resident,
+  } = options;
 
   router.use(
     '/health',
@@ -104,6 +175,45 @@ function createVersionedRoutes(options: {
 
   if (auth) {
     router.use('/auth', createAuthRouter(auth));
+  }
+
+  if (estates) {
+    router.use('/estates', createEstateRouter(estates));
+  }
+
+  if (properties) {
+    router.use('/properties', createPropertyRouter(properties));
+  }
+
+  if (imports) {
+    // Estate-scoped import routes (upload, list, template) live under
+    // /estates/:estateId/imports, so mount under /estates.
+    router.use('/estates', createImportEstateRouter(imports));
+    // Batch-level routes (detail, commit) live under /imports/:batchId,
+    // so they never collide with the estate router's /:estateId routes.
+    router.use('/imports', createImportBatchRouter(imports));
+  }
+
+  if (propertyOptions) {
+    router.use('/property-options', createPropertyOptionsRouter(propertyOptions));
+  }
+
+  if (onboarding) {
+    // Admin registration + guest onboarding, mounted at /onboard.
+    router.use('/onboard', createOnboardingRouter(onboarding));
+  }
+
+  if (media) {
+    router.use('/media', createMediaRouter(media));
+  }
+
+  if (dashboard) {
+    router.use('/dashboard', createDashboardRouter(dashboard));
+  }
+
+  if (resident) {
+    // Phase 3: resident portal (self-scoped), mounted at /resident.
+    router.use('/resident', createResidentRouter(resident));
   }
 
   return router;

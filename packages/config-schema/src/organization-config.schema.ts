@@ -145,6 +145,11 @@ export const DEFAULT_ASSET_TYPES: AssetType[] = [
     defaultUnitTypeKey: 'two_bedroom',
   }),
   AssetTypeSchema.parse({ key: 'land_plot', label: 'Land plot', detailKind: 'LAND_PARCEL' }),
+  AssetTypeSchema.parse({
+    key: 'both',
+    label: 'Both (land & house)',
+    detailKind: 'PROPERTY',
+  }),
 ];
 
 export const AssetModelFields = z.object({
@@ -227,18 +232,21 @@ export const FeesFields = z.object({
 
 export const FeesSchema = defaulted(FeesFields);
 
-export const InvitationCodeFields = z.object({
+export const ResidentCodeFields = z.object({
+  /** Length of the persistent onboarding code (8–32). */
   length: z.number().int().min(8).max(32).default(10),
-  ttlMinutes: z.number().int().min(15).max(10_080).default(1_440),
-  maxAttempts: z.number().int().min(3).max(20).default(5),
-  /** Codes are always single-use. Encoded so configuration cannot weaken it. */
-  singleUse: z.literal(true).default(true),
+  /**
+   * Codes are persistent: no TTL, no attempt cap, not single-use. A
+   * resident may return and resume onboarding at any time with the same
+   * code (until it completes or the admin revokes it).
+   */
+  persistent: z.literal(true).default(true),
 });
 
-export const InvitationCodeSchema = defaulted(InvitationCodeFields);
+export const ResidentCodeSchema = defaulted(ResidentCodeFields);
 
 export const OnboardingFields = z.object({
-  invitationCode: InvitationCodeSchema,
+  residentCode: ResidentCodeSchema,
   requireEmail: z.boolean().default(true),
   requireGovernmentId: z.boolean().default(true),
   requireNextOfKin: z.boolean().default(true),
@@ -298,6 +306,90 @@ export const CustomFieldSchema = z.object({
   pii: z.boolean().default(false),
 });
 
+// --- Property options (Phase 2) ------------------------------------------------
+
+/**
+ * Structured address components. Each component is a stable, code-level
+ * definition: `key` is a slug used by forms, imports and identifiers;
+ * `label` is the human-facing name. `requiredFor` lists the asset type keys
+ * where the component must be supplied; when empty the component applies to
+ * every asset type and is required unless overridden by `notApplicableFor`.
+ *
+ * Deliberately configurable: no Silverstone address convention is assumed.
+ * A deployment ships with an empty component set until an administrator
+ * configures the real structure.
+ */
+export const AddressComponentSchema = z.object({
+  key: slug('Address component key'),
+  label: label(80),
+  /** Asset type keys that require this component. Empty = every type. */
+  requiredFor: z.array(slug('Asset type key')).default([]),
+  /** Asset type keys where this component does not apply (overrides required). */
+  notApplicableFor: z.array(slug('Asset type key')).default([]),
+  /** Optional regex the component value must match when supplied. */
+  pattern: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[\w\s\-./]+$/, 'Pattern must be a simple regex character set')
+    .nullish(),
+  maxLength: z.number().int().min(1).max(120).default(64),
+});
+
+export const DEFAULT_PROPERTY_OPTIONS = {
+  addressComponents: [
+    {
+      key: 'address',
+      label: 'Address',
+      requiredFor: [],
+      notApplicableFor: [],
+      maxLength: 120,
+    },
+    {
+      key: 'number_of_plots',
+      label: 'Number of plots',
+      requiredFor: ['land_plot', 'both'],
+      notApplicableFor: ['house'],
+      maxLength: 8,
+      pattern: '\\d+',
+    },
+    {
+      key: 'plot_name',
+      label: 'Plot name',
+      requiredFor: ['land_plot', 'both'],
+      notApplicableFor: ['house'],
+      maxLength: 64,
+    },
+    {
+      key: 'house_type',
+      label: 'House type',
+      requiredFor: ['house', 'both'],
+      notApplicableFor: ['land_plot'],
+      maxLength: 48,
+    },
+  ] as unknown[],
+  /**
+   * Placeholder tokens: `{estate_slug}` plus `{componentKey}` for each
+   * declared address component. Rendered by one central formatter.
+   */
+  identifierTemplate: '{estate_slug}',
+  identifierMax: 120,
+};
+
+export const PropertyOptionsFields = z.object({
+  addressComponents: z.array(AddressComponentSchema).default([]),
+  identifierTemplate: z
+    .string()
+    .trim()
+    .min(1, 'Identifier template is required')
+    .max(200, 'Identifier template must be 200 characters or fewer')
+    .default('{estate_slug}'),
+  identifierMax: z.number().int().min(8).max(200).default(120),
+});
+
+export const PropertyOptionsSchema = defaulted(PropertyOptionsFields);
+
 // --- Root document -----------------------------------------------------------
 
 export const OrganizationConfigSchema = z
@@ -310,6 +402,7 @@ export const OrganizationConfigSchema = z
     organization: OrganizationIdentitySchema,
     branding: BrandingSchema,
     assetModel: AssetModelSchema,
+    propertyOptions: PropertyOptionsSchema,
     modules: ModulesSchema,
     fees: FeesSchema,
     onboarding: OnboardingSchema,
@@ -382,6 +475,46 @@ export const OrganizationConfigSchema = z
           code: 'custom',
           path: ['assetModel', 'types', index, 'defaultUnitTypeKey'],
           message: `Default unit type "${assetType.defaultUnitTypeKey}" is not permitted for asset type "${assetType.key}"`,
+        });
+      }
+    }
+
+    // --- Property options (Phase 2) -------------------------------------------
+    const componentKeys = new Set<string>();
+    for (const [index, component] of (
+      (config.propertyOptions?.addressComponents ?? []) as z.output<typeof AddressComponentSchema>[]
+    ).entries()) {
+      if (componentKeys.has(component.key)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['propertyOptions', 'addressComponents', index, 'key'],
+          message: `Duplicate address component key "${component.key}"`,
+        });
+      }
+      componentKeys.add(component.key);
+      for (const typeKey of [...component.requiredFor, ...component.notApplicableFor]) {
+        if (!assetKeys.has(typeKey)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['propertyOptions', 'addressComponents', index, 'requiredFor'],
+            message: `Address component "${component.key}" references unknown asset type "${typeKey}"`,
+          });
+        }
+      }
+    }
+
+    // The identifier template may only reference {estate_slug} or declared
+    // address components. Unknown placeholders would render empty tokens and
+    // produce misleading identifiers.
+    const template = (config.propertyOptions?.identifierTemplate as string) ?? '';
+    const placeholderPattern = /\{([a-z][a-z0-9_]{0,47})\}/g;
+    for (const match of template.matchAll(placeholderPattern)) {
+      const token = match[1];
+      if (token !== 'estate_slug' && !componentKeys.has(token ?? '')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['propertyOptions', 'identifierTemplate'],
+          message: `Identifier template references unknown placeholder {${token}}`,
         });
       }
     }
@@ -461,6 +594,8 @@ export type OnboardingConfig = z.output<typeof OnboardingSchema>;
 export type PaymentsConfig = z.output<typeof PaymentsSchema>;
 export type RolesConfig = z.output<typeof RolesSchema>;
 export type AssetModel = z.output<typeof AssetModelSchema>;
+export type PropertyOptions = z.output<typeof PropertyOptionsSchema>;
+export type AddressComponent = z.output<typeof AddressComponentSchema>;
 
 /** Re-exported so consumers can validate module keys against configuration. */
 export { MODULE_KEYS };

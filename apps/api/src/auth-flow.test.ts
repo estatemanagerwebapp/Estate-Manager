@@ -470,6 +470,57 @@ describe('admin user management (RBAC)', () => {
     // is covered by the dedicated unit test in phase1-unit.test.ts, which
     // exercises it directly against the repository predicate.
   });
+
+  it('deletes a user account, revokes its session, and audits the deletion', async () => {
+    const target = await createTestUser({ role: 'RESIDENT', password: SUPER_ADMIN_PASSWORD });
+    const admin = await createTestUser({ role: 'SUPER_ADMIN', password: SUPER_ADMIN_PASSWORD });
+
+    const adminLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    const adminCookie = cookieFrom(adminLogin);
+
+    const targetLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: target.email, password: SUPER_ADMIN_PASSWORD });
+    const targetCookie = cookieFrom(targetLogin);
+    expect((await request(app).get('/api/v1/auth/me').set('Cookie', targetCookie)).status).toBe(
+      200,
+    );
+
+    const deleted = await request(app)
+      .delete(`/api/v1/auth/users/${target.id}`)
+      .set('Cookie', adminCookie);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data).toEqual({ ok: true, id: target.id });
+
+    // The row is gone and the session no longer authenticates.
+    expect(await prisma.user.findUnique({ where: { id: target.id } })).toBeNull();
+    expect((await request(app).get('/api/v1/auth/me').set('Cookie', targetCookie)).status).toBe(
+      401,
+    );
+
+    // The deletion is audited.
+    const event = await prisma.auditEvent.findFirst({
+      where: { organizationId, targetId: target.id, eventType: 'user_deleted' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(event).toBeDefined();
+  });
+
+  it('refuses to delete the caller’s own account', async () => {
+    const admin = await createTestUser({ role: 'SUPER_ADMIN', password: SUPER_ADMIN_PASSWORD });
+    const adminLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    const adminCookie = cookieFrom(adminLogin);
+
+    const response = await request(app)
+      .delete(`/api/v1/auth/users/${admin.id}`)
+      .set('Cookie', adminCookie);
+    expect(response.status).toBe(403);
+    expect(await prisma.user.findUnique({ where: { id: admin.id } })).not.toBeNull();
+  });
 });
 
 describe('audit log integrity', () => {

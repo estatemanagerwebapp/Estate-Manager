@@ -5,6 +5,7 @@ import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type { PermissionResolver } from './permission-resolver.js';
 import {
   assertMayManage,
+  assertMayDelete,
   assertNewRoleAllowed,
   assertNewStatusAllowed,
   lastAdminGuardMessage,
@@ -14,6 +15,7 @@ import type {
   UserListItemDto,
   SetUserStatusResponse,
   SetUserRoleResponse,
+  DeleteUserResponse,
   UserDetailResponse,
   UserListResponse,
 } from '@silverstone/shared';
@@ -165,11 +167,66 @@ export class UserService {
     return { ok: true, user: await this.toDto(updated ?? target) };
   }
 
+  /**
+   * Permanently delete a user account.
+   *
+   * Guards (all fail closed):
+   * - the target must exist in this organization;
+   * - an administrator cannot delete their own account;
+   * - the actor must be allowed to manage the target's role;
+   * - the last active SUPER_ADMIN cannot be deleted (recovery lockout).
+   *
+   * The account disappears immediately: sessions are revoked first, and the
+   * resident-onboarding link is nulled by the schema so the resident record
+   * survives. The deletion is audited (`user.deleted`).
+   */
+  async remove(
+    context: AuthAuditContext,
+    actorRole: string,
+    targetUserId: string,
+  ): Promise<DeleteUserResponse> {
+    const organizationId = context.organizationId;
+    const target = await this.users.findById(organizationId, targetUserId);
+    if (!target) {
+      throw new AppError(404, 'NOT_FOUND', 'User not found');
+    }
+
+    assertMayDelete(actorRole, target, context.actorId ?? '', target.id);
+
+    if (
+      target.role === 'SUPER_ADMIN' &&
+      target.status === 'ACTIVE' &&
+      (await this.users.isLastActiveSuperAdmin(organizationId, target.id))
+    ) {
+      throw new AppError(409, 'CONFLICT', lastAdminGuardMessage('delete'));
+    }
+
+    // Revoke sessions first: a deleted account must lose access immediately.
+    await this.sessions.revokeAllForUser(target.id);
+    await this.users.delete(target.id);
+
+    await this.audit.record({
+      organizationId,
+      actorId: context.actorId,
+      eventType: 'user.deleted',
+      targetType: 'user',
+      targetId: target.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { email: target.email, role: target.role },
+    });
+
+    return { ok: true, id: target.id };
+  }
+
   private async toDto(record: {
     id: string;
     email: string;
+    phone: string | null;
+    fullName: string | null;
     role: string;
     status: string;
+    mustChangePassword: boolean;
     lastPasswordChangedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
@@ -178,7 +235,10 @@ export class UserService {
     return {
       id: record.id,
       email: record.email,
+      phone: record.phone,
+      fullName: record.fullName,
       role: record.role as UserDto['role'],
+      mustChangePassword: record.mustChangePassword,
       permissions,
       status: record.status as UserDto['status'],
       createdAt: record.createdAt.toISOString(),

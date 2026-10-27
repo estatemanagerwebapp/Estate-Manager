@@ -12,8 +12,11 @@ export interface UserRecord {
   organizationId: string;
   email: string;
   passwordHash: string;
+  fullName: string | null;
+  phone: string | null;
   role: string;
   status: string;
+  mustChangePassword: boolean;
   lastPasswordChangedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -23,8 +26,11 @@ export interface CreateUserInput {
   organizationId: string;
   email: string;
   passwordHash: string;
+  fullName: string | null;
+  phone: string | null;
   role: string;
   status?: string;
+  mustChangePassword?: boolean;
 }
 
 export interface UserQuery {
@@ -73,18 +79,30 @@ export class PrismaUserRepository {
         organizationId: input.organizationId,
         email: input.email.toLowerCase(),
         passwordHash: input.passwordHash,
+        fullName: input.fullName,
+        phone: input.phone,
         role: input.role,
         status: input.status ?? 'ACTIVE',
+        mustChangePassword: input.mustChangePassword ?? false,
         lastPasswordChangedAt: new Date(),
       },
     });
     return toUserRecord(row);
   }
 
+  /** Set or replace the user's phone (profile edit). */
+  async updatePhone(userId: string, phone: string | null): Promise<void> {
+    await this.prisma.user.update({ where: { id: userId }, data: { phone } });
+  }
+
   async updatePassword(userId: string, passwordHash: string): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
-      data: { passwordHash, lastPasswordChangedAt: new Date() },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+        lastPasswordChangedAt: new Date(),
+      },
     });
   }
 
@@ -96,6 +114,16 @@ export class PrismaUserRepository {
   async updateRole(userId: string, role: string): Promise<void> {
     assertRole(role);
     await this.prisma.user.update({ where: { id: userId }, data: { role } });
+  }
+
+  /**
+   * Permanently delete a user row. Sessions, reset tokens and audit events
+   * are removed by their own foreign keys (or preserved for audit events).
+   * The resident-onboarding link is set to null by the schema, so the
+   * resident record survives an account deletion.
+   */
+  async delete(userId: string): Promise<void> {
+    await this.prisma.user.delete({ where: { id: userId } });
   }
 
   async countByRole(organizationId: string, role: string): Promise<number> {
@@ -152,8 +180,11 @@ type PrismaUserRow = {
   organizationId: string;
   email: string;
   passwordHash: string;
+  fullName: string | null;
+  phone: string | null;
   role: string;
   status: string;
+  mustChangePassword: boolean;
   lastPasswordChangedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -165,8 +196,11 @@ function toUserRecord(row: PrismaUserRow): UserRecord {
     organizationId: row.organizationId,
     email: row.email,
     passwordHash: row.passwordHash,
+    fullName: row.fullName,
+    phone: row.phone,
     role: row.role,
     status: row.status,
+    mustChangePassword: row.mustChangePassword,
     lastPasswordChangedAt: row.lastPasswordChangedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

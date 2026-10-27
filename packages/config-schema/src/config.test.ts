@@ -49,7 +49,7 @@ describe('baseline configuration', () => {
     expect(config.assetModel.types.length).toBeGreaterThan(0);
     expect(config.modules.estates).toBe(true);
     expect(config.fees.registration.amountKobo).toBe(0);
-    expect(config.onboarding.invitationCode.singleUse).toBe(true);
+    expect(config.onboarding.residentCode.persistent).toBe(true);
     expect(config.customFields).toEqual([]);
   });
 
@@ -211,13 +211,13 @@ describe('configuration validation', () => {
       ...validDocument(),
       payments: { serverControlledAmounts: false },
     };
-    const reusableCodes = {
+    const nonPersistentCodes = {
       ...validDocument(),
-      onboarding: { invitationCode: { singleUse: false } },
+      onboarding: { residentCode: { persistent: false } },
     };
     expect(issuePaths(accountFirst)).toContain('onboarding.createAccountOnlyAfterVerifiedPayment');
     expect(issuePaths(clientAmounts)).toContain('payments.serverControlledAmounts');
-    expect(issuePaths(reusableCodes)).toContain('onboarding.invitationCode.singleUse');
+    expect(issuePaths(nonPersistentCodes)).toContain('onboarding.residentCode.persistent');
   });
 
   it('exposes readable issue paths for operators', () => {
