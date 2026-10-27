@@ -23,16 +23,16 @@ import { requireResident, getResidentContext } from '../../middleware/resident-g
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { ResidentProfileService } from './profile.service.js';
-import { ResidentPropertiesService } from './properties.service.js';
-import { ResidentFinanceService } from './finance.service.js';
-import { ResidentCodesService } from './codes.service.js';
-import { ResidentComplaintsService } from './complaints.service.js';
-import { ResidentMessagesService } from './messages.service.js';
-import { ResidentCommunityService } from './community.service.js';
-import { ResidentBookingsService } from './bookings.service.js';
-import { ResidentSosService } from './sos.service.js';
-import { ResidentNotificationsService } from './notifications.service.js';
-import { ResidentDashboardService } from './dashboard.service.js';
+import type { ResidentPropertiesService } from './properties.service.js';
+import type { ResidentFinanceService } from './finance.service.js';
+import type { ResidentCodesService } from './codes.service.js';
+import type { ResidentComplaintsService } from './complaints.service.js';
+import type { ResidentMessagesService } from './messages.service.js';
+import type { ResidentCommunityService } from './community.service.js';
+import type { ResidentBookingsService } from './bookings.service.js';
+import type { ResidentSosService } from './sos.service.js';
+import type { ResidentNotificationsService } from './notifications.service.js';
+import type { ResidentDashboardService } from './dashboard.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
