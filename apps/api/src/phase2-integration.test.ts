@@ -6,7 +6,7 @@
  * Runs against the real Prisma repositories, real Express routes, and a
  * real PostgreSQL instance. No fakes other than the database.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type { Worksheet } from 'exceljs';
 import type { Express } from 'express';
@@ -37,9 +37,13 @@ import { hashPassword } from './lib/password.js';
 import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 import type { ImportServiceContext } from './modules/imports/import.service.js';
 
+// These tests exercise real Supabase-backed requests; allow for pooler latency.
+vi.setConfig({ testTimeout: 60_000 });
+
 let prisma: PrismaClient;
 let app: Express;
 let organizationId = '';
+let organizationSlug = '';
 let adminUserId = '';
 let adminCookie = '';
 let configServiceForTest: OrganizationConfigService;
@@ -101,8 +105,9 @@ beforeAll(async () => {
   const permissions = new PermissionResolver(async () => []);
   const email = new MockEmailAdapter();
 
+  organizationSlug = `phase2_test_${uniqueSuffix()}`;
   const org = await prisma.organization.create({
-    data: { slug: `phase2_test_${uniqueSuffix()}`, name: 'Phase 2 Test' },
+    data: { slug: organizationSlug, name: 'Phase 2 Test' },
   });
   organizationId = org.id;
 
@@ -142,7 +147,11 @@ beforeAll(async () => {
   const userService = new UserService(users, sessions, audit, permissions);
 
   const configRepo = new PrismaOrganizationConfigRepository(prisma);
-  configServiceForTest = new OrganizationConfigService(configRepo, loadBootstrapConfig, 'test_org');
+  configServiceForTest = new OrganizationConfigService(
+    configRepo,
+    loadBootstrapConfig,
+    organizationSlug,
+  );
   const configService = configServiceForTest;
   const propertyOptionsService = new PropertyOptionsService(
     configService,
@@ -157,7 +166,7 @@ beforeAll(async () => {
         configVersion: resolved.version,
       };
     },
-    'test_org',
+    organizationSlug,
   );
 
   app = createApp({
@@ -308,8 +317,8 @@ describe('estate CRUD (integration)', () => {
     // Creating a property under an archived estate → 409
     const propRes = await authed().post('/api/v1/properties').send({
       estateId,
-      typeKey: 'house',
-      addressComponents: {},
+      typeKey: 'land',
+      addressComponents: { street_name: 'Main St', plot_number: '1' },
     });
     expect(propRes.status).toBe(409);
   });
@@ -320,261 +329,198 @@ describe('estate CRUD (integration)', () => {
 });
 
 // =============================================================================
-// Property CRUD (integration)
+// Property CRUD (integration) — new land / house model
 // =============================================================================
 
 describe('property CRUD (integration)', () => {
-  it('creates a property with a derived identifier', async () => {
+  it('creates a land property with a derived identifier', async () => {
     const estate = await createTestEstate();
 
-    // Seed a property-options config version with address components so the
-    // identifier template can render a complete value.
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    const resolved = await configService.resolve();
-    const updated = {
-      ...resolved.config,
-      propertyOptions: {
-        ...resolved.config.propertyOptions,
-        addressComponents: [
-          {
-            key: 'block',
-            label: 'Block',
-            requiredFor: ['apartment_block'],
-            notApplicableFor: [],
-            maxLength: 20,
-          },
-          {
-            key: 'unit',
-            label: 'Unit',
-            requiredFor: ['apartment_block'],
-            notApplicableFor: [],
-            maxLength: 10,
-          },
-        ],
-        identifierTemplate: '{estate_slug}-{block}-{unit}',
-        identifierMax: 120,
-      },
-    };
-    await configRepo.createRecord({ organizationSlug: 'test_org', config: updated as never });
-
-    // Create a top-level apartment block (no parent, no unit type key).
-    const suffix = uniqueSuffix();
     const res = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'apartment_block',
-        addressComponents: { block: suffix.slice(0, 8), unit: '01' },
-      });
-    expect(res.status).toBe(201);
+        typeKey: 'land',
+        houseTypeKey: null,
+        addressComponents: { street_name: 'Main St', plot_number: '42' },
+      })
+      .expect(201);
+
     const property = res.body.data.property;
-    expect(property.identifier).toBe(`${estate.slug}-${suffix.slice(0, 8)}-01`);
+    expect(property.identifier).toBe(`${estate.slug}-Main St-42`);
     expect(property.status).toBe('ACTIVE');
-    expect(property.typeKey).toBe('apartment_block');
+    expect(property.typeKey).toBe('land');
+    expect(property.houseTypeKey).toBeNull();
   });
 
-  it('enforces required, pattern, and not-applicable rules through the API', async () => {
+  it('creates a house bungalow with a derived identifier', async () => {
     const estate = await createTestEstate();
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    const resolved = await configService.resolve();
-    const baseConfig = resolved.config;
-    const updateOptions = async (notApplicableFor: string[], identifierTemplate: string) => {
-      await configRepo.createRecord({
-        organizationSlug: 'test_org',
-        config: {
-          ...baseConfig,
-          propertyOptions: {
-            ...baseConfig.propertyOptions,
-            addressComponents: [
-              {
-                key: 'block',
-                label: 'Block',
-                requiredFor: ['apartment_block'],
-                notApplicableFor,
-                pattern: '0-9',
-                maxLength: 8,
-              },
-            ],
-            identifierTemplate,
-            identifierMax: 120,
-          },
-        } as never,
-      });
-    };
 
-    await updateOptions([], '{estate_slug}-{block}');
-    const missing = await authed()
+    const res = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'apartment_block',
-      })
-      .expect(400);
-    expect(missing.body.error.details[0].path).toBe('addressComponents.block');
-    const invalidPattern = await authed()
-      .post('/api/v1/properties')
-      .send({
-        estateId: estate.id,
-        typeKey: 'apartment_block',
-        addressComponents: { block: 'bad' },
-      })
-      .expect(400);
-    expect(invalidPattern.body.error.details[0].path).toBe('addressComponents.block');
-
-    await updateOptions(['apartment_block'], '{estate_slug}');
-    await authed()
-      .post('/api/v1/properties')
-      .send({
-        estateId: estate.id,
-        typeKey: 'apartment_block',
+        typeKey: 'house',
+        houseTypeKey: 'bungalow',
+        addressComponents: { street_name: 'Oak Ave', house_number: '17' },
       })
       .expect(201);
 
-    await configRepo.createRecord({ organizationSlug: 'test_org', config: baseConfig as never });
+    const property = res.body.data.property;
+    expect(property.identifier).toBe(`${estate.slug}-Oak Ave-17`);
+    expect(property.status).toBe('ACTIVE');
+    expect(property.typeKey).toBe('house');
+    expect(property.houseTypeKey).toBe('bungalow');
   });
 
-  it('returns 409 when the identifier collides with an existing property', async () => {
+  it('creates a house apartment with a derived identifier', async () => {
     const estate = await createTestEstate();
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    await configService.resolve();
-    const suffix = uniqueSuffix().slice(0, 8);
-    const components = { block: suffix, unit: '99' };
 
-    // First create succeeds.
-    await authed()
+    const res = await authed()
       .post('/api/v1/properties')
-      .send({ estateId: estate.id, typeKey: 'apartment_block', addressComponents: components })
+      .send({
+        estateId: estate.id,
+        typeKey: 'house',
+        houseTypeKey: 'apartment',
+        addressComponents: {
+          street_name: 'Main St',
+          block_name: 'Block A',
+          floor_number: '3',
+          unit_number: '12',
+        },
+      })
       .expect(201);
 
-    // Second create with the same identifier → 409.
-    const dup = await authed()
-      .post('/api/v1/properties')
-      .send({ estateId: estate.id, typeKey: 'apartment_block', addressComponents: components });
-    expect(dup.status).toBe(409);
-    expect(dup.body.error.code).toBe('CONFLICT');
+    const property = res.body.data.property;
+    expect(property.identifier).toBe(`${estate.slug}-Main St-Block A-3-12`);
+    expect(property.status).toBe('ACTIVE');
+    expect(property.typeKey).toBe('house');
+    expect(property.houseTypeKey).toBe('apartment');
+  });
+
+  it('rejects a house property without a house type key', async () => {
+    const estate = await createTestEstate();
+
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      typeKey: 'house',
+      houseTypeKey: null,
+      addressComponents: {},
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a house type key on a land property', async () => {
+    const estate = await createTestEstate();
+
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      typeKey: 'land',
+      houseTypeKey: 'bungalow',
+      addressComponents: { street_name: 'Main St', plot_number: '42' },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a missing required address component (land plot number)', async () => {
+    const estate = await createTestEstate();
+
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      typeKey: 'land',
+      houseTypeKey: null,
+      addressComponents: { street_name: 'Main St' }, // plot_number missing
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.details[0].path).toBe('addressComponents.plot_number');
+  });
+
+  it('rejects a missing required address component (house bungalow house number)', async () => {
+    const estate = await createTestEstate();
+
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      typeKey: 'house',
+      houseTypeKey: 'bungalow',
+      addressComponents: { street_name: 'Oak Ave' }, // house_number missing
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.details[0].path).toBe('addressComponents.house_number');
+  });
+
+  it('rejects a component that is notApplicableFor the house type', async () => {
+    const estate = await createTestEstate();
+
+    // plot_number is notApplicableFor house types.
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      typeKey: 'house',
+      houseTypeKey: 'bungalow',
+      addressComponents: {
+        street_name: 'Oak Ave',
+        house_number: '17',
+        plot_number: '42',
+      },
+    });
+    expect(res.status).toBe(400);
   });
 
   it('rejects an unknown type key with 400', async () => {
     const estate = await createTestEstate();
     const res = await authed()
       .post('/api/v1/properties')
-      .send({ estateId: estate.id, typeKey: 'unknown_type', addressComponents: {} });
+      .send({ estateId: estate.id, typeKey: 'apartment_block', addressComponents: {} });
     expect(res.status).toBe(400);
+  });
+
+  it('returns 409 when the identifier collides with an existing property', async () => {
+    const estate = await createTestEstate();
+    const components = { street_name: 'Main St', plot_number: '42' };
+
+    // First create succeeds.
+    await authed()
+      .post('/api/v1/properties')
+      .send({ estateId: estate.id, typeKey: 'land', houseTypeKey: null, addressComponents: components })
+      .expect(201);
+
+    // Second create with the same identifier → 409.
+    const dup = await authed()
+      .post('/api/v1/properties')
+      .send({ estateId: estate.id, typeKey: 'land', houseTypeKey: null, addressComponents: components });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('CONFLICT');
   });
 
   it('lists properties with filters', async () => {
     const estate = await createTestEstate();
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    const resolved = await configService.resolve();
-    await configRepo.createRecord({
-      organizationSlug: 'test_org',
-      config: {
-        ...resolved.config,
-        propertyOptions: {
-          ...resolved.config.propertyOptions,
-          addressComponents: [
-            {
-              key: 'block',
-              label: 'Block',
-              requiredFor: ['apartment_block'],
-              notApplicableFor: [],
-              maxLength: 20,
-            },
-            {
-              key: 'unit',
-              label: 'Unit',
-              requiredFor: ['apartment_block'],
-              notApplicableFor: [],
-              maxLength: 10,
-            },
-          ],
-          identifierTemplate: '{estate_slug}-{block}-{unit}',
-          identifierMax: 120,
-        },
-      } as never,
-    });
 
-    const suffix = uniqueSuffix().slice(0, 8);
     await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'apartment_block',
-        addressComponents: { block: suffix, unit: '01' },
+        typeKey: 'land',
+        houseTypeKey: null,
+        addressComponents: { street_name: 'Main St', plot_number: '42' },
       })
       .expect(201);
 
     const listed = await authed()
       .get('/api/v1/properties')
-      .query({ estateId: estate.id, typeKey: 'apartment_block' })
+      .query({ estateId: estate.id, typeKey: 'land' })
       .expect(200);
     expect(listed.body.data.total).toBeGreaterThanOrEqual(1);
   });
 
   it('archives a property and preserves the identifier', async () => {
     const estate = await createTestEstate();
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    const resolved = await configService.resolve();
-    await configRepo.createRecord({
-      organizationSlug: 'test_org',
-      config: {
-        ...resolved.config,
-        propertyOptions: {
-          ...resolved.config.propertyOptions,
-          addressComponents: [
-            {
-              key: 'block',
-              label: 'Block',
-              requiredFor: ['apartment_block'],
-              notApplicableFor: [],
-              maxLength: 20,
-            },
-            {
-              key: 'unit',
-              label: 'Unit',
-              requiredFor: ['apartment_block'],
-              notApplicableFor: [],
-              maxLength: 10,
-            },
-          ],
-          identifierTemplate: '{estate_slug}-{block}-{unit}',
-          identifierMax: 120,
-        },
-      } as never,
-    });
 
-    const suffix = uniqueSuffix().slice(0, 8);
     const createRes = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'apartment_block',
-        addressComponents: { block: suffix, unit: '01' },
+        typeKey: 'land',
+        houseTypeKey: null,
+        addressComponents: { street_name: 'Main St', plot_number: '42' },
       })
       .expect(201);
     const propertyId = createRes.body.data.property.id;
@@ -590,57 +536,23 @@ describe('property CRUD (integration)', () => {
 
   it('PATCH property does not accept identifier in the body', async () => {
     const estate = await createTestEstate();
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    const resolved = await configService.resolve();
-    await configRepo.createRecord({
-      organizationSlug: 'test_org',
-      config: {
-        ...resolved.config,
-        propertyOptions: {
-          ...resolved.config.propertyOptions,
-          addressComponents: [
-            {
-              key: 'block',
-              label: 'Block',
-              requiredFor: ['apartment_block'],
-              notApplicableFor: [],
-              maxLength: 20,
-            },
-            {
-              key: 'unit',
-              label: 'Unit',
-              requiredFor: ['apartment_block'],
-              notApplicableFor: [],
-              maxLength: 10,
-            },
-          ],
-          identifierTemplate: '{estate_slug}-{block}-{unit}',
-          identifierMax: 120,
-        },
-      } as never,
-    });
 
-    const suffix = uniqueSuffix().slice(0, 8);
     const createRes = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'apartment_block',
-        addressComponents: { block: suffix, unit: '01' },
+        typeKey: 'land',
+        houseTypeKey: null,
+        addressComponents: { street_name: 'Main St', plot_number: '42' },
       })
       .expect(201);
     const propertyId = createRes.body.data.property.id;
     const originalIdentifier = createRes.body.data.property.identifier;
 
-    // PATCH with identifier in body should be silently ignored (zod strips unknown keys).
+    // PATCH with addressComponents — identifier is immutable and stripped.
     const patched = await authed()
       .patch(`/api/v1/properties/${propertyId}`)
-      .send({ status: 'ARCHIVED', addressComponents: { block: suffix, unit: '02' } })
+      .send({ status: 'ARCHIVED', addressComponents: { street_name: 'Main St', plot_number: '99' } })
       .expect(200);
     expect(patched.body.data.property.identifier).toBe(originalIdentifier);
     expect(patched.body.data.property.status).toBe('ARCHIVED');
@@ -652,23 +564,13 @@ describe('property CRUD (integration)', () => {
 // =============================================================================
 
 describe('property-options optimistic concurrency (integration)', () => {
-  it('GET /property-options returns the active block and config version', async () => {
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      'test_org',
-    );
-    const resolved = await configService.resolve();
-    // createRecord activates a NEW version, so the active version is resolved.version + 1
-    const newVersion = await configRepo.createRecord({
-      organizationSlug: 'test_org',
-      config: resolved.config as never,
-    });
-
+  it('GET /property-options returns the active config version and house types', async () => {
     const res = await authed().get('/api/v1/property-options').expect(200);
-    expect(res.body.data.configVersion).toBe(newVersion.version);
+    expect(typeof res.body.data.configVersion).toBe('number');
     expect(Array.isArray(res.body.data.assetTypes)).toBe(true);
+    expect(Array.isArray(res.body.data.houseTypes)).toBe(true);
+    const keys = res.body.data.houseTypes.map((ht: { key: string }) => ht.key);
+    expect(keys).toEqual(['bungalow', 'terrace', 'duplex', 'apartment', 'flat']);
   });
 
   it('PUT /property-options with a stale baseVersion returns 409', async () => {
@@ -676,13 +578,13 @@ describe('property-options optimistic concurrency (integration)', () => {
     const configService = new OrganizationConfigService(
       configRepo,
       loadBootstrapConfig,
-      'test_org',
+      organizationSlug,
     );
     const resolved = await configService.resolve();
 
     // Advance the version once — the version returned by resolve() is now stale.
     await configRepo.createRecord({
-      organizationSlug: 'test_org',
+      organizationSlug,
       config: resolved.config as never,
     });
 
@@ -692,6 +594,13 @@ describe('property-options optimistic concurrency (integration)', () => {
         baseVersion: resolved.version, // stale
         propertyOptions: {
           addressComponents: [],
+          houseTypes: [
+            { key: 'bungalow', label: 'Bungalow', active: true },
+            { key: 'terrace', label: 'Terrace', active: true },
+            { key: 'duplex', label: 'Duplex', active: true },
+            { key: 'apartment', label: 'Apartment', active: true },
+            { key: 'flat', label: 'Flat', active: true },
+          ],
           identifierTemplate: '{estate_slug}',
           identifierMax: 120,
         },
@@ -705,7 +614,7 @@ describe('property-options optimistic concurrency (integration)', () => {
     const configService = new OrganizationConfigService(
       configRepo,
       loadBootstrapConfig,
-      'test_org',
+      organizationSlug,
     );
     const resolved = await configService.resolve();
 
@@ -716,82 +625,85 @@ describe('property-options optimistic concurrency (integration)', () => {
         propertyOptions: {
           addressComponents: [
             {
-              key: 'block',
-              label: 'Block',
-              requiredFor: ['apartment_block'],
+              key: 'street_name',
+              label: 'Street name',
+              requiredFor: ['land', 'house'],
               notApplicableFor: [],
-              maxLength: 20,
+              maxLength: 120,
+            },
+            {
+              key: 'plot_number',
+              label: 'Plot number',
+              requiredFor: ['land'],
+              notApplicableFor: [],
+              maxLength: 32,
             },
           ],
-          identifierTemplate: '{estate_slug}-{block}',
+          houseTypes: [
+            { key: 'bungalow', label: 'Bungalow', active: true },
+            { key: 'terrace', label: 'Terrace', active: true },
+            { key: 'duplex', label: 'Duplex', active: true },
+            { key: 'apartment', label: 'Apartment', active: true },
+            { key: 'flat', label: 'Flat', active: true },
+          ],
+          identifierTemplate: '{estate_slug}',
           identifierMax: 120,
         },
       })
       .expect(200);
-    expect(res.body.data.identifierTemplate).toBe('{estate_slug}-{block}');
+    expect(res.body.data.identifierTemplate).toBe('{estate_slug}');
     expect(res.body.data.configVersion).toBe(resolved.version + 1);
   });
 
-  it('accepts property-options values up to the canonical template limit', async () => {
+  it('rejects property-options that reference an unknown house type key', async () => {
     const configRepo = new PrismaOrganizationConfigRepository(prisma);
     const configService = new OrganizationConfigService(
       configRepo,
       loadBootstrapConfig,
-      'test_org',
+      organizationSlug,
     );
     const resolved = await configService.resolve();
-    const identifierTemplate = `{estate_slug}${'x'.repeat(130)}`;
-    const response = await authed()
+
+    const res = await authed()
       .put('/api/v1/property-options')
       .send({
         baseVersion: resolved.version,
         propertyOptions: {
-          addressComponents: [],
-          identifierTemplate,
-          identifierMax: 150,
+          addressComponents: [
+            {
+              key: 'street_name',
+              label: 'Street name',
+              requiredFor: ['land', 'house.unknown'],
+              notApplicableFor: [],
+              maxLength: 120,
+            },
+          ],
+          houseTypes: [
+            { key: 'bungalow', label: 'Bungalow', active: true },
+          ],
+          identifierTemplate: '{estate_slug}',
+          identifierMax: 120,
         },
-      })
-      .expect(200);
-    expect(response.body.data.identifierTemplate).toBe(identifierTemplate);
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });
 
 // =============================================================================
-// Import flow (integration)
+// Import flow (integration) — new land / house model
 // =============================================================================
 
 async function seedImportConfig(): Promise<{ estateId: string; estateSlug: string }> {
-  // Seed the active config with address components so identifiers can render.
+  // Restore canonical defaults in the test-local organization after config tests.
   const configRepo = new PrismaOrganizationConfigRepository(prisma);
-  const configService = new OrganizationConfigService(configRepo, loadBootstrapConfig, 'test_org');
-  const resolved = await configService.resolve();
-  await configRepo.createRecord({
-    organizationSlug: 'test_org',
-    config: {
-      ...resolved.config,
-      propertyOptions: {
-        ...resolved.config.propertyOptions,
-        addressComponents: [
-          {
-            key: 'block',
-            label: 'Block',
-            requiredFor: ['apartment_block'],
-            notApplicableFor: [],
-            maxLength: 20,
-          },
-          {
-            key: 'unit',
-            label: 'Unit',
-            requiredFor: ['apartment_block'],
-            notApplicableFor: [],
-            maxLength: 10,
-          },
-        ],
-        identifierTemplate: '{estate_slug}-{block}-{unit}',
-        identifierMax: 120,
-      },
-    } as never,
-  });
+  const configService = new OrganizationConfigService(
+    configRepo,
+    loadBootstrapConfig,
+    organizationSlug,
+  );
+  await configService.resolve();
+  await configRepo.createRecord({ organizationSlug, config: loadBootstrapConfig() });
 
   const estate = await createTestEstate();
   return { estateId: estate.id, estateSlug: estate.slug };
@@ -851,7 +763,15 @@ describe('import flow (integration)', () => {
     // Row 1 holds the headers and nothing follows it: the template carries no
     // importable sample row, so re-uploading it unchanged imports nothing.
     expect(sheet?.actualRowCount).toBe(1);
-    expect(headerLabels(sheet)).toEqual(['type', 'block', 'unit']);
+    expect(headerLabels(sheet)).toEqual([
+      'type',
+      'street_name',
+      'plot_number',
+      'house_number',
+      'block_name',
+      'floor_number',
+      'unit_number',
+    ]);
   });
 
   it('creates no properties when the unchanged template is uploaded', async () => {
@@ -873,7 +793,7 @@ describe('import flow (integration)', () => {
     expect(properties.body.data.properties).toHaveLength(0);
   });
 
-  it('creates exactly one property from a template carrying one deliberate row', async () => {
+  it('creates exactly one land property from a template carrying one deliberate row', async () => {
     const { estateId } = await seedImportConfig();
     const bytes = await downloadTemplate(estateId);
 
@@ -882,7 +802,7 @@ describe('import flow (integration)', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(bytes);
     const sheet = workbook.worksheets[0];
-    sheet?.addRow(['apartment_block', 'Block A', '12']);
+    sheet?.addRow(['land', 'Main St', '42']);
     const populated = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
 
     const preview = await uploadWorkbook(estateId, populated, 'properties-populated.xlsx');
@@ -908,8 +828,10 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Properties');
-    sheet.addRow(['type', 'block', 'unit']);
-    sheet.addRow(['apartment_block', 'sample_block', 'sample_1']);
+    sheet.addRow(['type', 'street_name', 'plot_number']);
+    // Keep the sample marker in a free-form field while satisfying plot_number's
+    // configured numeric pattern so confirmation can import a valid row.
+    sheet.addRow(['land', 'sample_street_name', '42']);
     const instructions = workbook.addWorksheet('Instructions');
     instructions.addRow(['Instructions']);
     instructions.addRow([
@@ -933,9 +855,9 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Properties');
-    sheet.addRow(['type', 'block', 'unit']);
+    sheet.addRow(['type', 'street_name', 'plot_number']);
     const suffix = uniqueSuffix().slice(0, 6);
-    sheet.addRow(['apartment_block', suffix, '01']);
+    sheet.addRow(['land', 'Main St', suffix]);
     const bytes = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
     const preview = await uploadWorkbook(estateId, bytes, 'unique-row.xlsx').expect(201);
     const stored = await prisma.importRow.findFirstOrThrow({
@@ -991,11 +913,11 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'block', 'unit']);
+    ws.addRow(['type', 'street_name', 'plot_number']);
     const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['apartment_block', suffix, '01']);
-    ws.addRow(['apartment_block', suffix, '02']);
-    ws.addRow(['apartment_block', suffix, '01']); // duplicate in file
+    ws.addRow(['land', 'Main St', suffix]);   // row 2
+    ws.addRow(['land', 'Oak Ave', '17']);      // row 3
+    ws.addRow(['land', 'Main St', suffix]);    // row 4, duplicate of row 2
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     const preview = await authed()
@@ -1046,9 +968,9 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'block', 'unit']);
+    ws.addRow(['type', 'street_name', 'plot_number']);
     const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['apartment_block', suffix, '20']);
+    ws.addRow(['land', 'Main St', suffix]);
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     const first = await authed()
@@ -1073,9 +995,9 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'block', 'unit']);
+    ws.addRow(['type', 'street_name', 'plot_number']);
     const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['apartment_block', suffix, '10']);
+    ws.addRow(['land', 'Main St', suffix]);
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     // Upload + preview.
@@ -1091,19 +1013,21 @@ describe('import flow (integration)', () => {
     const configService = new OrganizationConfigService(
       configRepo,
       loadBootstrapConfig,
-      'test_org',
+      organizationSlug,
     );
     await configService.resolve();
-    const identifier = `${(await prisma.estate.findFirst({ where: { id: estateId } }))!.slug}-${suffix}-10`;
+    const estate = await prisma.estate.findFirst({ where: { id: estateId } });
+    const identifier = `${estate!.slug}-Main St-${suffix}`;
     await prisma.property.create({
       data: {
         estateId,
         organizationId,
         identifier,
-        typeKey: 'apartment_block',
+        typeKey: 'land',
+        houseTypeKey: null,
         unitTypeKey: null,
         parentPropertyId: null,
-        addressComponents: { block: suffix, unit: '10' },
+        addressComponents: { street_name: 'Main St', plot_number: suffix },
         status: 'ACTIVE',
       },
     });
@@ -1124,9 +1048,9 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'block', 'unit']);
+    ws.addRow(['type', 'street_name', 'plot_number']);
     const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['apartment_block', suffix, '01']);
+    ws.addRow(['land', 'Main St', suffix]);
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     const preview = await authed()
@@ -1140,34 +1064,27 @@ describe('import flow (integration)', () => {
     const configService = new OrganizationConfigService(
       configRepo,
       loadBootstrapConfig,
-      'test_org',
+      organizationSlug,
     );
     const resolved = await configService.resolve();
     await configRepo.createRecord({
-      organizationSlug: 'test_org',
+      organizationSlug,
       config: resolved.config as never,
     });
 
-    // Commit — the batch was pinned to the old version, so it should report
-    // config drift and refuse to commit (the service checks this).
+    // Commit — the batch was pinned to the old version, so it should be
+    // refused on config drift.
     const commit = await authed().post(`/api/v1/imports/${batchId}/commit`);
-    // The commit response will either 409 or succeed with a configDrift flag.
-    // Per the v3 plan, commit is refused on drift.
     expect(commit.status).toBe(409);
   });
 
   it('all-or-nothing rollback: zero partial property rows after forced commit failure', async () => {
-    // Create a workbook where one row will fail to insert (invalid type key
-    // that passes the preview stage but fails at insert time would be hard to
-    // simulate without monkey-patching; instead we test that a successful
-    // commit creates exactly the expected number of rows and a second attempt
-    // with a corrupted batch doesn't leave partial state).
+    // Force a commit failure by creating a batch in COMMIT_FAILED state
+    // directly in the DB and attempting to commit it.
     const { estateId } = await seedImportConfig();
 
     const beforeCount = await prisma.property.count({ where: { estateId } });
 
-    // Force a commit failure by creating a batch in COMMIT_FAILED state
-    // directly in the DB and attempting to commit it.
     const batch = await prisma.importBatch.create({
       data: {
         estateId,

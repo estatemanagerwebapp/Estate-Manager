@@ -6,21 +6,28 @@ import type { AddressComponents } from '@silverstone/shared';
  *
  * A single, deterministic formatter is used by the manual property form and by
  * the Excel import validator so the two paths can never disagree. The identifier
- * is rendered from the configured `identifierTemplate` plus the property's
- * address-component values and the estate slug. It is computed once at create
- * time and stored as the canonical text; it is never re-derived or silently
- * rewritten after creation.
+ * is computed once at create time and stored as the canonical text; it is never
+ * re-derived or silently rewritten after creation.
  *
- * No Silverstone convention is assumed. With no address components configured
- * the default template `{estate_slug}` renders the estate slug for every
- * property in that estate, so the *second* property collides with the first —
- * the intended safety behaviour until an admin configures a uniquely-deriving
- * template.
+ * Identifier formulas are **code-defaulted per type** (not configured through
+ * the `identifierTemplate` field). The config's `identifierTemplate` /
+ * `identifierMax` are kept for backward compatibility and display only:
+ *   - land          → `{estate_slug}-{street_name}-{plot_number}`
+ *   - house (bungalow/terrace/duplex) → `{estate_slug}-{street_name}-{house_number}`
+ *   - house (apartment/flat) → `{estate_slug}-{block_name}-{floor}-{unit_number}`
+ *
+ * The required address components for a type are resolved from the configured
+ * `addressComponents` block (keys are `street_name`, `plot_number`,
+ * `house_number`, `block_name`, `floor_number`, `unit_number`; labels are
+ * human-facing). With no address components configured the formula cannot
+ * produce a complete identifier — that is the intended safety behaviour.
  */
 
 export interface IdentifierInput {
   estateSlug: string;
   typeKey: string;
+  /** For house properties: the nested house type key. Null for land. */
+  houseTypeKey: string | null;
   addressComponents: AddressComponents;
   propertyOptions: PropertyOptions;
 }
@@ -36,37 +43,83 @@ export interface IdentifierResult {
   reasons: string[];
 }
 
+/** Per-type identifier formula: the token keys each type fills in order. */
+const FORMULAS: Record<string, string[]> = {
+  land: ['estate_slug', 'street_name', 'plot_number'],
+  'house.bungalow': ['estate_slug', 'street_name', 'house_number'],
+  'house.terrace': ['estate_slug', 'street_name', 'house_number'],
+  'house.duplex': ['estate_slug', 'street_name', 'house_number'],
+  'house.apartment': ['estate_slug', 'street_name', 'block_name', 'floor_number', 'unit_number'],
+  'house.flat': ['estate_slug', 'street_name', 'block_name', 'floor_number', 'unit_number'],
+};
+
+const SEPARATOR = '-';
+
 /**
  * Renders the identifier for a property.
  *
- * - If a required component (for the asset type) is missing/empty, the
- *   identifier is `incomplete` and no identifier is produced.
+ * - The token set is fixed per `(typeKey, houseTypeKey)`; unknown/missing
+ *   component values are treated as missing required data.
+ * - If a required component is missing/empty, the identifier is `incomplete`
+ *   and no identifier is produced.
  * - If the rendered string is empty or contains only separators, it is rejected.
  * - Leading zeros in component values are preserved (values are strings, never
  *   coerced to numbers).
  */
 export function deriveIdentifier(input: IdentifierInput): IdentifierResult {
-  const { estateSlug, typeKey, addressComponents, propertyOptions } = input;
-  const components = propertyOptions.addressComponents;
+  const { estateSlug, typeKey, houseTypeKey, addressComponents, propertyOptions } = input;
+  const houseType = houseTypeKey ? `${typeKey}.${houseTypeKey}` : typeKey;
+  const reasons: string[] = [];
 
-  // Determine which components are required for this asset type.
+  // An identifier can never be complete without an estate slug — it is the
+  // leading token of every per-type formula.
+  if (!estateSlug || String(estateSlug).trim() === '') {
+    reasons.push('The estate slug is empty');
+    return { identifier: null, incomplete: true, reasons };
+  }
+
+  const tokens = FORMULAS[houseType];
+
+  if (!tokens) {
+    reasons.push(`No identifier formula configured for property type "${houseType}"`);
+    return { identifier: null, incomplete: true, reasons };
+  }
+
+  // Resolve which components this type requires, from config. A component is
+  // required when it names this top-level type or the nested house type in
+  // requiredFor (or applies to all, via empty requiredFor), and is not in
+  // notApplicableFor for either.
+  const components = propertyOptions.addressComponents;
   const requiredKeys = new Set<string>();
   for (const component of components) {
-    const inRequiredFor =
-      component.requiredFor.length > 0 && component.requiredFor.includes(typeKey);
-    const appliesToAll = component.requiredFor.length === 0;
-    const notApplicable = component.notApplicableFor.includes(typeKey);
+    const notApplicable =
+      component.notApplicableFor.includes(typeKey) ||
+      (houseTypeKey && component.notApplicableFor.includes(houseType));
     if (notApplicable) continue;
-    // A component is required when it applies to all types (empty requiredFor)
-    // or when it explicitly names this type.
-    if (inRequiredFor || appliesToAll) {
+    const appliesToAll = component.requiredFor.length === 0;
+    const explicitlyRequired =
+      component.requiredFor.includes(typeKey) ||
+      (houseTypeKey && component.requiredFor.includes(houseType));
+    if (appliesToAll || explicitlyRequired) {
       requiredKeys.add(component.key);
     }
   }
 
-  // Validate the required components are present and non-empty.
+  // Every token in the formula must have a non-empty value.
   const missing: string[] = [];
+  for (const token of tokens) {
+    if (token === 'estate_slug') continue; // always supplied by the caller
+    const value = addressComponents[token];
+    if (value === undefined || value === null || String(value).trim() === '') {
+      const component = components.find((c) => c.key === token);
+      missing.push(`${component?.label ?? token}`);
+    }
+  }
+
+  // Also enforce any config-declared required components not already covered
+  // by the formula (defensive — formula and config stay in step by design).
   for (const key of requiredKeys) {
+    if (tokens.includes(key) || key === 'estate_slug') continue;
     const value = addressComponents[key];
     if (value === undefined || value === null || String(value).trim() === '') {
       const component = components.find((c) => c.key === key);
@@ -74,11 +127,6 @@ export function deriveIdentifier(input: IdentifierInput): IdentifierResult {
     }
   }
 
-  // Render the template.
-  const template = propertyOptions.identifierTemplate;
-  const reasons: string[] = [];
-
-  // If any required component is missing, the identifier is incomplete.
   if (missing.length > 0) {
     reasons.push(
       `Missing required address component${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`,
@@ -86,11 +134,13 @@ export function deriveIdentifier(input: IdentifierInput): IdentifierResult {
     return { identifier: null, incomplete: true, reasons };
   }
 
-  const rendered = template.replace(/\{([a-z][a-z0-9_]{0,47})\}/gi, (_whole, token: string) => {
-    if (token === 'estate_slug') return estateSlug;
-    const value = addressComponents[token];
-    return value === undefined || value === null ? '' : String(value);
-  });
+  const rendered = tokens
+    .map((token) => {
+      if (token === 'estate_slug') return estateSlug;
+      const value = addressComponents[token];
+      return value === undefined || value === null ? '' : String(value);
+    })
+    .join(SEPARATOR);
 
   const trimmed = rendered.trim();
   if (trimmed.length === 0) {
@@ -98,17 +148,16 @@ export function deriveIdentifier(input: IdentifierInput): IdentifierResult {
     return { identifier: null, incomplete: true, reasons };
   }
 
-  // Collapse runs of separators produced by empty optional components
-  // (e.g. "estate--block" becomes "estate-block") so the identifier is clean.
   const collapsed = collapsedSeparators(trimmed);
   if (collapsed.length === 0) {
     reasons.push('The identifier renders to an empty value');
     return { identifier: null, incomplete: true, reasons };
   }
 
-  if (collapsed.length > propertyOptions.identifierMax) {
+  const maxLength = propertyOptions.identifierMax ?? 120;
+  if (collapsed.length > maxLength) {
     reasons.push(
-      `The identifier is ${collapsed.length} characters; the configured maximum is ${propertyOptions.identifierMax}`,
+      `The identifier is ${collapsed.length} characters; the configured maximum is ${maxLength}`,
     );
     return { identifier: null, incomplete: true, reasons };
   }
@@ -123,15 +172,10 @@ function collapsedSeparators(value: string): string {
 }
 
 /**
- * Whether the configured template can produce a *complete, unique* identifier
- * at all for a given estate. With no address components configured the
- * default template renders the estate slug for every property, so only one
- * property can ever exist — creation is effectively unavailable for a second
- * property. This helper is used to gate the UI and to surface a clear message
- * on the property-options endpoint.
+ * Whether the configured formula can produce a *complete, unique* identifier
+ * at all for a given estate. The per-type formulas always require at least one
+ * address component, so this is true whenever address components are configured.
  */
 export function identifierConfigured(propertyOptions: PropertyOptions): boolean {
-  // A template with at least one address-component placeholder can distinguish
-  // properties within an estate. The bare `{estate_slug}` default cannot.
   return propertyOptions.addressComponents.length > 0;
 }

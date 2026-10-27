@@ -15,96 +15,93 @@
   "assetModel": {
     "types": [
       {
+        "key": "land",
+        "label": "Land",
+        "detailKind": "LAND_PARCEL",
+        "requiresUnits": false,
+        "unitTypeKeys": [],
+        "active": true
+      },
+      {
         "key": "house",
         "label": "House",
         "detailKind": "PROPERTY",
         "requiresUnits": false,
         "unitTypeKeys": [],
         "active": true
-      },
-      {
-        "key": "apartment_block",
-        "label": "Apartment block",
-        "detailKind": "PROPERTY",
-        "requiresUnits": true,
-        "unitTypeKeys": [
-          "studio",
-          "one_bedroom",
-          "two_bedroom",
-          "three_bedroom",
-          "four_bedroom",
-          "penthouse"
-        ],
-        "defaultUnitTypeKey": "two_bedroom",
-        "active": true
-      },
-      {
-        "key": "land_plot",
-        "label": "Land plot",
-        "detailKind": "LAND_PARCEL",
-        "requiresUnits": false,
-        "unitTypeKeys": [],
-        "active": true
       }
     ],
-    "unitTypes": [
-      {
-        "key": "studio",
-        "label": "Studio",
-        "bedrooms": 0,
-        "active": true
-      },
-      {
-        "key": "one_bedroom",
-        "label": "One bedroom",
-        "bedrooms": 1,
-        "active": true
-      },
-      {
-        "key": "two_bedroom",
-        "label": "Two bedroom",
-        "bedrooms": 2,
-        "active": true
-      },
-      {
-        "key": "three_bedroom",
-        "label": "Three bedroom",
-        "bedrooms": 3,
-        "active": true
-      },
-      {
-        "key": "four_bedroom",
-        "label": "Four bedroom",
-        "bedrooms": 4,
-        "active": true
-      },
-      {
-        "key": "penthouse",
-        "label": "Penthouse",
-        "bedrooms": 4,
-        "active": true
-      },
-      {
-        "key": "shop",
-        "label": "Shop",
-        "bedrooms": 0,
-        "active": true
-      },
-      {
-        "key": "office",
-        "label": "Office",
-        "bedrooms": 0,
-        "active": true
-      }
-    ],
+    "unitTypes": [],
     "allowMultipleAssetsPerResident": true,
     "requireApprovalForAssignmentChanges": true
   },
   "propertyOptions": {
-    "addressComponents": [],
+    "addressComponents": [
+      {
+        "key": "street_name",
+        "label": "Street name",
+        "requiredFor": ["land", "house"],
+        "notApplicableFor": [],
+        "maxLength": 120,
+        "pattern": null
+      },
+      {
+        "key": "plot_number",
+        "label": "Plot number",
+        "requiredFor": ["land"],
+        "notApplicableFor": [
+          "house.bungalow",
+          "house.terrace",
+          "house.duplex",
+          "house.apartment",
+          "house.flat"
+        ],
+        "maxLength": 32,
+        "pattern": "\\d+"
+      },
+      {
+        "key": "house_number",
+        "label": "House number",
+        "requiredFor": ["house.bungalow", "house.terrace", "house.duplex"],
+        "notApplicableFor": ["house.apartment", "house.flat", "land"],
+        "maxLength": 32,
+        "pattern": "\\d+[A-Za-z]?"
+      },
+      {
+        "key": "block_name",
+        "label": "Building / block name",
+        "requiredFor": ["house.apartment", "house.flat"],
+        "notApplicableFor": ["house.bungalow", "house.terrace", "house.duplex", "land"],
+        "maxLength": 64,
+        "pattern": null
+      },
+      {
+        "key": "floor_number",
+        "label": "Floor number",
+        "requiredFor": ["house.apartment", "house.flat"],
+        "notApplicableFor": ["house.bungalow", "house.terrace", "house.duplex", "land"],
+        "maxLength": 16,
+        "pattern": "\\d+"
+      },
+      {
+        "key": "unit_number",
+        "label": "Unit / apartment number",
+        "requiredFor": ["house.apartment", "house.flat"],
+        "notApplicableFor": ["house.bungalow", "house.terrace", "house.duplex", "land"],
+        "maxLength": 32,
+        "pattern": "\\d+[A-Za-z]?"
+      }
+    ],
+    "houseTypes": [
+      { "key": "bungalow", "label": "Bungalow", "active": true },
+      { "key": "terrace", "label": "Terrace", "active": true },
+      { "key": "duplex", "label": "Duplex", "active": true },
+      { "key": "apartment", "label": "Apartment", "active": true },
+      { "key": "flat", "label": "Flat", "active": true }
+    ],
     "identifierTemplate": "{estate_slug}",
     "identifierMax": 120,
-    "$comment": "Address structure is deliberately not configured: no Silverstone convention is assumed. An administrator configures address components and the identifier template per deployment. Until a template that can render a unique, complete identifier exists, property creation is unavailable."
+    "$comment": "Address structure is configurable per deployment. House sub-types are configured via houseTypes; each address component declares which top-level type and/or house sub-type it applies to via requiredFor / notApplicableFor. Identifier formulas are code-defaulted per type and not editable here."
   },
   "modules": {
     "estates": true,
