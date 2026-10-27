@@ -33,10 +33,7 @@ export interface ResidentDashboardServiceOptions {
 export class ResidentDashboardService {
   constructor(private readonly options: ResidentDashboardServiceOptions) {}
 
-  async get(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentDashboardView> {
+  async get(organizationId: string, userId: string): Promise<ResidentDashboardView> {
     // Sequential on purpose: every service opens its own queries, and the
     // database connection budget is small. One section at a time keeps the
     // pool quiet.
@@ -50,9 +47,7 @@ export class ResidentDashboardService {
       ? await this.options.finance.view(organizationId, userId)
       : null;
 
-    const codes = this.options.codes
-      ? await this.options.codes.list(organizationId, userId)
-      : null;
+    const codes = this.options.codes ? await this.options.codes.list(organizationId, userId) : null;
 
     const complaints = this.options.complaints
       ? await this.options.complaints.list(organizationId, userId)
@@ -71,8 +66,7 @@ export class ResidentDashboardService {
       : null;
 
     const openComplaints = (complaints?.complaints ?? []).filter(
-      (complaint) =>
-        complaint.status === 'OPEN' || complaint.status === 'IN_PROGRESS',
+      (complaint) => complaint.status === 'OPEN' || complaint.status === 'IN_PROGRESS',
     ).length;
 
     return {
@@ -81,14 +75,10 @@ export class ResidentDashboardService {
       finance: {
         outstandingCount: finance?.outstanding.length ?? 0,
         outstandingTotalKobo:
-          finance?.outstanding.reduce(
-            (total, invoice) => total + invoice.amountKobo,
-            0,
-          ) ?? 0,
+          finance?.outstanding.reduce((total, invoice) => total + invoice.amountKobo, 0) ?? 0,
       },
       codes: {
-        activeCount: (codes?.codes ?? []).filter((code) => code.status === 'ACTIVE')
-          .length,
+        activeCount: (codes?.codes ?? []).filter((code) => code.status === 'ACTIVE').length,
       },
       estateOffice: {
         openComplaints,

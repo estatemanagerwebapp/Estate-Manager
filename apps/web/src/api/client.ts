@@ -637,8 +637,7 @@ export const api = {
     ),
 
   /** S11: the dashboard home aggregate. */
-  getResidentDashboard: () =>
-    request<ResidentDashboardView>('/api/v1/resident/dashboard'),
+  getResidentDashboard: () => request<ResidentDashboardView>('/api/v1/resident/dashboard'),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

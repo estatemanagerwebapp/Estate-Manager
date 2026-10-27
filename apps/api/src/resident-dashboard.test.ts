@@ -151,9 +151,7 @@ beforeAll(async () => {
   const drafts = new PrismaResidentOnboardingRepository(prisma);
 
   const loadConfigForTest = async (): Promise<PropertyConfigSnapshot> => ({
-    assetTypes: [
-      { key: 'house', label: 'House', detailKind: 'PROPERTY', active: true },
-    ],
+    assetTypes: [{ key: 'house', label: 'House', detailKind: 'PROPERTY', active: true }],
     unitTypes: [],
     propertyOptions: {
       addressComponents: [

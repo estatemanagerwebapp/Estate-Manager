@@ -40,11 +40,7 @@ export function ResidentDashboardPage() {
       const data = await api.getResidentDashboard();
       setView(data);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not load your dashboard.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your dashboard.');
     } finally {
       setLoading(false);
     }
@@ -71,7 +67,10 @@ export function ResidentDashboardPage() {
   if (!view) {
     return (
       <div className="space-y-4">
-        <ErrorBanner message={error ?? 'Could not load your dashboard.'} onRetry={() => void load()} />
+        <ErrorBanner
+          message={error ?? 'Could not load your dashboard.'}
+          onRetry={() => void load()}
+        />
       </div>
     );
   }
@@ -80,9 +79,9 @@ export function ResidentDashboardPage() {
   const primaryProperty = property[0];
   const propertyLabel = primaryProperty
     ? `${primaryProperty.identifier} · ${primaryProperty.estate.name}`
-    : (profile.property
+    : profile.property
       ? `${profile.property.identifier} · ${profile.property.estate.name}`
-      : null);
+      : null;
   const firstName = profile.fullName?.split(' ')[0] ?? null;
 
   return (
@@ -121,12 +120,8 @@ export function ResidentDashboardPage() {
                 <p className="text-sm font-semibold text-(--color-ink)">
                   {primaryProperty.identifier}
                 </p>
-                <p className="text-xs text-(--color-ink-muted)">
-                  {primaryProperty.estate.name}
-                </p>
-                <p className="text-xs text-(--color-ink-muted)">
-                  {primaryProperty.fullAddress}
-                </p>
+                <p className="text-xs text-(--color-ink-muted)">{primaryProperty.estate.name}</p>
+                <p className="text-xs text-(--color-ink-muted)">{primaryProperty.fullAddress}</p>
                 <Badge tone={primaryProperty.status === 'ACTIVE' ? 'success' : 'warning'}>
                   {primaryProperty.typeLabel}
                 </Badge>
@@ -248,17 +243,12 @@ export function ResidentDashboardPage() {
           />
           <CardBody>
             {notifications.upcomingBookings.length === 0 ? (
-              <EmptyState
-                title="No bookings"
-                body="Facility bookings you request appear here."
-              />
+              <EmptyState title="No bookings" body="Facility bookings you request appear here." />
             ) : (
               <ul className="space-y-2">
                 {notifications.upcomingBookings.slice(0, 3).map((booking) => (
                   <li key={booking.id} className="text-sm">
-                    <span className="font-semibold text-(--color-ink)">
-                      {booking.facilityName}
-                    </span>
+                    <span className="font-semibold text-(--color-ink)">{booking.facilityName}</span>
                     <span className="block text-xs text-(--color-ink-muted)">
                       {formatDate(booking.startsAt)}
                     </span>
@@ -282,17 +272,12 @@ export function ResidentDashboardPage() {
           />
           <CardBody>
             {notifications.recentNotifications.length === 0 ? (
-              <EmptyState
-                title="Nothing new"
-                body="Updates from the estate office appear here."
-              />
+              <EmptyState title="Nothing new" body="Updates from the estate office appear here." />
             ) : (
               <ul className="space-y-2">
                 {notifications.recentNotifications.map((notification) => (
                   <li key={notification.id} className="text-sm">
-                    <span className="font-semibold text-(--color-ink)">
-                      {notification.title}
-                    </span>
+                    <span className="font-semibold text-(--color-ink)">{notification.title}</span>
                     <span className="block text-xs text-(--color-ink-muted)">
                       {formatDate(notification.createdAt)}
                     </span>
