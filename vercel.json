@@ -5,7 +5,7 @@
       "root": "apps/api",
       "framework": "express",
       "entrypoint": "src/vercel.ts",
-      "installCommand": "cd ../.. && npm ci",
+      "installCommand": "cd ../.. && npm ci --include=dev",
       "buildCommand": "cd ../.. && npm run prisma:generate && npm run build:packages && cp config/organization.default.json apps/api/organization.default.json && npm run build:api",
       "functions": {
         "src/vercel.ts": {
@@ -16,7 +16,7 @@
     "web": {
       "root": "apps/web",
       "framework": "vite",
-      "installCommand": "cd ../.. && npm ci",
+      "installCommand": "cd ../.. && npm ci --include=dev",
       "buildCommand": "cd ../.. && npm run build:packages && npm run build:web",
       "outputDirectory": "dist",
       "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]

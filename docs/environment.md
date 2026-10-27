@@ -46,3 +46,13 @@ listing every problem.
   private ID-document storage. R2 credentials must have access only to the
   intended bucket; do not make the bucket public.
 - After the first `db:deploy` + `db:seed`, run `ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run bootstrap:admin` to create the first `SUPER_ADMIN`.
+
+## Vercel notes
+
+- The API build needs build-time type packages (`@types/node`,
+  `@types/express`, `@types/cors`, `@types/multer`) and the web build needs
+  `vite`; all are devDependencies. Because `NODE_ENV=production` makes
+  `npm ci` omit devDependencies, `vercel.json` installs with
+  `npm ci --include=dev` for both services. Keep that flag when editing an
+  install command, or the build fails with `TS2688: Cannot find type
+  definition file for 'node'`.
