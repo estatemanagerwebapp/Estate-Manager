@@ -73,14 +73,6 @@ export function AppShell() {
               Properties
             </NavLink>
           )}
-          {can['property.read'] && (
-            <NavLink to="/app/property-options" className={navClasses}>
-              <span className="text-(--color-primary)">
-                <SlidersHorizontal aria-hidden size={16} />
-              </span>
-              Property options
-            </NavLink>
-          )}
           {canManageUsers(user) && (
             <NavLink to="/app/residents" className={navClasses}>
               <span className="text-(--color-primary)">
@@ -97,12 +89,34 @@ export function AppShell() {
               Users
             </NavLink>
           )}
-          <NavLink to="/app/account" className={navClasses}>
-            <span className="text-(--color-primary)">
-              <KeyRound aria-hidden size={16} />
-            </span>
-            Account &amp; password
-          </NavLink>
+          <div className="mt-auto border-t border-slate-200/80 pt-3">
+            <p
+              id="nav-settings"
+              className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)"
+            >
+              Settings
+            </p>
+            <div
+              role="group"
+              aria-labelledby="nav-settings"
+              className="flex flex-col gap-1"
+            >
+              {can['property.read'] && (
+                <NavLink to="/app/property-options" className={navClasses}>
+                  <span className="text-(--color-primary)">
+                    <SlidersHorizontal aria-hidden size={16} />
+                  </span>
+                  Property options
+                </NavLink>
+              )}
+              <NavLink to="/app/account" className={navClasses}>
+                <span className="text-(--color-primary)">
+                  <KeyRound aria-hidden size={16} />
+                </span>
+                Account &amp; password
+              </NavLink>
+            </div>
+          </div>
         </nav>
 
         <div className="border-t border-slate-200/80 p-4">
