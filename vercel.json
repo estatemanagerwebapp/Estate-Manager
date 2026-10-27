@@ -11,6 +11,6 @@
     { "src": "/(.*)", "dest": "/apps/web/dist/index.html" }
   ],
   "functions": {
-    "apps/api/src/vercel.ts": { "runtime": "nodejs20.x", "maxDuration": 10 }
+    "apps/api/src/vercel.ts": { "runtime": "nodejs18.x", "maxDuration": 10 }
   }
 }
