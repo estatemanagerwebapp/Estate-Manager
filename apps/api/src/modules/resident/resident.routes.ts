@@ -31,6 +31,7 @@ import { ResidentMessagesService } from './messages.service.js';
 import { ResidentCommunityService } from './community.service.js';
 import { ResidentBookingsService } from './bookings.service.js';
 import { ResidentSosService } from './sos.service.js';
+import { ResidentNotificationsService } from './notifications.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -54,6 +55,8 @@ export interface ResidentRouteOptions {
   bookings?: ResidentBookingsService;
   /** S9: emergency / SOS alerts. */
   sos?: ResidentSosService;
+  /** S10: the resident's notification inbox. */
+  notifications?: ResidentNotificationsService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -741,6 +744,66 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         makeContext(req, res).requestId,
       );
       res.status(201).json({ data: response });
+    }),
+  );
+
+  // --- S10: Notifications -----------------------------------------------------------
+  // GET  /notifications         — recent notifications, unread count and the
+  //                                bookings the resident is waiting on.
+  // POST /notifications/:id/read — mark one of the resident's own
+  //                                notifications as read.
+  //
+  // Self-scoped: the notification id is resolved against the session user,
+  // so another resident's notification is invisible (404).
+
+  router.get(
+    '/notifications',
+    authGuard,
+    residentGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.notifications) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Notifications service not wired'));
+        return;
+      }
+      const inbox = await options.notifications.list(organizationId, ctx.userId);
+      const bookings = options.bookings
+        ? await options.bookings.list(organizationId, ctx.userId)
+        : { upcoming: [] };
+      res.status(200).json({
+        data: {
+          upcomingBookings: bookings.upcoming,
+          recentNotifications: inbox.recentNotifications,
+          unreadCount: inbox.unreadCount,
+        },
+      });
+    }),
+  );
+
+  router.post(
+    '/notifications/:id/read',
+    authGuard,
+    residentGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.notifications) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Notifications service not wired'));
+        return;
+      }
+      const response = await options.notifications.markRead(
+        organizationId,
+        ctx.userId,
+        String(req.params.id),
+      );
+      res.status(200).json({ data: response });
     }),
   );
 

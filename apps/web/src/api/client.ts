@@ -66,6 +66,8 @@ import type {
   ResidentSosEventsResponse,
   ResidentCreateSosInput,
   ResidentCreateSosResponse,
+  ResidentNotificationsView,
+  ResidentMarkNotificationReadResponse,
 } from '@silverstone/shared';
 
 /**
@@ -627,6 +629,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  /** S10: the resident's notification inbox plus their upcoming bookings. */
+  getResidentNotifications: () =>
+    request<ResidentNotificationsView>('/api/v1/resident/notifications'),
+
+  /** S10: mark one of the resident's own notifications as read. */
+  markResidentNotificationRead: (notificationId: string) =>
+    request<ResidentMarkNotificationReadResponse>(
+      `/api/v1/resident/notifications/${encodeURIComponent(notificationId)}/read`,
+      { method: 'POST' },
+    ),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

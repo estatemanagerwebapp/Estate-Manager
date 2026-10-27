@@ -19,11 +19,26 @@ const MAX_ATTENDEES = 500;
 /** How far in the future a booking may start. */
 const MAX_ADVANCE_DAYS = 365;
 
+export interface BookingCreatedHook {
+  organizationId: string;
+  userId: string;
+  bookingId: string;
+  facilityId: string;
+  facilityName: string;
+  startsAt: Date;
+  endsAt: Date;
+}
+
 export interface ResidentBookingsServiceOptions {
   bookings: PrismaBookingRepository;
   audit: PrismaAuditRepository;
   /** Resolves the acting resident's estate (may be null). */
   loadEstateId: (organizationId: string, userId: string) => Promise<string | null>;
+  /**
+   * Called after a booking is created — the resident's inbox is notified
+   * from here. Failures in the hook never fail the booking.
+   */
+  onBookingCreated?: (hook: BookingCreatedHook) => Promise<void>;
 }
 
 /**
@@ -167,6 +182,22 @@ export class ResidentBookingsService {
         attendees,
       },
     });
+
+    if (this.options.onBookingCreated) {
+      try {
+        await this.options.onBookingCreated({
+          organizationId,
+          userId,
+          bookingId: record.id,
+          facilityId: facility.id,
+          facilityName: facility.name,
+          startsAt,
+          endsAt,
+        });
+      } catch {
+        // A failed notification must not undo a successful booking.
+      }
+    }
 
     return { ok: true, booking: toDto(record) };
   }

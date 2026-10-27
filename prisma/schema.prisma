@@ -49,6 +49,7 @@ model Organization {
   facilities          Facility[]
   bookings            Booking[]
   sosEvents           SosEvent[]
+  notifications       Notification[]
 
   @@map("organizations")
 }
@@ -117,6 +118,7 @@ model User {
   announcements      Announcement[]
   bookings           Booking[]
   sosEvents          SosEvent[]
+  notifications      Notification[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -508,6 +510,32 @@ model SosEvent {
   @@index([organizationId, userId, raisedAt])
   @@index([organizationId, status])
   @@map("sos_events")
+}
+
+// --- Phase 3 — resident notifications (S10) -----------------------------------------
+// A per-resident inbox. The estate office and the resident's own actions
+// (a booking request, for instance) enqueue entries; the resident reads
+// and dismisses them.
+
+model Notification {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  /// BOOKING | ANNOUNCEMENT | BROADCAST | COMPLANT | SYSTEM.
+  kind           String   @db.VarChar(16)
+  title          String   @db.VarChar(160)
+  body           String
+  read           Boolean  @default(false) @map("is_read")
+  /// An in-app route the resident can follow, e.g. "/resident/app/bookings".
+  linkTo         String?  @map("link_to") @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, userId, createdAt])
+  @@index([organizationId, userId, read])
+  @@map("notifications")
 }
 
 /// HttpOnly-cookie session. The cookie carries an opaque session id; the row

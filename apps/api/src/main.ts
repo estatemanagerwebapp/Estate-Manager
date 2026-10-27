@@ -107,6 +107,7 @@ async function main(): Promise<void> {
       community: deps.residentCommunityService,
       bookings: deps.residentBookingsService,
       sos: deps.residentSosService,
+      notifications: deps.residentNotificationsService,
     },
   });
 

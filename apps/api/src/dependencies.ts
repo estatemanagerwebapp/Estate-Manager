@@ -32,6 +32,8 @@ import { PrismaBookingRepository } from './modules/resident/bookings-repository.
 import { ResidentBookingsService } from './modules/resident/bookings.service.js';
 import { PrismaSosRepository } from './modules/resident/sos-repository.js';
 import { ResidentSosService } from './modules/resident/sos.service.js';
+import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
+import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -97,6 +99,8 @@ export interface AppDependencies {
   residentBookingsService: ResidentBookingsService;
   /** Phase 3 (S9) — resident emergency / SOS alerts. */
   residentSosService: ResidentSosService;
+  /** Phase 3 (S10) — resident notification inbox. */
+  residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: LocalMediaStorage;
   loadPropertyDetail: (
@@ -247,6 +251,11 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
 
+  const notificationRepo = new PrismaNotificationRepository(prisma);
+  const residentNotificationsService = new ResidentNotificationsService({
+    notifications: notificationRepo,
+  });
+
   const bookingRepo = new PrismaBookingRepository(prisma);
   const residentBookingsService = new ResidentBookingsService({
     bookings: bookingRepo,
@@ -256,6 +265,15 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       if (!draft?.propertyId) return null;
       const property = await properties.findById(organizationId, draft.propertyId);
       return property?.estateId ?? null;
+    },
+    // A booking request lands in the resident's inbox.
+    onBookingCreated: async (hook) => {
+      await residentNotificationsService.notify(hook.organizationId, hook.userId, {
+        kind: 'BOOKING',
+        title: `Booking requested — ${hook.facilityName}`,
+        body: `Your request for ${hook.facilityName} on ${hook.startsAt.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })} was sent to the estate office.`,
+        linkTo: '/resident/app/bookings',
+      });
     },
   });
 
@@ -315,6 +333,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentCommunityService,
     residentBookingsService,
     residentSosService,
+    residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,
     loadConfig,
