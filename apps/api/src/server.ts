@@ -1,3 +1,4 @@
+import express, { type Request, type Response } from 'express';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /**
@@ -7,12 +8,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
  * instead of `server.listen()` it exports a request handler for Vercel's
  * Node.js runtime.
  *
- * This module deliberately has no static imports from the application graph.
- * Every part of the app is loaded inside `buildApp()` so that a failure while
- * loading it (a missing native module, an invalid environment, a broken
- * workspace package) is caught and reported as JSON. A static import failure
- * happens before any handler exists, which the platform can only surface as an
- * opaque FUNCTION_INVOCATION_FAILED response.
+ * `express` is the only runtime import at module scope; Vercel's Express
+ * framework preset uses it (and the conventional `src/server.ts` file name) to
+ * detect the application. Everything else is loaded inside `buildApp()` so a
+ * failure while loading the app graph (a missing native module, an invalid
+ * environment, a broken workspace package) is caught and reported as JSON. A
+ * static app import failure happens before any handler exists, which the
+ * platform can only surface as an opaque FUNCTION_INVOCATION_FAILED response.
  *
  * Environment variables must be set in the Vercel project settings
  * (see docs/environment.md); DATABASE_URL is required.
@@ -171,46 +173,47 @@ function describeStartupError(error: unknown): string {
   );
 }
 
-function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
-  const payload = JSON.stringify(body);
-  res.statusCode = statusCode;
-  res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.setHeader('cache-control', 'no-store');
-  res.setHeader('content-length', Buffer.byteLength(payload));
-  res.end(payload);
-}
-
-let appPromise: Promise<HttpHandler> | undefined;
-
-function loadApp(): Promise<HttpHandler> {
-  appPromise ??= buildApp().catch((error: unknown) => {
-    // Never let the diagnostic path throw. The logger may itself be the part
-    // that cannot load.
-    void import('./lib/logger.js')
-      .then(({ logger }) => logger.fatal({ err: error }, 'API failed to start'))
-      .catch(() => undefined);
-    throw error;
-  });
-  return appPromise;
-}
-
 /**
- * Vercel invokes this per request. The Express app is built lazily so a
- * startup failure is reported as JSON instead of crashing module evaluation.
+ * Vercel detects an Express app by file name (`src/server.ts` is one of the
+ * supported locations) and calls the default export per request. The app graph
+ * is still loaded lazily so a startup failure is answered with JSON instead of
+ * an opaque FUNCTION_INVOCATION_FAILED response.
  */
-export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  let app: HttpHandler;
+const app = express();
+let initPromise: Promise<HttpHandler> | undefined;
+let inner: HttpHandler | undefined;
+
+function init(): Promise<HttpHandler> {
+  initPromise ??= buildApp().then((handler) => {
+    inner = handler;
+    return handler;
+  });
+  return initPromise;
+}
+
+// Begin loading during cold start. A failure is kept for the first request and
+// the catch prevents an unhandled rejection.
+void init().catch((error: unknown) => {
+  // Never let the diagnostic path throw. The logger may itself be the part
+  // that cannot load.
+  void import('./lib/logger.js')
+    .then(({ logger }) => logger.fatal({ err: error }, 'API failed to start'))
+    .catch(() => undefined);
+});
+
+app.use(async (req: Request, res: Response) => {
   try {
-    app = await loadApp();
+    const handler = inner ?? (await init());
+    handler(req, res);
   } catch (error) {
-    sendJson(res, 503, {
+    if (res.headersSent) return;
+    res.status(503).json({
       error: {
         code: 'STARTUP_FAILED',
         message: describeStartupError(error),
       },
     });
-    return;
   }
+});
 
-  app(req, res);
-}
+export default app;
