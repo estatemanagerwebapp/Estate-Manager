@@ -11,6 +11,7 @@
     "start": "node dist/main.js",
     "bootstrap:admin": "tsx src/bootstrap-admin.ts",
     "e2e:reset": "tsx src/e2e/reset-database.ts",
+    "db:cleanup-pool": "tsx src/e2e/cleanup-db-pool.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
