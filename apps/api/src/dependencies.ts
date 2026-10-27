@@ -38,7 +38,11 @@ import {
   ResidentOnboardingService,
   type PropertyDetail,
 } from './modules/auth/resident-onboarding.service.js';
-import { LocalMediaStorage } from './modules/media/media-storage.js';
+import {
+  LocalMediaStorage,
+  R2MediaStorage,
+  type MediaStorage,
+} from './modules/media/media-storage.js';
 import { PrismaAuditRepository } from './modules/audit/audit-repository.js';
 import { PermissionResolver } from './modules/auth/permission-resolver.js';
 import { AuthService } from './modules/auth/auth.service.js';
@@ -102,7 +106,7 @@ export interface AppDependencies {
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
-  mediaStorage: LocalMediaStorage;
+  mediaStorage: MediaStorage;
   loadPropertyDetail: (
     organizationId: string,
     propertyId: string,
@@ -182,8 +186,20 @@ export async function createAppDependencies(): Promise<AppDependencies> {
 
   // Phase 2 — resident onboarding (persistent code, payment-gated).
   const residentDrafts = new PrismaResidentOnboardingRepository(prisma);
-  const mediaRoot = path.resolve(process.cwd(), 'uploads');
-  const mediaStorage = new LocalMediaStorage(prisma, mediaRoot);
+  const mediaStorage: MediaStorage =
+    env.MEDIA_STORAGE === 'r2'
+      ? new R2MediaStorage(prisma, {
+          accountId: env.R2_ACCOUNT_ID!,
+          accessKeyId: env.R2_ACCESS_KEY_ID!,
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
+          bucketName: env.R2_BUCKET_NAME!,
+          publicBase: `${env.API_BASE_PATH}/media`,
+        })
+      : new LocalMediaStorage(
+          prisma,
+          path.resolve(process.cwd(), 'uploads'),
+          `${env.API_BASE_PATH}/media`,
+        );
 
   const loadPropertyDetail = async (
     organizationId: string,

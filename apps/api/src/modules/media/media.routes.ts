@@ -1,26 +1,24 @@
 import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
-import * as fs from 'node:fs';
 import { AppError } from '../../lib/errors.js';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { ResidentOnboardingService } from '../auth/resident-onboarding.service.js';
-import type { LocalMediaStorage, MediaUploadResult } from './media-storage.js';
+import type { MediaStorage, MediaUploadResult } from './media-storage.js';
 
 /**
  * Media upload + serving routes.
  *
  *   POST /media/uploads   — authenticated + user.manage; stores the file
- *                           locally and records a MediaFile row. The response
+ *                           in configured storage and records a MediaFile row. The response
  *                           carries a `publicUrl` the client can use.
- *   GET  /media/:org/:id — public static file serving (the file is an ID
- *                           document; access is gated by the database
- *                           unique key + org scoping).
+ *   GET  /media/:org/:id — authenticated document retrieval, scoped to the
+ *                           uploader, owning resident, or user.manage role.
  */
 
 export interface MediaRouteOptions {
-  storage: LocalMediaStorage;
+  storage: MediaStorage;
   sessions: PrismaSessionRepository;
   permissions: PermissionResolver;
   organizationId: string;
@@ -94,8 +92,7 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
         uploadedById: auth.userId ?? null,
       });
 
-      // Attach to a resident draft when requested (the admin uploads on
-      // behalf of the resident).
+      // Attach the storage object key to a resident draft when requested.
       const draftId = (req.body?.draftId as string | undefined) ?? null;
       if (draftId) {
         await residentOnboarding.attachIdDocumentByAdmin(organizationId, draftId, result.publicUrl);
@@ -105,28 +102,38 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
     }),
   );
 
-  // --- GET /:org/:id (public serving) ------------------------------------------
+  // --- GET /:org/:id (authorization-checked serving) ---------------------------
 
   router.get(
     '/:org/:id',
+    authGuard,
     asyncWrap(async (req, res) => {
       const orgId = Array.isArray(req.params.org) ? req.params.org[0] : req.params.org;
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (typeof orgId !== 'string' || typeof id !== 'string') {
         throw new AppError(400, 'VALIDATION_ERROR', 'Missing media parameters');
       }
-      const relativePath = `${orgId}/${id}`;
-      const filePath = await storage.resolve(relativePath);
-      if (!filePath) {
+      const auth = getAuth(req);
+      if (!auth) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+      if (auth.organizationId !== organizationId || orgId !== organizationId) {
         throw new AppError(404, 'NOT_FOUND', 'Media file not found');
       }
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Length', stat?.size ?? 0);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
-      const stream = fs.createReadStream(filePath);
-      stream.on('error', () => res.destroy());
-      stream.pipe(res);
+      const canManageUsers = await permissions.can(auth.role, 'user.manage');
+      const relativePath = `${orgId}/${id}`;
+      const file = await storage.get(relativePath, {
+        organizationId,
+        userId: auth.userId,
+        canManageUsers,
+      });
+      if (!file) {
+        throw new AppError(404, 'NOT_FOUND', 'Media file not found');
+      }
+      res.setHeader('Content-Type', file.mimeType);
+      res.setHeader('Content-Length', file.sizeBytes);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'attachment');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.status(200).send(file.buffer);
     }),
   );
 

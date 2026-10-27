@@ -20,9 +20,10 @@ identity surface:
   payment status, and an optional link to the `User` once the account is
   created. Revocable by admin deletion; no TTL, no attempt cap, not
   single-use — re-shareable from the Residents page.
-- `MediaFile` — uploaded ID documents stored under
-  `apps/api/uploads/<org>/<id>` on local disk (Cloudflare R2 later on
-  Vercel, rewrite URL only); served at `GET /media/:org/:id`.
+- `MediaFile` — uploaded ID documents tracked by organization and relative
+  object key. Local development stores files under `apps/api/uploads`; Vercel
+  deployments use a private Cloudflare R2 bucket and serve authorized files
+  through `GET /api/v1/media/:org/:id`.
 - `Session` — one row per live sign-in; `expiresAt` is `NULL` when the
   session was revoked. The opaque cookie value is the row's primary key.
 - `PasswordResetToken` — stores only the **SHA-256 hash** of the

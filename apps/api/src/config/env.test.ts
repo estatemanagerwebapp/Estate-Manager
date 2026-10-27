@@ -61,6 +61,27 @@ describe('parseEnv', () => {
     ).toThrow(/wildcard/);
   });
 
+  it('requires R2-backed durable storage in production', () => {
+    expect(() =>
+      parseEnv({
+        ...base,
+        NODE_ENV: 'production',
+        CORS_ORIGINS: 'https://example.com',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/MEDIA_STORAGE=r2/);
+  });
+
+  it('requires all R2 settings when R2 storage is selected', () => {
+    expect(() =>
+      parseEnv({
+        ...base,
+        MEDIA_STORAGE: 'r2',
+        R2_ACCOUNT_ID: 'account',
+        R2_ACCESS_KEY_ID: 'key',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/R2_SECRET_ACCESS_KEY/);
+  });
+
   it('rejects a production environment with no CORS origins', () => {
     expect(() =>
       parseEnv({

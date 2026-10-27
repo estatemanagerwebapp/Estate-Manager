@@ -29,7 +29,7 @@ import {
 import type { PrismaSessionRepository } from './session-repository.js';
 import type { PermissionResolver } from './permission-resolver.js';
 import type { ResidentOnboardingService } from './resident-onboarding.service.js';
-import type { LocalMediaStorage } from '../media/media-storage.js';
+import type { MediaStorage } from '../media/media-storage.js';
 
 export interface OnboardingRouteOptions {
   residentOnboarding: ResidentOnboardingService;
@@ -37,7 +37,7 @@ export interface OnboardingRouteOptions {
   permissions: PermissionResolver;
   organizationId: string;
   /** When provided, the guest ID-document upload route is mounted. */
-  mediaStorage?: LocalMediaStorage;
+  mediaStorage?: MediaStorage;
   rateLimits?: {
     guestPerWindow?: number;
   };
@@ -297,8 +297,8 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
   );
 
   // --- Guest: POST /by-code/:code/id-document (multipart) ---------------------------
-  // The resident uploads their own ID document. Stored locally; the
-  // `idDocumentUrl` is recorded on the draft.
+  // The resident uploads their own ID document. Only the object key is
+  // recorded on the draft; the API issues a short-lived read link when needed.
 
   if (options.mediaStorage) {
     const upload = multer({

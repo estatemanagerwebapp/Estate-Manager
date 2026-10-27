@@ -127,6 +127,13 @@ export const EnvSchema = z
     /** Reply-to / sender address for outbound email. Defaults to a
      *  deployment-local address so the default does not impersonate. */
     EMAIL_FROM: z.string().default('Silverstone Managers <noreply@silverstone.local>'),
+
+    /** Media backend: local for development, R2 for durable deployments. */
+    MEDIA_STORAGE: z.enum(['local', 'r2']).default('local'),
+    R2_ACCOUNT_ID: z.string().optional(),
+    R2_ACCESS_KEY_ID: z.string().optional(),
+    R2_SECRET_ACCESS_KEY: z.string().optional(),
+    R2_BUCKET_NAME: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.EMAIL_PROVIDER === 'resend' && !env.RESEND_API_KEY) {
@@ -134,6 +141,29 @@ export const EnvSchema = z
         code: 'custom',
         path: ['RESEND_API_KEY'],
         message: 'EMAIL_PROVIDER=resend requires RESEND_API_KEY',
+      });
+    }
+    if (env.MEDIA_STORAGE === 'r2') {
+      for (const key of [
+        'R2_ACCOUNT_ID',
+        'R2_ACCESS_KEY_ID',
+        'R2_SECRET_ACCESS_KEY',
+        'R2_BUCKET_NAME',
+      ] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `MEDIA_STORAGE=r2 requires ${key}`,
+          });
+        }
+      }
+    }
+    if (env.NODE_ENV === 'production' && env.MEDIA_STORAGE !== 'r2') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MEDIA_STORAGE'],
+        message: 'Production deployments require durable media storage (MEDIA_STORAGE=r2)',
       });
     }
   })

@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   OrganizationConfigError,
   parseOrganizationConfig,
@@ -13,6 +14,7 @@ import {
  *   1. $SILVERSTONE_CONFIG_FILE (explicit override for tests and deployments)
  *   2. ./config/organization.default.json   (repo root, when cwd is the repo)
  *   3. ../../config/organization.default.json (when cwd is apps/api)
+ *   4. organization.default.json              (bundled alongside this module on Vercel)
  *
  * The loader validates the document, so a corrupt or drift-edited file fails
  * startup instead of producing a half-configured organization.
@@ -24,6 +26,8 @@ export function loadBootstrapConfig(pathOverride?: string): OrganizationConfig {
   candidates.push(
     resolve(process.cwd(), 'config/organization.default.json'),
     resolve(process.cwd(), '../../config/organization.default.json'),
+    resolve(process.cwd(), 'organization.default.json'),
+    fileURLToPath(new URL('./organization.default.json', import.meta.url)),
   );
 
   const found = candidates

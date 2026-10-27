@@ -1,16 +1,29 @@
 {
-  "version": 2,
-  "framework": null,
-  "installCommand": "npm install",
-  "buildCommand": "npm run prisma:generate && npm run build",
-  "outputDirectory": "apps/web/dist",
-  "routes": [
-    { "src": "/api/v1/(.*)", "dest": "/apps/api/src/vercel.ts" },
-    { "src": "/api/(.*)", "dest": "/apps/api/src/vercel.ts" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/apps/web/dist/index.html" }
-  ],
-  "functions": {
-    "apps/api/src/vercel.ts": { "runtime": "nodejs18.x", "maxDuration": 10 }
-  }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "api": {
+      "root": "apps/api",
+      "framework": "express",
+      "entrypoint": "dist/vercel.js",
+      "installCommand": "cd ../.. && npm ci",
+      "buildCommand": "cd ../.. && npm run prisma:generate && npm run build:packages && npm run build:api && cp config/organization.default.json apps/api/dist/modules/organization/organization.default.json",
+      "functions": {
+        "dist/vercel.js": {
+          "includeFiles": "dist/modules/organization/organization.default.json"
+        }
+      }
+    },
+    "web": {
+      "root": "apps/web",
+      "framework": "vite",
+      "installCommand": "cd ../.. && npm ci",
+      "buildCommand": "cd ../.. && npm run build:packages && npm run build:web",
+      "outputDirectory": "dist",
+      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ]
 }
