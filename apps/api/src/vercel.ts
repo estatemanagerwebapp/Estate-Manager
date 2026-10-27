@@ -1,8 +1,9 @@
 import { ResidentProfileService } from './modules/resident/profile.service.js';
 import { ResidentPropertiesService } from './modules/resident/properties.service.js';
 import { ResidentDashboardService } from './modules/resident/dashboard.service.js';
+import express, { type Express } from 'express';
 import { createApp } from './app.js';
-import { getEnv } from './config/env.js';
+import { EnvironmentError, getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
 import { getPasswordHashAlgorithm, getPasswordHashPolicy } from './lib/password.js';
 import { logger } from './lib/logger.js';
@@ -136,6 +137,42 @@ async function buildApp() {
   });
 }
 
-const app = await buildApp();
+/**
+ * A misconfigured deployment must not answer every request with an opaque
+ * FUNCTION_INVOCATION_FAILED. Build a minimal app that reports the startup
+ * problem in the standard error envelope instead. Environment issues are
+ * safe to expose (variable names and static messages only); other errors are
+ * logged and only a redacted message is returned.
+ */
+function startupFailureApp(error: unknown): Express {
+  const message =
+    error instanceof EnvironmentError
+      ? error.issues.map((issue) => `${issue.variable}: ${issue.message}`).join('; ')
+      : redactStartupMessage(error);
+
+  const failure = express();
+  failure.use((_req, res) => {
+    res.status(503).json({
+      error: {
+        code: 'STARTUP_FAILED',
+        message,
+      },
+    });
+  });
+  return failure;
+}
+
+function redactStartupMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw
+    .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, 'postgresql://[redacted]@')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+    .slice(0, 1000);
+}
+
+const app = await buildApp().catch((error: unknown) => {
+  logger.fatal({ err: error }, 'API failed to start');
+  return startupFailureApp(error);
+});
 
 export default app;

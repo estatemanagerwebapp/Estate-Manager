@@ -10,10 +10,21 @@ import { getEnv } from '../config/env.js';
  * `password`, token, ID-document or authorization header never reaches disk.
  */
 export function createLogger(overrides: Record<string, unknown> = {}): Logger {
-  const env = getEnv();
+  // Environment validation belongs to the entrypoint. Keep logging available
+  // even when it fails, so the startup error can still be reported instead of
+  // crashing the function before any handler exists.
+  let level: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent' = 'info';
+  let service = 'Silverstone Managers';
+  try {
+    const env = getEnv();
+    level = env.LOG_LEVEL;
+    service = env.APP_NAME;
+  } catch {
+    // Invalid environment: the entrypoint reports the issues.
+  }
   return pino({
-    level: env.LOG_LEVEL,
-    base: { service: env.APP_NAME },
+    level,
+    base: { service },
     timestamp: pino.stdTimeFunctions.isoTime,
     redact: {
       paths: [
