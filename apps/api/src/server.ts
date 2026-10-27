@@ -217,6 +217,37 @@ function classifyDatabaseError(error: unknown): string | undefined {
   return undefined;
 }
 
+/** Strip connection strings, hosts, IPs and user names from a message. */
+function redact(text: string): string {
+  return text
+    .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, 'postgresql://[redacted]@')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+    .replace(/\bpostgres\.[a-z0-9]{6,}\b/gi, '[db-user]')
+    .replace(
+      /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\.(?:supabase\.(?:com|co|net|in)|amazonaws\.com|vercel\.app)\b/gi,
+      '[db-host]',
+    )
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, '[ip]');
+}
+
+/**
+ * The cause carries the actionable detail (auth vs network vs schema), but
+ * Prisma messages can name the host. Publish a redacted, truncated version.
+ */
+function describeCause(error: unknown): string | undefined {
+  let current: unknown = (error as { cause?: unknown } | null)?.cause;
+  for (let depth = 0; depth < 4 && current !== null && current !== undefined; depth += 1) {
+    if (current instanceof Error) {
+      const message = redact(current.message).replace(/\s+/g, ' ').trim().slice(0, 240);
+      if (message && message !== 'The database is not available') {
+        return `${current.name || 'Error'}: ${message}`;
+      }
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 export function describeStartupError(error: unknown): string {
   const issues = (error as { issues?: unknown }).issues;
   if (Array.isArray(issues) && issues.length > 0) {
@@ -231,14 +262,11 @@ export function describeStartupError(error: unknown): string {
   }
 
   const raw = error instanceof Error ? error.message : String(error);
-  const message =
-    raw
-      .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, 'postgresql://[redacted]@')
-      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
-      .slice(0, 1000) || 'The API failed to start.';
+  const message = redact(raw).slice(0, 1000) || 'The API failed to start.';
 
   const databaseIssue = classifyDatabaseError(error);
-  return databaseIssue ? `${message} — ${databaseIssue}` : message;
+  const cause = databaseIssue ? undefined : describeCause(error);
+  return [message, databaseIssue, cause].filter(Boolean).join(' — ');
 }
 
 /**
