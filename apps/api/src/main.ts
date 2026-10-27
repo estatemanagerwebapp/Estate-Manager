@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { ResidentProfileService } from './modules/resident/profile.service.js';
 import { ResidentPropertiesService } from './modules/resident/properties.service.js';
+import { ResidentDashboardService } from './modules/resident/dashboard.service.js';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
@@ -18,6 +19,36 @@ async function main(): Promise<void> {
     'password hashing backend selected',
   );
   const deps = await createAppDependencies();
+
+  // The profile and property services are shared: the resident routes use
+  // them directly and the dashboard home composes them.
+  const residentProfileService = new ResidentProfileService({
+    users: deps.users,
+    drafts: deps.residentOnboarding,
+    audit: deps.audit,
+    loadProperty: async (orgId, propertyId) => {
+      const detail = await deps.loadPropertyDetail(orgId, propertyId);
+      if (!detail) return null;
+      return { identifier: detail.identifier, estate: detail.estate };
+    },
+  });
+  const residentPropertiesService = new ResidentPropertiesService({
+    drafts: deps.residentOnboarding,
+    properties: deps.properties,
+    estates: deps.estates,
+    loadConfig: deps.loadConfig,
+  });
+  const residentDashboardService = new ResidentDashboardService({
+    profile: residentProfileService,
+    properties: residentPropertiesService,
+    finance: deps.residentFinanceService,
+    codes: deps.residentCodesService,
+    complaints: deps.residentComplaintsService,
+    community: deps.residentCommunityService,
+    bookings: deps.residentBookingsService,
+    notifications: deps.residentNotificationsService,
+  });
+
   const app = createApp({
     checkDatabase: deps.checkDatabase,
     configService: deps.configService,
@@ -84,22 +115,8 @@ async function main(): Promise<void> {
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,
       organizationId: deps.organizationId,
-      profile: new ResidentProfileService({
-        users: deps.users,
-        drafts: deps.residentOnboarding,
-        audit: deps.audit,
-        loadProperty: async (orgId, propertyId) => {
-          const detail = await deps.loadPropertyDetail(orgId, propertyId);
-          if (!detail) return null;
-          return { identifier: detail.identifier, estate: detail.estate };
-        },
-      }),
-      properties: new ResidentPropertiesService({
-        drafts: deps.residentOnboarding,
-        properties: deps.properties,
-        estates: deps.estates,
-        loadConfig: deps.loadConfig,
-      }),
+      profile: residentProfileService,
+      properties: residentPropertiesService,
       finance: deps.residentFinanceService,
       codes: deps.residentCodesService,
       complaints: deps.residentComplaintsService,
@@ -108,6 +125,7 @@ async function main(): Promise<void> {
       bookings: deps.residentBookingsService,
       sos: deps.residentSosService,
       notifications: deps.residentNotificationsService,
+      dashboard: residentDashboardService,
     },
   });
 

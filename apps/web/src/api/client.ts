@@ -68,6 +68,7 @@ import type {
   ResidentCreateSosResponse,
   ResidentNotificationsView,
   ResidentMarkNotificationReadResponse,
+  ResidentDashboardView,
 } from '@silverstone/shared';
 
 /**
@@ -640,6 +641,10 @@ export const api = {
       `/api/v1/resident/notifications/${encodeURIComponent(notificationId)}/read`,
       { method: 'POST' },
     ),
+
+  /** S11: the dashboard home aggregate. */
+  getResidentDashboard: () =>
+    request<ResidentDashboardView>('/api/v1/resident/dashboard'),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

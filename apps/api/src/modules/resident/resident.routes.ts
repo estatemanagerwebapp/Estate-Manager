@@ -32,6 +32,7 @@ import { ResidentCommunityService } from './community.service.js';
 import { ResidentBookingsService } from './bookings.service.js';
 import { ResidentSosService } from './sos.service.js';
 import { ResidentNotificationsService } from './notifications.service.js';
+import { ResidentDashboardService } from './dashboard.service.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -57,6 +58,8 @@ export interface ResidentRouteOptions {
   sos?: ResidentSosService;
   /** S10: the resident's notification inbox. */
   notifications?: ResidentNotificationsService;
+  /** S11: the dashboard home aggregate. */
+  dashboard?: ResidentDashboardService;
 }
 
 /** Wrap async handlers so rejections reach the central error handler once. */
@@ -804,6 +807,37 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         String(req.params.id),
       );
       res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- S11: Dashboard home ---------------------------------------------------------
+  // GET /dashboard — one aggregate that composes the sections the resident
+  // portal already exposes (profile, property, finance, codes, estate
+  // office, notifications) so the home page needs a single request.
+  //
+  // Self-scoped: every section resolves the acting user from the session.
+
+  const dashboardGuard = requirePermission((ctx) =>
+    permissions.can(ctx.role, 'portal.access.self'),
+  );
+
+  router.get(
+    '/dashboard',
+    authGuard,
+    residentGuard,
+    dashboardGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.dashboard) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Dashboard service not wired'));
+        return;
+      }
+      const view = await options.dashboard.get(organizationId, ctx.userId);
+      res.status(200).json({ data: view });
     }),
   );
 
