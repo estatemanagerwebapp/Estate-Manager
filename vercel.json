@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "framework": null,
+  "installCommand": "npm install",
+  "buildCommand": "npm run prisma:generate && npm run build",
+  "outputDirectory": "apps/web/dist",
+  "routes": [
+    { "src": "/api/v1/(.*)", "dest": "/apps/api/src/vercel.ts" },
+    { "src": "/api/(.*)", "dest": "/apps/api/src/vercel.ts" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/apps/web/dist/index.html" }
+  ],
+  "functions": {
+    "apps/api/src/vercel.ts": { "runtime": "nodejs20.x", "maxDuration": 10 }
+  }
+}
