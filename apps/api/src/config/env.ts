@@ -35,7 +35,56 @@ function loadDotenvValues(): Record<string, string | undefined> {
   return {};
 }
 
-const postgresUrlPattern = /^(?:postgres|postgresql):\/\/\S+:\S+@\S+/;
+/**
+ * Values pasted into a dashboard often arrive wrapped in quotes or with a
+ * leading `DATABASE_URL=` copied from a `.env` line. Normalise those before
+ * validating so a deployment is not blocked by a transport artefact.
+ */
+export function normalizeDatabaseUrl(input: string): string {
+  const unwrapQuotes = (candidate: string): string => {
+    const first = candidate.at(0);
+    if (
+      candidate.length >= 2 &&
+      (first === '"' || first === "'") &&
+      candidate.at(-1) === first
+    ) {
+      return candidate.slice(1, -1).trim();
+    }
+    return candidate;
+  };
+
+  // Handle either order: quote-wrapped `DATABASE_URL=...` or a prefixed,
+  // quote-wrapped URL.
+  let value = unwrapQuotes(input.trim());
+  if (value.startsWith('DATABASE_URL=')) {
+    value = value.slice('DATABASE_URL='.length).trim();
+  }
+  return unwrapQuotes(value);
+}
+
+/** Returns a readable reason the URL is unusable, or undefined when valid. */
+export function databaseUrlIssue(value: string): string | undefined {
+  if (!value) return 'PostgreSQL URL is empty';
+  if (/\s/.test(value)) return 'PostgreSQL URL must not contain whitespace';
+  if (!/^postgres(?:ql)?:\/\//i.test(value)) {
+    return 'PostgreSQL URL must start with postgresql://';
+  }
+
+  const rest = value.slice(value.indexOf('://') + 3);
+  const at = rest.lastIndexOf('@');
+  if (at < 0) return 'PostgreSQL URL is missing the @host separator';
+
+  const credentials = rest.slice(0, at);
+  const hostAndPath = rest.slice(at + 1);
+  const colon = credentials.indexOf(':');
+  if (colon < 0) return 'PostgreSQL URL is missing the :password part';
+  if (colon === 0) return 'PostgreSQL URL is missing the username';
+  if (colon === credentials.length - 1) return 'PostgreSQL URL is missing the password';
+  if (!hostAndPath) return 'PostgreSQL URL is missing the host';
+  if (!hostAndPath.includes('/')) return 'PostgreSQL URL is missing the /database path';
+
+  return undefined;
+}
 
 export const EnvSchema = z
   .object({
@@ -67,9 +116,13 @@ export const EnvSchema = z
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).default(900_000),
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
 
-    DATABASE_URL: z.string().refine((value) => postgresUrlPattern.test(value), {
-      message: 'PostgreSQL URL must look like postgresql://user:password@host:port/dbname',
-    }),
+    DATABASE_URL: z
+      .string()
+      .transform((value) => normalizeDatabaseUrl(value))
+      .superRefine((value, ctx) => {
+        const issue = databaseUrlIssue(value);
+        if (issue) ctx.addIssue({ code: 'custom', message: issue });
+      }),
 
     ORGANIZATION_SLUG: z
       .string()

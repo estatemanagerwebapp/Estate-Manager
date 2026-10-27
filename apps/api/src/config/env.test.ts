@@ -58,6 +58,30 @@ describe('parseEnv', () => {
     ).toThrow(/PostgreSQL URL/);
   });
 
+  it('normalises quotes and a copied prefix around the database URL', () => {
+    const env = parseEnv({
+      ...base,
+      DATABASE_URL: '  "DATABASE_URL=postgresql://user:pass@localhost:5432/db"\n',
+    } as NodeJS.ProcessEnv);
+    expect(env.DATABASE_URL).toBe('postgresql://user:pass@localhost:5432/db');
+  });
+
+  it('explains which part of the database URL is missing', () => {
+    expect(() =>
+      parseEnv({
+        ...base,
+        DATABASE_URL: 'postgresql://user@localhost:5432/db',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/missing the :password part/);
+
+    expect(() =>
+      parseEnv({
+        ...base,
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/missing the \/database path/);
+  });
+
   it('rejects a production environment that allows wildcard CORS', () => {
     expect(() =>
       parseEnv({
