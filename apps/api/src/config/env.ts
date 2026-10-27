@@ -220,9 +220,21 @@ export class EnvironmentError extends Error {
   }
 }
 
-export function parseEnv(raw: Record<string, string | undefined> = process.env): Env {
+export interface ParseEnvOptions {
+  /**
+   * Read `.env` files to fill in variables the caller did not provide.
+   * Tests disable this so a developer's local `.env` cannot change the
+   * outcome of a validation test.
+   */
+  loadFiles?: boolean;
+}
+
+export function parseEnv(
+  raw: Record<string, string | undefined> = process.env,
+  { loadFiles = true }: ParseEnvOptions = {},
+): Env {
   // File values fill in only where the host environment is silent.
-  const fromFile = loadDotenvValues();
+  const fromFile = loadFiles ? loadDotenvValues() : {};
   const merged: Record<string, string | undefined> = { ...fromFile };
   for (const [key, value] of Object.entries(raw)) {
     if (value !== undefined) merged[key] = value;

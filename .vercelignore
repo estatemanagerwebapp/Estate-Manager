@@ -1,0 +1,14 @@
+# Secrets must never be uploaded with a CLI deployment. Production deploys
+# from GitHub never see them because they are gitignored; this file protects
+# the `vercel deploy` path as well.
+.env
+.env.*
+!.env.example
+!.env.test.example
+
+# Local tooling and build output
+.vercel
+node_modules
+**/node_modules
+**/dist
+.DS_Store

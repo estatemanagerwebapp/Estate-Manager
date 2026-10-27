@@ -2,7 +2,7 @@ import http from 'node:http';
 import { ResidentProfileService } from './modules/resident/profile.service.js';
 import { ResidentPropertiesService } from './modules/resident/properties.service.js';
 import { ResidentDashboardService } from './modules/resident/dashboard.service.js';
-import { createApp } from './app.js';
+import { createApp } from './application.js';
 import { getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
 import { getPasswordHashAlgorithm, getPasswordHashPolicy } from './lib/password.js';

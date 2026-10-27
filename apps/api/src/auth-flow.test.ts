@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { PrismaClient } from '@prisma/client';
-import { createApp, type Express } from './app.js';
+import { createApp, type Express } from './application.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { UserService } from './modules/auth/user.service.js';
 import { PrismaUserRepository } from './modules/auth/user-repository.js';

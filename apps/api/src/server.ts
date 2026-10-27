@@ -27,7 +27,7 @@ async function buildApp(): Promise<HttpHandler> {
   const { createAppDependencies } = await import('./dependencies.js');
   const { getPasswordHashAlgorithm, getPasswordHashPolicy } = await import('./lib/password.js');
   const { logger } = await import('./lib/logger.js');
-  const { createApp } = await import('./app.js');
+  const { createApp } = await import('./application.js');
   const { ResidentProfileService } = await import('./modules/resident/profile.service.js');
   const { ResidentPropertiesService } = await import('./modules/resident/properties.service.js');
   const { ResidentDashboardService } = await import('./modules/resident/dashboard.service.js');

@@ -1,5 +1,12 @@
-import { getEnv, parseEnv, resetEnvForTests, EnvSchema } from './env.js';
+import { getEnv, parseEnv as parseEnvWithFiles, resetEnvForTests, EnvSchema } from './env.js';
 import { describe, expect, it } from 'vitest';
+
+/**
+ * Validation tests describe an environment from scratch, so they must not
+ * inherit values from a developer's local `.env`. `getEnv` below still
+ * exercises the file-loading path.
+ */
+const parseEnv = (raw: NodeJS.ProcessEnv) => parseEnvWithFiles(raw, { loadFiles: false });
 
 describe('parseEnv', () => {
   const base = {

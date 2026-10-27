@@ -1,7 +1,7 @@
 /**
  * Resident portal routes (`/resident/*`).
  *
- * Mounted at `/resident` in `app.ts`. Every endpoint is self-scoped: it
+ * Mounted at `/resident` in `application.ts`. Every endpoint is self-scoped: it
  * resolves the acting resident's user id from the session (via
  * `getResidentContext`) and only reads or writes that user's data.
  *

@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from './app.js';
+import { createApp } from './application.js';
 
 describe('security and error envelopes', () => {
   it('serves 404 in the standard envelope with a request id', async () => {

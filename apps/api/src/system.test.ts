@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from './app.js';
+import { createApp } from './application.js';
 import { parseOrganizationConfig } from '@silverstone/config-schema';
 import { OrganizationConfigService } from './modules/organization/config.service.js';
 

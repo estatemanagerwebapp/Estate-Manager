@@ -11,7 +11,7 @@ import request from 'supertest';
 import type { Worksheet } from 'exceljs';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { createApp } from './app.js';
+import { createApp } from './application.js';
 import { getPrismaClient, disconnectPrisma } from './lib/prisma.js';
 import { PrismaUserRepository } from './modules/auth/user-repository.js';
 import { PrismaSessionRepository } from './modules/auth/session-repository.js';

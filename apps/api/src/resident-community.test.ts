@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { createApp } from './app.js';
+import { createApp } from './application.js';
 import { getPrismaClient, disconnectPrisma } from './lib/prisma.js';
 import { hashPassword } from './lib/password.js';
 import { PrismaUserRepository } from './modules/auth/user-repository.js';
