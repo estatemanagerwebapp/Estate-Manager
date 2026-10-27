@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { getEnv, normalizeDatabaseUrl } from '../config/env.js';
+import { applyServerlessConnectionLimit, getEnv, normalizeDatabaseUrl } from '../config/env.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
 
@@ -34,7 +34,7 @@ function testDatabaseUrl(): string | undefined {
  */
 function databaseUrl(): string {
   const url = testDatabaseUrl() ?? getEnv().DATABASE_URL;
-  return normalizeDatabaseUrl(url);
+  return applyServerlessConnectionLimit(normalizeDatabaseUrl(url));
 }
 
 export function getPrismaClient(): PrismaClient {

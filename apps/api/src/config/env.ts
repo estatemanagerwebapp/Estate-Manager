@@ -43,11 +43,7 @@ function loadDotenvValues(): Record<string, string | undefined> {
 export function normalizeDatabaseUrl(input: string): string {
   const unwrapQuotes = (candidate: string): string => {
     const first = candidate.at(0);
-    if (
-      candidate.length >= 2 &&
-      (first === '"' || first === "'") &&
-      candidate.at(-1) === first
-    ) {
+    if (candidate.length >= 2 && (first === '"' || first === "'") && candidate.at(-1) === first) {
       return candidate.slice(1, -1).trim();
     }
     return candidate;
@@ -60,6 +56,27 @@ export function normalizeDatabaseUrl(input: string): string {
     value = value.slice('DATABASE_URL='.length).trim();
   }
   return unwrapQuotes(value);
+}
+
+/**
+ * Serverless deployments hold a separate Prisma pool per function instance.
+ * Supabase's pooler admits only 15 sessions in total, so a per-instance limit
+ * of 5 meant three warm instances could starve every other caller
+ * (`P2024: Timed out fetching a new connection from the connection pool`).
+ * On Vercel we therefore keep one connection per instance and let requests
+ * queue instead of failing; a transaction-mode pooler is the longer-term fix.
+ */
+export function applyServerlessConnectionLimit(
+  url: string,
+  isServerless: boolean = process.env.VERCEL === '1',
+): string {
+  if (!isServerless) return url;
+  const separator = url.indexOf('?');
+  const base = separator === -1 ? url : url.slice(0, separator);
+  const params = new URLSearchParams(separator === -1 ? '' : url.slice(separator + 1));
+  params.set('connection_limit', '1');
+  params.set('pool_timeout', '30');
+  return `${base}?${params.toString()}`;
 }
 
 /** Returns a readable reason the URL is unusable, or undefined when valid. */

@@ -1,4 +1,10 @@
-import { getEnv, parseEnv as parseEnvWithFiles, resetEnvForTests, EnvSchema } from './env.js';
+import {
+  applyServerlessConnectionLimit,
+  getEnv,
+  parseEnv as parseEnvWithFiles,
+  resetEnvForTests,
+  EnvSchema,
+} from './env.js';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -156,5 +162,30 @@ describe('parseEnv', () => {
 
   it('keeps the schema exported for documentation', () => {
     expect(EnvSchema.shape).toBeDefined();
+  });
+});
+
+describe('applyServerlessConnectionLimit', () => {
+  const poolerUrl =
+    'postgresql://postgres.project:secret@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?connection_limit=5';
+
+  it('leaves the URL untouched outside a serverless runtime', () => {
+    expect(applyServerlessConnectionLimit(poolerUrl, false)).toBe(poolerUrl);
+  });
+
+  it('caps a serverless instance at one connection and keeps other params', () => {
+    const limited = applyServerlessConnectionLimit(poolerUrl, true);
+    const params = new URL(limited).searchParams;
+    expect(params.get('connection_limit')).toBe('1');
+    expect(params.get('pool_timeout')).toBe('30');
+  });
+
+  it('adds the limit when the URL has no query string', () => {
+    const limited = applyServerlessConnectionLimit(
+      'postgresql://user:pass@localhost:5432/db',
+      true,
+    );
+    expect(limited).toContain('connection_limit=1');
+    expect(limited).toContain('pool_timeout=30');
   });
 });
