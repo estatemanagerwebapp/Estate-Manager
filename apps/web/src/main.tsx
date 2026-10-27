@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './api/query';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { ToastProvider } from './toast/Toast';
 import { RequireGuest, RequireAuth, RequirePermission } from './auth/RouteGuards';
@@ -46,172 +48,174 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <BrowserRouter>
-      <ToastProvider>
-        <AuthProvider>
-          <Routes>
-            {/* Unauthenticated */}
-            <Route
-              path="/login"
-              element={
-                <RequireGuest>
-                  <LoginPage />
-                </RequireGuest>
-              }
-            />
-            <Route
-              path="/forgot-password"
-              element={
-                <RequireGuest>
-                  <ForgotPasswordPage />
-                </RequireGuest>
-              }
-            />
-            <Route
-              path="/reset-password"
-              element={
-                <RequireGuest>
-                  <ResetPasswordPage />
-                </RequireGuest>
-              }
-            />
-            <Route
-              path="/onboard"
-              element={
-                <RequireGuest>
-                  <OnboardPage />
-                </RequireGuest>
-              }
-            />
-
-            {/* Authenticated */}
-            <Route
-              element={
-                <RequireAuth>
-                  <AppShell />
-                </RequireAuth>
-              }
-            >
-              <Route path="/app" element={<OverviewPage />} />
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <AuthProvider>
+            <Routes>
+              {/* Unauthenticated */}
               <Route
-                path="/app/activity"
+                path="/login"
                 element={
-                  <RequirePermission permission="audit.read">
-                    <ActivityPage />
-                  </RequirePermission>
+                  <RequireGuest>
+                    <LoginPage />
+                  </RequireGuest>
                 }
               />
               <Route
-                path="/app/users"
+                path="/forgot-password"
                 element={
-                  <RequirePermission permission="user.manage">
-                    <UsersPage />
-                  </RequirePermission>
+                  <RequireGuest>
+                    <ForgotPasswordPage />
+                  </RequireGuest>
                 }
               />
               <Route
-                path="/app/residents"
+                path="/reset-password"
                 element={
-                  <RequirePermission permission="user.manage">
-                    <ResidentsPage />
-                  </RequirePermission>
-                }
-              />
-              <Route path="/app/account" element={<AccountPage />} />
-
-              {/* Phase 2: estates */}
-              <Route
-                path="/app/estates"
-                element={
-                  <RequirePermission permission="estate.read">
-                    <EstatesListPage />
-                  </RequirePermission>
+                  <RequireGuest>
+                    <ResetPasswordPage />
+                  </RequireGuest>
                 }
               />
               <Route
-                path="/app/estates/new"
+                path="/onboard"
                 element={
-                  <RequirePermission permission="estate.manage">
-                    <EstateCreatePage />
-                  </RequirePermission>
-                }
-              />
-              <Route
-                path="/app/estates/:estateId"
-                element={
-                  <RequirePermission permission="estate.read">
-                    <EstateDetailPage />
-                  </RequirePermission>
+                  <RequireGuest>
+                    <OnboardPage />
+                  </RequireGuest>
                 }
               />
 
-              {/* Phase 2: properties */}
+              {/* Authenticated */}
               <Route
-                path="/app/properties"
                 element={
-                  <RequirePermission permission="property.read">
-                    <PropertiesListPage />
-                  </RequirePermission>
+                  <RequireAuth>
+                    <AppShell />
+                  </RequireAuth>
                 }
-              />
-              <Route
-                path="/app/properties/:propertyId"
-                element={
-                  <RequirePermission permission="property.read">
-                    <PropertyDetailPage />
-                  </RequirePermission>
-                }
-              />
-              <Route
-                path="/app/property-options"
-                element={
-                  <RequirePermission permission="property.read">
-                    <PropertyOptionsPage />
-                  </RequirePermission>
-                }
-              />
-            </Route>
+              >
+                <Route path="/app" element={<OverviewPage />} />
+                <Route
+                  path="/app/activity"
+                  element={
+                    <RequirePermission permission="audit.read">
+                      <ActivityPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/users"
+                  element={
+                    <RequirePermission permission="user.manage">
+                      <UsersPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/residents"
+                  element={
+                    <RequirePermission permission="user.manage">
+                      <ResidentsPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route path="/app/account" element={<AccountPage />} />
 
-            {/* Resident dashboard */}
-            <Route
-              path="/resident/login"
-              element={
-                <RequireGuest>
-                  <ResidentLoginPage />
-                </RequireGuest>
-              }
-            />
-            <Route
-              path="/resident/app"
-              element={
-                <RequireAuth>
-                  <ResidentAppShell />
-                </RequireAuth>
-              }
-            >
-              <Route index element={<ResidentDashboardPage />} />
-              <Route path="dashboard" element={<ResidentDashboardPage />} />
-              <Route path="change-password" element={<ResidentChangePasswordPage />} />
-              <Route path="profile" element={<ResidentProfilePage />} />
-              <Route path="properties" element={<ResidentPropertiesPage />} />
-              <Route path="invoices" element={<ResidentInvoicesPage />} />
-              <Route path="codes" element={<ResidentCodesPage />} />
-              <Route path="complaints" element={<ResidentComplaintsPage />} />
-              <Route path="messages" element={<ResidentMessagesPage />} />
-              <Route path="community" element={<ResidentCommunityPage />} />
-              <Route path="facilities" element={<ResidentFacilitiesPage />} />
-              <Route path="bookings" element={<ResidentBookingsPage />} />
-              <Route path="sos" element={<ResidentSosPage />} />
-              <Route path="notifications" element={<ResidentNotificationsPage />} />
-            </Route>
+                {/* Phase 2: estates */}
+                <Route
+                  path="/app/estates"
+                  element={
+                    <RequirePermission permission="estate.read">
+                      <EstatesListPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/estates/new"
+                  element={
+                    <RequirePermission permission="estate.manage">
+                      <EstateCreatePage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/estates/:estateId"
+                  element={
+                    <RequirePermission permission="estate.read">
+                      <EstateDetailPage />
+                    </RequirePermission>
+                  }
+                />
 
-            {/* Root: signed-in operators land on the overview; anonymous
+                {/* Phase 2: properties */}
+                <Route
+                  path="/app/properties"
+                  element={
+                    <RequirePermission permission="property.read">
+                      <PropertiesListPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/properties/:propertyId"
+                  element={
+                    <RequirePermission permission="property.read">
+                      <PropertyDetailPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/property-options"
+                  element={
+                    <RequirePermission permission="property.read">
+                      <PropertyOptionsPage />
+                    </RequirePermission>
+                  }
+                />
+              </Route>
+
+              {/* Resident dashboard */}
+              <Route
+                path="/resident/login"
+                element={
+                  <RequireGuest>
+                    <ResidentLoginPage />
+                  </RequireGuest>
+                }
+              />
+              <Route
+                path="/resident/app"
+                element={
+                  <RequireAuth>
+                    <ResidentAppShell />
+                  </RequireAuth>
+                }
+              >
+                <Route index element={<ResidentDashboardPage />} />
+                <Route path="dashboard" element={<ResidentDashboardPage />} />
+                <Route path="change-password" element={<ResidentChangePasswordPage />} />
+                <Route path="profile" element={<ResidentProfilePage />} />
+                <Route path="properties" element={<ResidentPropertiesPage />} />
+                <Route path="invoices" element={<ResidentInvoicesPage />} />
+                <Route path="codes" element={<ResidentCodesPage />} />
+                <Route path="complaints" element={<ResidentComplaintsPage />} />
+                <Route path="messages" element={<ResidentMessagesPage />} />
+                <Route path="community" element={<ResidentCommunityPage />} />
+                <Route path="facilities" element={<ResidentFacilitiesPage />} />
+                <Route path="bookings" element={<ResidentBookingsPage />} />
+                <Route path="sos" element={<ResidentSosPage />} />
+                <Route path="notifications" element={<ResidentNotificationsPage />} />
+              </Route>
+
+              {/* Root: signed-in operators land on the overview; anonymous
                 visitors get the Phase 0 foundation landing. */}
-            <Route index element={<RootRedirect />} />
-            <Route path="/foundation" element={<FoundationPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
-      </ToastProvider>
+              <Route index element={<RootRedirect />} />
+              <Route path="/foundation" element={<FoundationPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AuthProvider>
+        </ToastProvider>
+      </QueryClientProvider>
     </BrowserRouter>
   </StrictMode>,
 );

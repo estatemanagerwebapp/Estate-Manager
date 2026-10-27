@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { MessageSquareWarning, Plus, Send, User } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ResidentComplaintDto, ComplaintStatus } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -44,9 +46,8 @@ const STATUS_FILTERS: Array<{ value: ComplaintStatus | 'ALL'; label: string }> =
  */
 export function ResidentComplaintsPage() {
   const toast = useToast();
-  const [complaints, setComplaints] = useState<ResidentComplaintDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ComplaintStatus | 'ALL'>('ALL');
 
   const [showForm, setShowForm] = useState(false);
@@ -55,26 +56,22 @@ export function ResidentComplaintsPage() {
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const data = await api.getResidentComplaints(filter === 'ALL' ? undefined : filter);
-      setComplaints(data.complaints);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your complaints.');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'complaints', filter],
+    () => api.getResidentComplaints(filter === 'ALL' ? undefined : filter),
+    'Could not load your complaints.',
+  );
+  const complaints = data?.complaints ?? [];
+  const error = actionError ?? queryError;
 
   async function submit() {
     setSubmitting(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.createResidentComplaint({ category, subject, description });
       toast.success('Complaint filed.');
@@ -82,9 +79,19 @@ export function ResidentComplaintsPage() {
       setSubject('');
       setDescription('');
       setShowForm(false);
-      await load();
+      void queryClient.invalidateQueries({
+        queryKey: ['resident', 'complaints'],
+        refetchType: 'none',
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['resident', 'dashboard'],
+        refetchType: 'none',
+      });
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not file the complaint.');
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not file the complaint.',
+      );
       toast.error('Could not file the complaint.');
     } finally {
       setSubmitting(false);
@@ -105,7 +112,7 @@ export function ResidentComplaintsPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       <div className="flex flex-wrap items-center gap-2">
         {STATUS_FILTERS.map((option) => (

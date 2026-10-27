@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Plus, Building2, RefreshCw, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { type EstateDto, type EstateStatus, ESTATE_STATUSES } from '@silverstone/shared';
 import { api, ApiRequestError, type EstateFilter } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { useConfirm } from '../../components/dialog';
@@ -17,24 +19,31 @@ import { Button, Badge, statusTone } from '../../components/ui';
 export function EstatesListPage() {
   const can = useCan();
 
-  const [estates, setEstates] = useState<EstateDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'' | EstateStatus>('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const load = useCallback(async (filter: EstateFilter) => {
-    setError(null);
-    setLoading(true);
-    try {
-      const body = await api.listEstates(filter);
-      setEstates(body.estates);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load estates.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Debounce the free-text search a touch so we don't fire a request per
+  // keystroke; the status filter fires immediately.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 200);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const filter = useMemo<EstateFilter>(() => {
+    const next: EstateFilter = {};
+    if (debouncedSearch) next.search = debouncedSearch;
+    if (status) next.status = status;
+    return next;
+  }, [debouncedSearch, status]);
+
+  const { data, loading, error, refresh } = useApiQuery(
+    ['estates', filter],
+    () => api.listEstates(filter),
+    'Could not load estates.',
+  );
+  const estates = data?.estates ?? [];
+  const queryClient = useQueryClient();
 
   const toast = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -51,25 +60,18 @@ export function EstatesListPage() {
     try {
       await api.deleteEstate(estate.id);
       toast.success('Estate deleted.');
-      void load({ search, status: status || undefined });
+      // The overview counters and the property picker are derived from the
+      // estate list; mark them stale so the next visit refreshes them once.
+      void queryClient.invalidateQueries({ queryKey: ['estates'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      queryClient.removeQueries({ queryKey: ['estate', estate.id] });
+      await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the estate.');
     } finally {
       setActing(null);
     }
   }
-
-  // Debounce the free-text search a touch so we don't fire a request per
-  // keystroke; the status filter fires immediately.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const filter: EstateFilter = {};
-      if (search.trim()) filter.search = search.trim();
-      if (status) filter.status = status;
-      void load(filter);
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [search, status, load]);
 
   return (
     <div>
@@ -121,11 +123,7 @@ export function EstatesListPage() {
             </option>
           ))}
         </select>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void load({ search, status: status || undefined })}
-        >
+        <Button variant="ghost" size="sm" onClick={() => void refresh()}>
           <RefreshCw aria-hidden size={13} />
           Refresh
         </Button>

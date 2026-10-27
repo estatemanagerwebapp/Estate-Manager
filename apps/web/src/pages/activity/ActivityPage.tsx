@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { History, ChevronDown } from 'lucide-react';
-import { type AuditEventDto } from '@silverstone/shared';
-import { api, ApiRequestError } from '../../api/client';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { api } from '../../api/client';
+import { apiErrorMessage } from '../../api/query';
 import { Button, Card, CardBody, CardHeader, ErrorBanner, Skeleton } from '../../components/ui';
 import { ActivityRow } from '../../components/DashboardWidgets';
+
+const PAGE_SIZE = 20;
 
 /**
  * Full audit activity log.
@@ -12,45 +14,30 @@ import { ActivityRow } from '../../components/DashboardWidgets';
  * "Load more" cursor pagination (the API clamps each page to [1,50]).
  * Requires `audit.read` — the route is wrapped in `RequirePermission` in
  * `main.tsx`, so this page only renders for roles that can read the log.
+ *
+ * The first page is cached like every other screen. "Load more" appends a
+ * cursor page; the header Refresh re-reads the pages already loaded.
  */
 export function ActivityPage() {
-  const [events, setEvents] = useState<AuditEventDto[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const mounted = useRef(true);
+  const {
+    data,
+    isLoading,
+    isError,
+    error: queryError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ['activity'],
+    queryFn: ({ pageParam }) => api.getDashboardActivity(PAGE_SIZE, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
 
-  const PAGE_SIZE = 20;
-
-  const loadPage = useCallback(async (after?: string) => {
-    if (after) setLoadingMore(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      const body = await api.getDashboardActivity(PAGE_SIZE, after);
-      if (!mounted.current) return;
-      setEvents((prev) => (after ? [...prev, ...body.events] : body.events));
-      setNextCursor(body.nextCursor);
-    } catch (err) {
-      if (!mounted.current) return;
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load activity.');
-    } finally {
-      if (mounted.current) {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadPage();
-    return () => {
-      mounted.current = false;
-    };
-  }, [loadPage]);
-
-  const hasMore = nextCursor !== null;
+  const events = data?.pages.flatMap((page) => page.events) ?? [];
+  const error = isError ? apiErrorMessage(queryError, 'Could not load activity.') : null;
+  const loading = isLoading;
 
   return (
     <div className="flex flex-col">
@@ -67,9 +54,7 @@ export function ActivityPage() {
       </header>
 
       <main className="mt-8">
-        {error && !events.length && (
-          <ErrorBanner message={error} onRetry={() => void loadPage(nextCursor ?? undefined)} />
-        )}
+        {error && !events.length && <ErrorBanner message={error} onRetry={() => void refetch()} />}
 
         <Card>
           <CardHeader
@@ -98,16 +83,16 @@ export function ActivityPage() {
             )}
           </CardBody>
 
-          {hasMore && !loading && (
+          {hasNextPage && !loading && (
             <div className="flex justify-center border-t border-slate-200/80 p-4">
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={loadingMore}
-                onClick={() => void loadPage(nextCursor ?? undefined)}
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
               >
                 <ChevronDown aria-hidden size={14} />
-                {loadingMore ? 'Loading…' : 'Load more'}
+                {isFetchingNextPage ? 'Loading…' : 'Load more'}
               </Button>
             </div>
           )}

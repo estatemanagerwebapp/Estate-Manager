@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CalendarDays, Ban } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { BookingDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -22,38 +24,36 @@ import {
  */
 export function ResidentBookingsPage() {
   const toast = useToast();
-  const [upcoming, setUpcoming] = useState<BookingDto[]>([]);
-  const [past, setPast] = useState<BookingDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentFacilities();
-      setUpcoming(data.upcoming);
-      setPast(data.past);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your bookings.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'facilities'],
+    () => api.getResidentFacilities(),
+    'Could not load your bookings.',
+  );
+  const upcoming = data?.upcoming ?? [];
+  const past = data?.past ?? [];
+  const error = actionError ?? queryError;
 
   async function cancel(booking: BookingDto) {
     setBusyId(booking.id);
-    setError(null);
+    setActionError(null);
     try {
       await api.cancelResidentBooking(booking.id);
       toast.success('Booking cancelled.');
-      await load();
+      void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not cancel the booking.');
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not cancel the booking.',
+      );
       toast.error('Could not cancel the booking.');
     } finally {
       setBusyId(null);
@@ -74,7 +74,7 @@ export function ResidentBookingsPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       <Card>
         <CardHeader

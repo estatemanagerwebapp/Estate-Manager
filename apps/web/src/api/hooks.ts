@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import type { PropertyOptionsView, AuditEventDto } from '@silverstone/shared';
 import { api, ApiRequestError } from './client';
+import { useApiQuery } from './query';
 
 /**
  * Shared hooks that fetch the organisation's property-options view.
@@ -16,36 +16,18 @@ import { api, ApiRequestError } from './client';
  * `ApiRequestError` shape and the global 401 → clear-session handling.
  */
 export function usePropertyOptions(enabled: boolean) {
-  const [view, setView] = useState<PropertyOptionsView | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, loading, error } = useApiQuery(
+    ['property-options'],
+    () => api.getPropertyOptions(),
+    'Could not load property options.',
+    enabled,
+  );
 
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api
-      .getPropertyOptions()
-      .then((data) => {
-        if (!cancelled) setView(data);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(
-            err instanceof ApiRequestError ? err.message : 'Could not load property options.',
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled]);
-
-  return { view, loading, error };
+  return {
+    view: data as PropertyOptionsView | null,
+    loading,
+    error,
+  };
 }
 
 /**
@@ -89,55 +71,35 @@ export interface DashboardKpis {
  * (the `useSystemHealth` pattern).
  */
 export function useDashboard(enabled: boolean) {
-  const [kpis, setKpis] = useState<DashboardKpis | null>(null);
-  const [activity, setActivity] = useState<AuditEventDto[] | null>(null);
-  const [activityDenied, setActivityDenied] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const kpisQuery = useApiQuery(
+    ['dashboard', 'kpis'],
+    () => api.getDashboardKpis(),
+    'Could not load dashboard statistics.',
+    enabled,
+  );
+  const activityQuery = useApiQuery(
+    ['dashboard', 'activity', 5],
+    () => api.getDashboardActivity(5),
+    'Could not load recent activity.',
+    enabled,
+  );
 
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+  // A 403 means the role lacks `audit.read`: hide the feed, not the page.
+  const activityDenied =
+    activityQuery.errorObject instanceof ApiRequestError &&
+    activityQuery.errorObject.status === 403;
 
-    void (async () => {
-      const [kpiResult, activityResult] = await Promise.allSettled([
-        api.getDashboardKpis(),
-        api.getDashboardActivity(5),
-      ]);
+  const error = kpisQuery.error ?? (activityDenied ? null : activityQuery.error);
+  const loading = enabled && (kpisQuery.loading || activityQuery.loading);
+  const activity: AuditEventDto[] | null = activityDenied
+    ? null
+    : (activityQuery.data?.events ?? null);
 
-      if (cancelled) return;
-
-      if (kpiResult.status === 'fulfilled') {
-        setKpis(kpiResult.value.kpis);
-      } else {
-        setError(
-          kpiResult.reason instanceof ApiRequestError
-            ? kpiResult.reason.message
-            : 'Could not load dashboard statistics.',
-        );
-      }
-
-      if (activityResult.status === 'fulfilled') {
-        setActivity(activityResult.value.events);
-        setActivityDenied(false);
-      } else if (activityResult.reason instanceof ApiRequestError) {
-        // 403 means the role lacks `audit.read`: hide the feed, not the page.
-        setActivityDenied(activityResult.reason.status === 403);
-        setActivity(null);
-      } else {
-        setError('Could not load recent activity.');
-        setActivity(null);
-      }
-
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled]);
-
-  return { kpis, activity, activityDenied, loading, error };
+  return {
+    kpis: (kpisQuery.data?.kpis ?? null) as DashboardKpis | null,
+    activity,
+    activityDenied,
+    loading,
+    error,
+  };
 }

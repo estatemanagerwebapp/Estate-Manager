@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Building, CalendarPlus } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { FacilityDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -24,9 +26,8 @@ import {
  */
 export function ResidentFacilitiesPage() {
   const toast = useToast();
-  const [facilities, setFacilities] = useState<FacilityDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [bookingFacility, setBookingFacility] = useState<FacilityDto | null>(null);
   const [startsAt, setStartsAt] = useState('');
@@ -34,26 +35,23 @@ export function ResidentFacilitiesPage() {
   const [attendees, setAttendees] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentFacilities();
-      setFacilities(data.facilities);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load the facilities.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'facilities'],
+    () => api.getResidentFacilities(),
+    'Could not load the facilities.',
+  );
+  const facilities = data?.facilities ?? [];
+  const error = actionError ?? queryError;
 
   async function submit() {
     if (!bookingFacility) return;
     setSubmitting(true);
-    setError(null);
+    setActionError(null);
     try {
       const count = Number.parseInt(attendees, 10);
       await api.createResidentBooking({
@@ -67,9 +65,17 @@ export function ResidentFacilitiesPage() {
       setStartsAt('');
       setEndsAt('');
       setAttendees('');
-      await load();
+      // Facilities and bookings share one response; mark it stale without
+      // re-pulling the unchanged facility list on this screen.
+      void queryClient.invalidateQueries({
+        queryKey: ['resident', 'facilities'],
+        refetchType: 'none',
+      });
+      void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not request the booking.');
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not request the booking.',
+      );
       toast.error('Could not request the booking.');
     } finally {
       setSubmitting(false);
@@ -90,7 +96,7 @@ export function ResidentFacilitiesPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       {bookingFacility && (
         <Card>

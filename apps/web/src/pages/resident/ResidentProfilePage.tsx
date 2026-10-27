@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { User, Building2, BadgeCheck } from 'lucide-react';
-import type { ResidentProfileDto, ResidentProfileUpdateInput } from '@silverstone/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import type { ResidentProfileUpdateInput, ResidentProfileView } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -26,40 +28,59 @@ import {
  */
 export function ResidentProfilePage() {
   const toast = useToast();
-  const [profile, setProfile] = useState<ResidentProfileDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Seed synchronously on a cache hit so the form never paints empty.
+  const cachedProfile = queryClient.getQueryData<ResidentProfileView>([
+    'resident',
+    'profile',
+  ])?.profile;
+
   // Editable fields (initialized from the profile once it loads).
-  const [phone, setPhone] = useState('');
-  const [nextOfKinName, setNextOfKinName] = useState('');
-  const [nextOfKinPhone, setNextOfKinPhone] = useState('');
-  const [nextOfKinEmail, setNextOfKinEmail] = useState('');
-  const [idType, setIdType] = useState('');
+  const [phone, setPhone] = useState(cachedProfile?.phone ?? '');
+  const [nextOfKinName, setNextOfKinName] = useState(cachedProfile?.nextOfKinName ?? '');
+  const [nextOfKinPhone, setNextOfKinPhone] = useState(cachedProfile?.nextOfKinPhone ?? '');
+  const [nextOfKinEmail, setNextOfKinEmail] = useState(cachedProfile?.nextOfKinEmail ?? '');
+  const [idType, setIdType] = useState(cachedProfile?.idType ?? '');
   const [dirty, setDirty] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const view = await api.getResidentProfile();
-      setProfile(view.profile);
-      setPhone(view.profile.phone ?? '');
-      setNextOfKinName(view.profile.nextOfKinName ?? '');
-      setNextOfKinPhone(view.profile.nextOfKinPhone ?? '');
-      setNextOfKinEmail(view.profile.nextOfKinEmail ?? '');
-      setIdType(view.profile.idType ?? '');
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your profile.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'profile'],
+    () => api.getResidentProfile(),
+    'Could not load your profile.',
+  );
+  const profile = data?.profile ?? null;
+  const error = actionError ?? queryError;
 
+  // Seed the form from the cached profile. This also runs after a manual
+  // refresh, which is the one case where overwriting unsaved edits is
+  // expected.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!profile) return;
+    setPhone(profile.phone ?? '');
+    setNextOfKinName(profile.nextOfKinName ?? '');
+    setNextOfKinPhone(profile.nextOfKinPhone ?? '');
+    setNextOfKinEmail(profile.nextOfKinEmail ?? '');
+    setIdType(profile.idType ?? '');
+    setDirty(false);
+  }, [profile]);
+
+  function resetForm() {
+    if (!profile) return;
+    setPhone(profile.phone ?? '');
+    setNextOfKinName(profile.nextOfKinName ?? '');
+    setNextOfKinPhone(profile.nextOfKinPhone ?? '');
+    setNextOfKinEmail(profile.nextOfKinEmail ?? '');
+    setIdType(profile.idType ?? '');
+    setDirty(false);
+  }
 
   function markDirty() {
     if (!dirty) setDirty(true);
@@ -68,7 +89,7 @@ export function ResidentProfilePage() {
   async function handleSave() {
     if (!profile) return;
     setSaving(true);
-    setError(null);
+    setActionError(null);
     try {
       const input: ResidentProfileUpdateInput = {
         phone: phone.trim() || null,
@@ -78,11 +99,11 @@ export function ResidentProfilePage() {
         idType: idType.trim() || null,
       };
       const response = await api.updateResidentProfile(input);
-      setProfile(response.profile);
+      queryClient.setQueryData(['resident', 'profile'], { profile: response.profile });
       setDirty(false);
       toast.success('Profile updated.');
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not save your profile.');
+      setActionError(err instanceof ApiRequestError ? err.message : 'Could not save your profile.');
       toast.error('Could not save your profile.');
     } finally {
       setSaving(false);
@@ -105,7 +126,7 @@ export function ResidentProfilePage() {
     return (
       <div className="space-y-4">
         <PageHeading />
-        <ErrorBanner message={error} onRetry={() => void load()} />
+        <ErrorBanner message={error} onRetry={() => void refresh()} />
       </div>
     );
   }
@@ -251,8 +272,8 @@ export function ResidentProfilePage() {
               variant="secondary"
               size="sm"
               onClick={() => {
-                void load();
-                setDirty(false);
+                resetForm();
+                void refresh();
               }}
               disabled={saving}
             >

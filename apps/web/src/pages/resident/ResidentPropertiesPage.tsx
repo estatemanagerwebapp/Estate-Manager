@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Home, MapPin, Building2 } from 'lucide-react';
-import type { ResidentPropertiesResponse } from '@silverstone/shared';
-import { api, ApiRequestError } from '../../api/client';
+import { api } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import {
   Card,
   CardHeader,
@@ -23,26 +22,16 @@ import {
  * detail page.
  */
 export function ResidentPropertiesPage() {
-  const [response, setResponse] = useState<ResidentPropertiesResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const data = await api.getResidentProperties();
-      setResponse(data);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your property.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: response,
+    loading,
+    error,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'properties'],
+    () => api.getResidentProperties(),
+    'Could not load your property.',
+  );
 
   if (loading) {
     return (
@@ -57,7 +46,7 @@ export function ResidentPropertiesPage() {
     return (
       <div className="space-y-4">
         <PageHeading />
-        <ErrorBanner message={error} onRetry={() => void load()} />
+        <ErrorBanner message={error} onRetry={() => void refresh()} />
       </div>
     );
   }

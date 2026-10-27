@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { KeyRound } from 'lucide-react';
 import { type RegisterResidentResponse, type PropertyDto } from '@silverstone/shared';
 import type { EstateDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../api/client';
+import { useApiQuery } from '../api/query';
 import { useToast } from '../toast/Toast';
 import { Button, Field, inputClass, selectClass } from '../components/ui';
 import { Modal } from '../components/dialog';
@@ -27,28 +28,24 @@ export function ResidentRegisterModal({
   const [phone, setPhone] = useState('');
   const [propertyId, setPropertyId] = useState('');
   const [estateId, setEstateId] = useState('');
-  const [estates, setEstates] = useState<EstateDto[]>([]);
-  const [properties, setProperties] = useState<PropertyDto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void api
-      .listEstates()
-      .then((body) => setEstates(body.estates))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!estateId) {
-      setProperties([]);
-      return;
-    }
-    void api
-      .listProperties({ estateId, pageSize: 200 })
-      .then((body) => setProperties(body.properties))
-      .catch(() => setProperties([]));
-  }, [estateId]);
+  // Both pickers share the caches used by the main register screens. The
+  // unfiltered estates key is the same one the Estates list page uses.
+  const { data: estateData } = useApiQuery(
+    ['estates', {}],
+    () => api.listEstates(),
+    'Could not load estates.',
+  );
+  const { data: propertyData } = useApiQuery(
+    ['properties', 'picker', estateId],
+    () => api.listProperties({ estateId, pageSize: 200 }),
+    'Could not load properties.',
+    Boolean(estateId),
+  );
+  const estates: EstateDto[] = estateData?.estates ?? [];
+  const properties: PropertyDto[] = estateId ? (propertyData?.properties ?? []) : [];
 
   async function handleSubmit(event?: FormEvent) {
     event?.preventDefault();

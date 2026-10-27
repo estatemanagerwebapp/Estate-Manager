@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Home,
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { api, ApiRequestError, type EstateFilter } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { usePropertyOptions } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
@@ -28,7 +30,7 @@ import {
   CardHeader,
   Skeleton,
 } from '../../components/ui';
-import type { EstateDto, PropertyDto, PropertyListResponse } from '@silverstone/shared';
+import type { EstateDto, PropertyDto } from '@silverstone/shared';
 import { PropertyRegisterModal } from './PropertyRegisterModal';
 
 /**
@@ -46,7 +48,6 @@ export function PropertiesListPage() {
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
 
-  const [estates, setEstates] = useState<EstateDto[]>([]);
   const [estateId, setEstateId] = useState('');
   const [typeKey, setTypeKey] = useState('');
   const [status, setStatus] = useState('');
@@ -54,53 +55,53 @@ export function PropertiesListPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(24);
 
-  const [list, setList] = useState<PropertyListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listEstates({} as EstateFilter)
-      .then((body) => {
-        if (!cancelled) setEstates(body.estates);
-      })
-      .catch(() => {
-        /* estates picker degrades gracefully; property list still works */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Shared with the Estates list's default (unfiltered) view, so visiting
+  // Properties after Estates reuses that read instead of issuing a second one.
+  const estatesQuery = useApiQuery(
+    ['estates', {}],
+    () => api.listEstates({} as EstateFilter),
+    'Could not load estates.',
+  );
+  const estates: EstateDto[] = estatesQuery.data?.estates ?? [];
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const body = await api.listProperties({
-        estateId: estateId || undefined,
-        typeKey: typeKey || undefined,
-        status: status || undefined,
-        identifierContains: identifierSearch.trim() || undefined,
-        page,
-        pageSize,
-      });
-      setList(body);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load properties.');
-    } finally {
-      setLoading(false);
-    }
-  }, [estateId, typeKey, status, identifierSearch, page, pageSize]);
+  const filter = useMemo(
+    () => ({
+      estateId: estateId || undefined,
+      typeKey: typeKey || undefined,
+      status: status || undefined,
+      identifierContains: identifierSearch.trim() || undefined,
+      page,
+      pageSize,
+    }),
+    [estateId, typeKey, status, identifierSearch, page, pageSize],
+  );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: list,
+    loading,
+    error,
+    refresh,
+  } = useApiQuery(
+    ['properties', filter],
+    () => api.listProperties(filter),
+    'Could not load properties.',
+  );
 
   const types = (view?.assetTypes ?? []).filter((type) => type.active);
   const estateName = new Map(estates.map((estate) => [estate.id, estate.name]));
+
+  async function reloadAfterMutation() {
+    // Dashboard counters depend on properties, and other property filters
+    // (and estate detail counts) are stale until their next visit.
+    void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
+    void queryClient.invalidateQueries({ queryKey: ['estate'], refetchType: 'none' });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+    await refresh();
+  }
 
   async function archiveProperty(property: PropertyDto) {
     const ok = await confirm({
@@ -113,7 +114,7 @@ export function PropertiesListPage() {
     try {
       await api.archiveProperty(property.id);
       toast.success('Property archived.');
-      void load();
+      void reloadAfterMutation();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not archive the property.');
     } finally {
@@ -126,7 +127,7 @@ export function PropertiesListPage() {
     try {
       await api.updateProperty(property.id, { status: 'ACTIVE' });
       toast.success('Property reactivated.');
-      void load();
+      void reloadAfterMutation();
     } catch (err) {
       toast.error(
         err instanceof ApiRequestError ? err.message : 'Could not reactivate the property.',
@@ -147,7 +148,7 @@ export function PropertiesListPage() {
     try {
       await api.deleteProperty(property.id);
       toast.success('Property deleted.');
-      void load();
+      void reloadAfterMutation();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the property.');
     } finally {
@@ -321,7 +322,7 @@ export function PropertiesListPage() {
           onClose={() => setRegisterOpen(false)}
           onCreated={() => {
             setRegisterOpen(false);
-            void load();
+            void reloadAfterMutation();
           }}
         />
       )}
@@ -409,7 +410,9 @@ function PropertyCard({
           <Tag aria-hidden size={12} />
           {property.typeLabel || property.typeKey}
           {property.houseTypeKey && property.houseTypeLabel ? (
-            <span className="ml-1 text-[10px] text-(--color-ink-muted)">({property.houseTypeLabel})</span>
+            <span className="ml-1 text-[10px] text-(--color-ink-muted)">
+              ({property.houseTypeLabel})
+            </span>
           ) : null}
         </span>
         {estateName && (

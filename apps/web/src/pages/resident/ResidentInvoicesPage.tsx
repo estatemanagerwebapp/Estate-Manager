@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { FileText, Wallet, ArrowLeftRight, Receipt, CircleX, CreditCard } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type {
-  ResidentFinanceView,
   ResidentInvoiceDto,
   ResidentPaymentDto,
   ResidentTransactionDto,
 } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -33,31 +34,25 @@ import {
  */
 export function ResidentInvoicesPage() {
   const toast = useToast();
-  const [view, setView] = useState<ResidentFinanceView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const [payingInvoice, setPayingInvoice] = useState<ResidentInvoiceDto | null>(null);
   const [payMethod, setPayMethod] = useState('');
   const [payReference, setPayReference] = useState('');
   const [paying, setPaying] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const data = await api.getResidentFinance();
-      setView(data);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your finance.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: view,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'finance'],
+    () => api.getResidentFinance(),
+    'Could not load your finance.',
+  );
+  const error = queryError ?? paymentError;
 
   function openPay(invoice: ResidentInvoiceDto) {
     setPayingInvoice(invoice);
@@ -74,6 +69,7 @@ export function ResidentInvoicesPage() {
   async function submitPayment() {
     if (!payingInvoice) return;
     setPaying(true);
+    setPaymentError(null);
     try {
       await api.createResidentPayment({
         invoiceId: payingInvoice.id,
@@ -82,9 +78,12 @@ export function ResidentInvoicesPage() {
       });
       toast.success('Payment recorded.');
       closePay();
-      await load();
+      void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not record the payment.');
+      const message =
+        err instanceof ApiRequestError ? err.message : 'Could not record the payment.';
+      setPaymentError(message);
       toast.error('Could not record the payment.');
     } finally {
       setPaying(false);
@@ -107,7 +106,7 @@ export function ResidentInvoicesPage() {
     return (
       <div className="space-y-4">
         <PageHeading />
-        <ErrorBanner message={error} onRetry={() => void load()} />
+        <ErrorBanner message={error} onRetry={() => void refresh()} />
       </div>
     );
   }

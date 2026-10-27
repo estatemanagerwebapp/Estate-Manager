@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, BellRing, CalendarDays, Check } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { BookingDto, ResidentNotificationDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import {
   Button,
   Card,
@@ -23,39 +25,34 @@ import {
  * at.
  */
 export function ResidentNotificationsPage() {
-  const [notifications, setNotifications] = useState<ResidentNotificationDto[]>([]);
-  const [upcoming, setUpcoming] = useState<BookingDto[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentNotifications();
-      setNotifications(data.recentNotifications);
-      setUpcoming(data.upcomingBookings);
-      setUnreadCount(data.unreadCount);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your notifications.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'notifications'],
+    () => api.getResidentNotifications(),
+    'Could not load your notifications.',
+  );
+  const notifications = data?.recentNotifications ?? [];
+  const upcoming = data?.upcomingBookings ?? [];
+  const unreadCount = data?.unreadCount ?? 0;
+  const error = actionError ?? queryError;
 
   async function markRead(notification: ResidentNotificationDto) {
     setBusyId(notification.id);
-    setError(null);
+    setActionError(null);
     try {
       await api.markResidentNotificationRead(notification.id);
-      await load();
+      void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
+      await refresh();
     } catch (err) {
-      setError(
+      setActionError(
         err instanceof ApiRequestError ? err.message : 'Could not mark the notification as read.',
       );
     } finally {
@@ -77,7 +74,7 @@ export function ResidentNotificationsPage() {
     <div className="space-y-4">
       <PageHeading unreadCount={unreadCount} />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       <Card>
         <CardHeader

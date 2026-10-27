@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarDays,
@@ -9,8 +8,8 @@ import {
   Bell,
   Home,
 } from 'lucide-react';
-import type { ResidentDashboardView } from '@silverstone/shared';
-import { api, ApiRequestError } from '../api/client';
+import { api } from '../api/client';
+import { useApiQuery } from '../api/query';
 import {
   Card,
   CardHeader,
@@ -30,25 +29,16 @@ import {
  * into the page that owns the detail.
  */
 export function ResidentDashboardPage() {
-  const [view, setView] = useState<ResidentDashboardView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentDashboard();
-      setView(data);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your dashboard.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: view,
+    loading,
+    error,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'dashboard'],
+    () => api.getResidentDashboard(),
+    'Could not load your dashboard.',
+  );
 
   if (loading) {
     return (
@@ -69,7 +59,7 @@ export function ResidentDashboardPage() {
       <div className="space-y-4">
         <ErrorBanner
           message={error ?? 'Could not load your dashboard.'}
-          onRetry={() => void load()}
+          onRetry={() => void refresh()}
         />
       </div>
     );
@@ -95,7 +85,7 @@ export function ResidentDashboardPage() {
         </p>
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {/* My property */}

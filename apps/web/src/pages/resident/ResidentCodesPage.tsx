@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { KeyRound, Copy, Check, Plus, TimerReset, Ban } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ResidentAccessCodeDto, AccessCodeKind } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -31,9 +33,8 @@ const KIND_OPTIONS: Array<{ value: AccessCodeKind; label: string }> = [
  */
 export function ResidentCodesPage() {
   const toast = useToast();
-  const [codes, setCodes] = useState<ResidentAccessCodeDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [kind, setKind] = useState<AccessCodeKind>('ENTRY');
   const [durationDays, setDurationDays] = useState('30');
@@ -44,26 +45,22 @@ export function ResidentCodesPage() {
 
   const [busyCodeId, setBusyCodeId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const data = await api.getResidentCodes();
-      setCodes(data.codes);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your access codes.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'codes'],
+    () => api.getResidentCodes(),
+    'Could not load your access codes.',
+  );
+  const codes = data?.codes ?? [];
+  const error = actionError ?? queryError;
 
   async function generate() {
     setGenerating(true);
-    setError(null);
+    setActionError(null);
     try {
       const days = Number.parseInt(durationDays, 10);
       const response = await api.generateResidentAccessCode({
@@ -74,9 +71,12 @@ export function ResidentCodesPage() {
       setIssuedCode(response.code);
       setCopied(false);
       toast.success('Access code generated.');
-      await load();
+      void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not generate an access code.');
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not generate an access code.',
+      );
       toast.error('Could not generate an access code.');
     } finally {
       setGenerating(false);
@@ -85,13 +85,13 @@ export function ResidentCodesPage() {
 
   async function extend(code: ResidentAccessCodeDto) {
     setBusyCodeId(code.id);
-    setError(null);
+    setActionError(null);
     try {
       await api.extendResidentAccessCode(code.id);
       toast.success('Code validity extended.');
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not extend the code.');
+      setActionError(err instanceof ApiRequestError ? err.message : 'Could not extend the code.');
       toast.error('Could not extend the code.');
     } finally {
       setBusyCodeId(null);
@@ -100,13 +100,19 @@ export function ResidentCodesPage() {
 
   async function deactivate(code: ResidentAccessCodeDto) {
     setBusyCodeId(code.id);
-    setError(null);
+    setActionError(null);
     try {
       await api.deactivateResidentAccessCode(code.id);
       toast.success('Code deactivated.');
-      await load();
+      void queryClient.invalidateQueries({
+        queryKey: ['resident', 'dashboard'],
+        refetchType: 'none',
+      });
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not deactivate the code.');
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not deactivate the code.',
+      );
       toast.error('Could not deactivate the code.');
     } finally {
       setBusyCodeId(null);
@@ -137,7 +143,7 @@ export function ResidentCodesPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       {/* Issued code — shown once */}
       {issuedCode && (

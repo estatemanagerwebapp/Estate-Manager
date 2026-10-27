@@ -56,17 +56,16 @@ export function PropertyRegisterModal({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const components = view?.addressComponents ?? [];
-  const houseTypes = view?.houseTypes ?? [];
+  const components = useMemo(() => view?.addressComponents ?? [], [view]);
+  const houseTypes = useMemo(() => view?.houseTypes ?? [], [view]);
   const availableEstates = useMemo(() => (estate ? [estate] : (estates ?? [])), [estate, estates]);
 
   const knownAssetKeys = new Set((view?.assetTypes ?? []).map((type) => type.key));
-  const activeHouseTypes = houseTypes.filter((type) => type.active);
+  const activeHouseTypes = useMemo(() => houseTypes.filter((type) => type.active), [houseTypes]);
 
   // Resolved keys for the current selection.
   const typeKey: string | null = topLevel === 'land' ? 'land' : 'house';
-  const resolvedHouseTypeKey =
-    topLevel === 'house' ? houseTypeKey : null;
+  const resolvedHouseTypeKey = topLevel === 'house' ? houseTypeKey : null;
 
   // House type selector is required for house properties; its options come
   // from the configured house types.
@@ -88,7 +87,7 @@ export function PropertyRegisterModal({
         (houseTypeLabel && (component.requiredForLabels ?? []).includes(houseTypeLabel));
       return explicitlyRequired || appliesToAll;
     });
-  }, [components, topLevel, resolvedHouseTypeKey, houseTypeLabel]);
+  }, [components, typeKey, topLevel, resolvedHouseTypeKey, houseTypeLabel]);
 
   useEffect(() => {
     setEstateId(

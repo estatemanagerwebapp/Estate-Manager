@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Megaphone, AlertTriangle, Info, Siren } from 'lucide-react';
-import type { AnnouncementDto, EstateBroadcastDto } from '@silverstone/shared';
-import { api, ApiRequestError } from '../../api/client';
+import type { EstateBroadcastDto } from '@silverstone/shared';
+import { api } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import {
   Card,
   CardHeader,
@@ -20,27 +20,13 @@ import {
  * coloured by its priority.
  */
 export function ResidentCommunityPage() {
-  const [announcements, setAnnouncements] = useState<AnnouncementDto[]>([]);
-  const [broadcast, setBroadcast] = useState<EstateBroadcastDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentCommunity();
-      setAnnouncements(data.announcements);
-      setBroadcast(data.broadcast);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load community updates.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data, loading, error, refresh } = useApiQuery(
+    ['resident', 'community'],
+    () => api.getResidentCommunity(),
+    'Could not load community updates.',
+  );
+  const announcements = data?.announcements ?? [];
+  const broadcast = data?.broadcast ?? null;
 
   if (loading) {
     return (
@@ -56,7 +42,7 @@ export function ResidentCommunityPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       {broadcast && <BroadcastBanner broadcast={broadcast} />}
 

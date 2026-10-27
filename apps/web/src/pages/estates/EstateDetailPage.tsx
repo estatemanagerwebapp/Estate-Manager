@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Archive, ArchiveRestore, Pencil, Home, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { EstateDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { useConfirm } from '../../components/dialog';
@@ -40,40 +42,27 @@ export function EstateDetailPage() {
   const can = useCan();
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [detail, setDetail] = useState<{
-    estate: EstateDto;
-    propertyCount: number;
-    activePropertyCount: number;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const body = await api.getEstate(estateId);
-      setDetail({
-        estate: body.estate,
-        propertyCount: body.propertyCount,
-        activePropertyCount: body.activePropertyCount,
-      });
-    } catch (err) {
-      if (err instanceof ApiRequestError && err.code === 'NOT_FOUND') {
-        setError('This estate no longer exists.');
-      } else {
-        setError(err instanceof ApiRequestError ? err.message : 'Could not load the estate.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [estateId]);
+  const {
+    data: detail,
+    loading,
+    error: queryError,
+    errorObject,
+    refresh,
+  } = useApiQuery(
+    ['estate', estateId],
+    () => api.getEstate(estateId),
+    'Could not load the estate.',
+  );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const error =
+    errorObject instanceof ApiRequestError && errorObject.code === 'NOT_FOUND'
+      ? 'This estate no longer exists.'
+      : queryError;
 
   const estate: EstateDto | null = detail?.estate ?? null;
 
@@ -90,7 +79,14 @@ export function EstateDetailPage() {
     if (!ok) return;
     try {
       const result = await api.setEstateStatus(estate.id, next);
-      setDetail((current) => (current ? { ...current, estate: result.estate } : current));
+      queryClient.setQueryData<Awaited<ReturnType<typeof api.getEstate>>>(
+        ['estate', estateId],
+        (current) => (current ? { ...current, estate: result.estate } : current),
+      );
+      // The list and dashboard counters reflect status; mark them stale for
+      // the next visit without pulling them now.
+      void queryClient.invalidateQueries({ queryKey: ['estates'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
       toast.success(isArchiving ? 'Estate archived.' : 'Estate reactivated.');
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not change status.');
@@ -108,7 +104,10 @@ export function EstateDetailPage() {
     try {
       await api.deleteEstate(estate.id);
       toast.success('Estate deleted.');
-      window.location.href = '/app/estates';
+      void queryClient.invalidateQueries({ queryKey: ['estates'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      queryClient.removeQueries({ queryKey: ['estate', estateId] });
+      navigate('/app/estates', { replace: true });
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the estate.');
     }
@@ -127,7 +126,7 @@ export function EstateDetailPage() {
       {loading && !detail ? (
         <LoadingPanel label="Loading estate…" />
       ) : error ? (
-        <ErrorBanner message={error} onRetry={() => void load()} />
+        <ErrorBanner message={error} onRetry={() => void refresh()} />
       ) : estate ? (
         <Card aria-label={`Estate ${estate.name}`}>
           <CardHeader
@@ -183,7 +182,14 @@ export function EstateDetailPage() {
               <EstateEditForm
                 estate={estate}
                 onSaved={(updated) => {
-                  setDetail((current) => (current ? { ...current, estate: updated } : current));
+                  queryClient.setQueryData<Awaited<ReturnType<typeof api.getEstate>>>(
+                    ['estate', estateId],
+                    (current) => (current ? { ...current, estate: updated } : current),
+                  );
+                  void queryClient.invalidateQueries({
+                    queryKey: ['estates'],
+                    refetchType: 'none',
+                  });
                   setEditing(false);
                 }}
               />
@@ -193,7 +199,7 @@ export function EstateDetailPage() {
           <EstateTabs
             estate={estate}
             propertiesCount={detail!.propertyCount}
-            onPropertiesChanged={() => void load()}
+            onPropertiesChanged={() => void refresh()}
           />
         </Card>
       ) : null}

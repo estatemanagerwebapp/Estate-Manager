@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   UserRound,
   Plus,
@@ -19,6 +20,7 @@ import {
   RESIDENT_ID_TYPES,
 } from '@silverstone/shared';
 import { api, ApiRequestError } from '../api/client';
+import { useApiQuery } from '../api/query';
 import { useToast } from '../toast/Toast';
 import { Modal, useConfirm } from '../components/dialog';
 import { Button, EmptyState, ErrorBanner, LoadingPanel } from '../components/ui';
@@ -40,11 +42,9 @@ type ResidentFilter = 'ALL' | 'PENDING' | 'COMPLETED';
 export function ResidentsPage() {
   const toast = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [residents, setResidents] = useState<ResidentOnboardingDto[]>([]);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ResidentFilter>('ALL');
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [issuedCode, setIssuedCode] = useState<RegisterResidentResponse | null>(null);
   const [detail, setDetail] = useState<ResidentOnboardingDto | null>(null);
@@ -54,23 +54,12 @@ export function ResidentsPage() {
   const [demoPassword, setDemoPassword] = useState<string | null>(null);
   const [demoPasswordResident, setDemoPasswordResident] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const body = await api.listResidents();
-      setResidents(body.residents);
-    } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not load the resident register.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data, loading, error, refresh } = useApiQuery(
+    ['residents'],
+    () => api.listResidents(),
+    'Could not load the resident register.',
+  );
+  const residents = useMemo(() => data?.residents ?? [], [data]);
 
   async function markPaid(resident: ResidentOnboardingDto) {
     setActingId(resident.id);
@@ -87,7 +76,9 @@ export function ResidentsPage() {
       } else {
         toast.success(`Payment recorded for ${resident.firstName}.`);
       }
-      await load();
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not record the payment.');
     } finally {
@@ -106,7 +97,11 @@ export function ResidentsPage() {
     try {
       await api.deleteResident(resident.id);
       toast.success(`Deleted ${resident.firstName}.`);
-      await load();
+      // Deleting a completed resident also removes their account; keep the
+      // Users screen and the KPI row honest without re-pulling them now.
+      void queryClient.invalidateQueries({ queryKey: ['users'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the resident.');
     } finally {
@@ -204,7 +199,7 @@ export function ResidentsPage() {
 
       {error && (
         <div className="mt-4">
-          <ErrorBanner message={error} onRetry={() => void load()} />
+          <ErrorBanner message={error} onRetry={() => void refresh()} />
         </div>
       )}
 
@@ -241,7 +236,8 @@ export function ResidentsPage() {
           onRegistered={(result) => {
             setRegisterOpen(false);
             setIssuedCode(result);
-            void load();
+            void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            void refresh();
           }}
         />
       )}

@@ -1,4 +1,4 @@
-import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2,
   LayoutDashboard,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
 import { useCan } from '../auth/useCan';
+import { RefreshButton } from './RefreshButton';
 import { ROLE_LABELS } from '@silverstone/shared';
 
 /**
@@ -24,6 +25,7 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const can = useCan();
   const navigate = useNavigate();
+  const location = useLocation();
 
   async function handleLogout() {
     await logout();
@@ -96,11 +98,7 @@ export function AppShell() {
             >
               Settings
             </p>
-            <div
-              role="group"
-              aria-labelledby="nav-settings"
-              className="flex flex-col gap-1"
-            >
+            <div role="group" aria-labelledby="nav-settings" className="flex flex-col gap-1">
               {can['property.read'] && (
                 <NavLink to="/app/property-options" className={navClasses}>
                   <span className="text-(--color-primary)">
@@ -136,18 +134,21 @@ export function AppShell() {
       </aside>
 
       <main className="md:pl-64">
-        {/* Mobile header */}
-        <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-4 py-3 md:hidden">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur md:px-8 md:py-2">
+          <div className="flex items-center gap-2 md:hidden">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-primary-soft)">
               <Building2 aria-hidden size={16} className="text-(--color-primary)" />
             </span>
             <span className="text-sm font-semibold">Silverstone</span>
           </div>
-          <div className="flex items-center gap-2">
+          <p className="hidden text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-ink-muted) md:block">
+            {sectionLabel(location.pathname)}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <RefreshButton />
             <Link
               to="/app/account"
-              className="rounded-md p-2 text-(--color-ink-muted) hover:bg-(--color-surface)"
+              className="rounded-md p-2 text-(--color-ink-muted) hover:bg-(--color-surface) md:hidden"
               aria-label="Account"
             >
               <Settings aria-hidden size={16} />
@@ -155,13 +156,13 @@ export function AppShell() {
             <button
               type="button"
               onClick={() => void handleLogout()}
-              className="rounded-md p-2 text-(--color-ink-muted) hover:bg-(--color-surface)"
+              className="rounded-md p-2 text-(--color-ink-muted) hover:bg-(--color-surface) md:hidden"
               aria-label="Sign out"
             >
               <LogOut aria-hidden size={16} />
             </button>
           </div>
-        </div>
+        </header>
 
         <div className="mx-auto max-w-5xl px-6 py-8">
           {user?.mustChangePassword && (
@@ -189,4 +190,17 @@ export function AppShell() {
       </main>
     </div>
   );
+}
+
+/** Human-readable name for the sticky header. */
+function sectionLabel(pathname: string): string {
+  if (pathname.startsWith('/app/estates')) return 'Estates';
+  if (pathname.startsWith('/app/properties/')) return 'Property';
+  if (pathname.startsWith('/app/properties')) return 'Properties';
+  if (pathname.startsWith('/app/residents')) return 'Residents';
+  if (pathname.startsWith('/app/users')) return 'Users';
+  if (pathname.startsWith('/app/activity')) return 'Activity';
+  if (pathname.startsWith('/app/property-options')) return 'Settings';
+  if (pathname.startsWith('/app/account')) return 'Settings';
+  return 'Overview';
 }

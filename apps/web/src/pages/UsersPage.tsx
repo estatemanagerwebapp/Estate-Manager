@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Users, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ROLE_KEYS,
   ROLE_LABELS,
   ACCOUNT_STATUSES,
   type UserListItemDto,
+  type UserListResponse,
 } from '@silverstone/shared';
 import { api, ApiRequestError, type UserFilter } from '../api/client';
+import { useApiQuery } from '../api/query';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../toast/Toast';
 import { useConfirm } from '../components/dialog';
@@ -26,73 +29,72 @@ export function UsersPage() {
   const { user: actor } = useAuth();
   const toast = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [users, setUsers] = useState<UserListItemDto[]>([]);
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const load = useCallback(async (filter: UserFilter) => {
-    setError(null);
-    try {
-      const body = await api.listUsers(filter);
-      setUsers(body.users);
-    } catch (err) {
-      if (err instanceof ApiRequestError && err.code === 'FORBIDDEN') {
-        setError('You no longer have permission to manage users.');
-      } else {
-        setError('Could not load users.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const filter = useMemo<UserFilter>(() => {
+    const next: UserFilter = {};
+    if (roleFilter) next.role = roleFilter;
+    if (statusFilter) next.status = statusFilter;
+    return next;
+  }, [roleFilter, statusFilter]);
 
-  useEffect(() => {
-    const filter: UserFilter = {};
-    if (roleFilter) filter.role = roleFilter;
-    if (statusFilter) filter.status = statusFilter;
-    setLoading(true);
-    void load(filter);
-  }, [roleFilter, statusFilter, load]);
+  const usersKey = ['users', filter] as const;
+  const {
+    data,
+    loading,
+    error: queryError,
+    errorObject,
+  } = useApiQuery(usersKey, () => api.listUsers(filter), 'Could not load users.');
+
+  const users = data?.users ?? [];
+  const error =
+    errorObject instanceof ApiRequestError && errorObject.code === 'FORBIDDEN'
+      ? 'You no longer have permission to manage users.'
+      : (queryError ?? actionError);
+
+  function patchUsers(update: (current: UserListItemDto[]) => UserListItemDto[]) {
+    queryClient.setQueryData<UserListResponse>(usersKey, (current) =>
+      current ? { ...current, users: update(current.users) } : current,
+    );
+  }
 
   async function applyStatus(target: UserListItemDto, status: string, reason: string) {
-    const previous = users;
-    setUsers((current) =>
+    const previous = queryClient.getQueryData<UserListResponse>(usersKey);
+    setActionError(null);
+    patchUsers((current) =>
       current.map((user) =>
         user.id === target.id ? { ...user, status: status as UserListItemDto['status'] } : user,
       ),
     );
     try {
       await api.setUserStatus(target.id, status, reason || undefined);
+      // Other role/status filters are now stale; let them re-read on mount.
+      void queryClient.invalidateQueries({ queryKey: ['users'], refetchType: 'none' });
     } catch (err) {
-      setUsers(previous);
-      if (err instanceof ApiRequestError) {
-        setError(err.message);
-      } else {
-        setError('Could not update the user.');
-      }
+      if (previous) queryClient.setQueryData(usersKey, previous);
+      setActionError(err instanceof ApiRequestError ? err.message : 'Could not update the user.');
     }
   }
 
   async function applyRole(target: UserListItemDto, role: string) {
-    const previous = users;
-    setUsers((current) =>
+    const previous = queryClient.getQueryData<UserListResponse>(usersKey);
+    setActionError(null);
+    patchUsers((current) =>
       current.map((user) =>
         user.id === target.id ? { ...user, role: role as UserListItemDto['role'] } : user,
       ),
     );
     try {
       await api.setUserRole(target.id, role);
+      void queryClient.invalidateQueries({ queryKey: ['users'], refetchType: 'none' });
     } catch (err) {
-      setUsers(previous);
-      if (err instanceof ApiRequestError) {
-        setError(err.message);
-      } else {
-        setError('Could not update the user.');
-      }
+      if (previous) queryClient.setQueryData(usersKey, previous);
+      setActionError(err instanceof ApiRequestError ? err.message : 'Could not update the user.');
     }
   }
 
@@ -109,7 +111,9 @@ export function UsersPage() {
     try {
       await api.deleteUser(target.id);
       toast.success('User deleted.');
-      setUsers((current) => current.filter((user) => user.id !== target.id));
+      patchUsers((current) => current.filter((user) => user.id !== target.id));
+      void queryClient.invalidateQueries({ queryKey: ['users'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the user.');
     } finally {

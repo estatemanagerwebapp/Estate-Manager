@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Siren, PhoneCall, ShieldCheck } from 'lucide-react';
 import type { SosEventDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -25,38 +26,35 @@ import {
  */
 export function ResidentSosPage() {
   const toast = useToast();
-  const [events, setEvents] = useState<SosEventDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [raising, setRaising] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentSosEvents();
-      setEvents(data.events);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your SOS history.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'sos'],
+    () => api.getResidentSosEvents(),
+    'Could not load your SOS history.',
+  );
+  const events = data?.events ?? [];
+  const error = actionError ?? queryError;
 
   async function raise() {
     setRaising(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.createResidentSos({ note: note.trim() || undefined });
       toast.success('SOS alert raised. The estate office has been notified.');
       setNote('');
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not raise the SOS alert.');
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not raise the SOS alert.',
+      );
       toast.error('Could not raise the SOS alert.');
     } finally {
       setRaising(false);
@@ -77,7 +75,7 @@ export function ResidentSosPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       <Card>
         <CardHeader

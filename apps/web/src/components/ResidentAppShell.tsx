@@ -15,6 +15,7 @@ import {
   Bell,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import { RefreshButton } from './RefreshButton';
 
 /**
  * Shell for the resident dashboard area (`/resident/app/*`).
@@ -88,13 +89,14 @@ export function ResidentAppShell() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="border-b border-slate-200/80 bg-white px-6 py-4 flex items-center justify-between">
+        <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 px-6 py-4 backdrop-blur flex items-center justify-between gap-3">
           <div>
             <h1 className="text-sm font-semibold text-(--color-ink)">Resident Dashboard</h1>
             <p className="text-xs text-(--color-ink-muted)">
               {user?.fullName || user?.email} • Resident
             </p>
           </div>
+          <RefreshButton />
         </header>
 
         <main className="flex-1 p-6 overflow-auto">

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiRequestError } from '../../api/client';
 import { useToast } from '../../toast/Toast';
 import { Button, Card, CardHeader, CardBody, Field, inputClass } from '../../components/ui';
@@ -15,6 +16,7 @@ import { Button, Card, CardHeader, CardBody, Field, inputClass } from '../../com
 export function EstateCreatePage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -33,6 +35,10 @@ export function EstateCreatePage() {
         address: address.trim() || undefined,
       });
       toast.success('Estate created.');
+      // The list and picker are cached; mark them stale so the screen we are
+      // about to open re-reads once and shows the new estate.
+      void queryClient.invalidateQueries({ queryKey: ['estates'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
       navigate('/app/estates');
     } catch (err) {
       if (err instanceof ApiRequestError) {

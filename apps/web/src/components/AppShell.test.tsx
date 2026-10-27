@@ -4,6 +4,7 @@
  */
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import type { UserDto } from '@silverstone/shared';
 
@@ -43,14 +44,17 @@ import { AppShell } from './AppShell';
 
 describe('AppShell navigation', () => {
   it('files Property options under Settings', () => {
+    const queryClient = new QueryClient();
     render(
-      <MemoryRouter initialEntries={['/app']}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route path="/app" element={<p>overview body</p>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/app']}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/app" element={<p>overview body</p>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     const settings = screen.getByRole('group', { name: 'Settings' });

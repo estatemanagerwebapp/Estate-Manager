@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LoaderCircle, Save, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { PropertyOptionsView, UpdatePropertyOptionsRequest } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import {
@@ -55,15 +57,26 @@ interface FormDraft {
 export function PropertyOptionsPage() {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const canEdit = can['config.manage'];
 
-  const [view, setView] = useState<PropertyOptionsView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const {
+    data: view,
+    loading,
+    error: loadError,
+  } = useApiQuery(
+    ['property-options'],
+    () => api.getPropertyOptions(),
+    'Could not load property options.',
+  );
 
-  // The version the form was loaded from — sent back as `baseVersion`.
-  const [baseVersion, setBaseVersion] = useState<number | null>(null);
-  const [draft, setDraft] = useState<FormDraft | null>(null);
+  // The version the editable draft was built from. It is sent back as
+  // `baseVersion`, so a save can never silently overwrite a configuration
+  // that changed underneath the draft.
+  const [draftVersion, setDraftVersion] = useState<number | null>(
+    () => view?.configVersion ?? null,
+  );
+  const [draft, setDraft] = useState<FormDraft | null>(() => (view ? emptyDraft(view) : null));
 
   // Conflict state: preserved edits + the latest reloaded view.
   const [conflict, setConflict] = useState<{
@@ -73,43 +86,32 @@ export function PropertyOptionsPage() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const body = await api.getPropertyOptions();
-      setView(body);
-      setBaseVersion(body.configVersion);
-      setDraft(emptyDraft(body));
-      setConflict(null);
-    } catch (err) {
-      setLoadError(
-        err instanceof ApiRequestError ? err.message : 'Could not load property options.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Seed the editable draft the first time the view arrives. A later cached
+  // read (header Refresh, or a save from another tab) updates the read-only
+  // sections but deliberately leaves the user's edits alone; submitting them
+  // uses `draftVersion`, so the API returns a conflict instead of overwriting
+  // the newer configuration. "Reload" is the explicit way to discard.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!view || draft) return;
+    setDraft(emptyDraft(view));
+    setDraftVersion(view.configVersion);
+  }, [view, draft]);
 
-  function applyView(body: PropertyOptionsView, replace: boolean) {
-    setView(body);
-    setBaseVersion(body.configVersion);
-    // On a "reload" after a conflict, keep the user's existing draft (their
-    // unsaved edits) — only build a fresh draft when there is none yet.
-    if (replace) setDraft(emptyDraft(body));
+  function applyLatest(next: PropertyOptionsView, replaceDraft: boolean) {
+    queryClient.setQueryData(['property-options'], next);
+    if (replaceDraft) {
+      setDraft(emptyDraft(next));
+      setDraftVersion(next.configVersion);
+    }
   }
 
   async function handleSubmit() {
-    if (!draft || baseVersion === null) return;
+    if (!draft || !view) return;
     setSubmitting(true);
     setConflict(null);
     try {
       const result = await api.updatePropertyOptions({
-        baseVersion,
+        baseVersion: draftVersion ?? view.configVersion,
         propertyOptions: {
           addressComponents: draft.addressComponents,
           houseTypes: draft.houseTypes,
@@ -118,16 +120,17 @@ export function PropertyOptionsPage() {
         },
       });
       toast.success(`Saved — configuration advanced to version ${result.configVersion}.`);
-      setView(result);
-      setBaseVersion(result.configVersion);
-      setDraft(emptyDraft(result));
+      applyLatest(result, true);
+      // Property labels are denormalised into list rows; let the next visit
+      // re-read them without pulling cached screens now.
+      void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'CONFLICT') {
         // Preserve the user's edits; fetch the latest so they can re-apply.
         const latest = await api.getPropertyOptions();
+        applyLatest(latest, false);
+        setDraftVersion(latest.configVersion);
         setConflict({ message: err.message, latest });
-        setView(latest);
-        setBaseVersion(latest.configVersion);
       } else {
         toast.error(
           err instanceof ApiRequestError ? err.message : 'Could not save the configuration.',
@@ -140,16 +143,16 @@ export function PropertyOptionsPage() {
 
   /**
    * Re-apply the preserved draft against the latest version. The `draft`
-   * still holds the user's edits from before the conflict; only
-   * `baseVersion` (now the latest) has changed.
+   * still holds the user's edits from before the conflict; only the base
+   * version (now the latest `draftVersion`) has changed.
    */
   async function reApply() {
-    if (!draft || baseVersion === null) return;
+    if (!draft || !view) return;
     setSubmitting(true);
     setConflict(null);
     try {
       const result = await api.updatePropertyOptions({
-        baseVersion,
+        baseVersion: draftVersion ?? view.configVersion,
         propertyOptions: {
           addressComponents: draft.addressComponents,
           houseTypes: draft.houseTypes,
@@ -158,15 +161,14 @@ export function PropertyOptionsPage() {
         },
       });
       toast.success('Re-applied your changes on the latest configuration.');
-      setView(result);
-      setBaseVersion(result.configVersion);
-      setDraft(emptyDraft(result));
+      applyLatest(result, true);
+      void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'CONFLICT') {
         const latest = await api.getPropertyOptions();
+        applyLatest(latest, false);
+        setDraftVersion(latest.configVersion);
         setConflict({ message: err.message, latest });
-        setView(latest);
-        setBaseVersion(latest.configVersion);
       } else {
         toast.error(err instanceof ApiRequestError ? err.message : 'Re-apply failed.');
       }
@@ -177,9 +179,15 @@ export function PropertyOptionsPage() {
 
   /** Discard the user's edits and re-sync the form to the latest view. */
   async function reloadDiscarding() {
-    const latest = await api.getPropertyOptions();
-    applyView(latest, true);
-    setConflict(null);
+    try {
+      const latest = await api.getPropertyOptions();
+      applyLatest(latest, true);
+      setConflict(null);
+    } catch (err) {
+      toast.error(
+        err instanceof ApiRequestError ? err.message : 'Could not reload property options.',
+      );
+    }
   }
 
   const assetLabels = useMemo(
@@ -287,7 +295,7 @@ export function PropertyOptionsPage() {
                 title="Edit configuration"
                 subtitle="Changes create a new configuration version. Saving is optimistic — a conflict preserves your edits."
                 actions={
-                  <Button size="sm" onClick={() => void load()}>
+                  <Button size="sm" onClick={() => void reloadDiscarding()}>
                     <RefreshCw aria-hidden size={13} />
                     Reload
                   </Button>
@@ -307,6 +315,17 @@ export function PropertyOptionsPage() {
                     </p>
                   </InfoBanner>
                 </div>
+                {!conflict && draftVersion !== null && draftVersion !== view.configVersion && (
+                  <div className="mb-4">
+                    <InfoBanner tone="warning">
+                      <p>
+                        <strong>Configuration updated elsewhere.</strong> Your unsaved edits are
+                        based on version {draftVersion}. Saving will ask you to re-apply them on
+                        version {view.configVersion}.
+                      </p>
+                    </InfoBanner>
+                  </div>
+                )}
                 {conflict && (
                   <div className="mb-4">
                     <InfoBanner tone="warning">
@@ -425,11 +444,7 @@ function OptionsForm({
         hint="Identifier formulas are code-defaulted per property type (land, and each house sub-type) and are not editable here. The template is shown for reference only."
       >
         <div className="flex items-center gap-3">
-          <input
-            className={inputClass}
-            value={draft.identifierTemplate}
-            readOnly
-          />
+          <input className={inputClass} value={draft.identifierTemplate} readOnly />
           <label className="flex items-center gap-2 text-xs text-(--color-ink-muted)">
             Max
             <input
@@ -445,9 +460,9 @@ function OptionsForm({
           </label>
         </div>
         <p className="mt-1 text-[11px] text-(--color-ink-muted)">
-          Per-type formulas are fixed in code: land uses estate-slug/street-name/plot-number;
-          house bungalow/terrace/duplex use estate-slug/street-name/house-number; house
-          apartment/flat use estate-slug/block-name/floor-number/unit-number.
+          Per-type formulas are fixed in code: land uses estate-slug/street-name/plot-number; house
+          bungalow/terrace/duplex use estate-slug/street-name/house-number; house apartment/flat use
+          estate-slug/block-name/floor-number/unit-number.
         </p>
       </Field>
 

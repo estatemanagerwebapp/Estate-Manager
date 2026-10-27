@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { FileUp, Download, LoaderCircle, RefreshCw, Plus } from 'lucide-react';
 import type { ChangeEvent } from 'react';
-import type { EstateDto, ImportBatchDto, ImportRowDto } from '@silverstone/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import type { EstateDto, ImportBatchDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { useConfirm } from '../../components/dialog';
@@ -28,48 +30,40 @@ export function ImportsTab({
 }) {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { confirm, dialog } = useConfirm();
   const canUpload = can['property.manage'] && estate.status === 'ACTIVE';
   const canCommit = can['property.manage'];
 
-  const [batches, setBatches] = useState<ImportBatchDto[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ImportBatchDto | null>(null);
 
   const [uploading, setUploading] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [registerOpen, setRegisterOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const body = await api.listImportBatches(estate.id);
-      setBatches(body.batches);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load import batches.');
-    } finally {
-      setLoading(false);
-    }
-  }, [estate.id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: batchData,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['imports', estate.id],
+    () => api.listImportBatches(estate.id),
+    'Could not load import batches.',
+  );
+  const batches = batchData?.batches ?? [];
+  const error = actionError ?? queryError;
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
     const input = event.target;
     const file = input.files?.[0];
     if (!file) return;
     setUploading(true);
-    setError(null);
+    setActionError(null);
     // Clear the input up front so the operator can re-select the same
     // file after an error; the `File` reference is already held locally.
     input.value = '';
-    setUploading(true);
-    setError(null);
     try {
       const preview = await api.uploadImport(estate.id, file, file.name);
       toast.success(
@@ -81,13 +75,12 @@ export function ImportsTab({
         );
       }
       setSelected(preview.batch);
-      void load();
-      onPropertiesChanged?.();
+      void refresh();
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'CONFLICT') {
-        setError(`Configuration conflict: ${err.message}`);
+        setActionError(`Configuration conflict: ${err.message}`);
       } else {
-        setError(err instanceof ApiRequestError ? err.message : 'Upload failed.');
+        setActionError(err instanceof ApiRequestError ? err.message : 'Upload failed.');
       }
     } finally {
       setUploading(false);
@@ -125,18 +118,21 @@ export function ImportsTab({
     });
     if (!ok) return;
     setCommitting(true);
-    setError(null);
+    setActionError(null);
     try {
       const result = await api.commitImport(batch.id, batch.legacySampleRows > 0);
       toast.success(`Committed ${result.createdPropertyIds.length} properties.`);
       setSelected(null);
-      void load();
+      void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['estate'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      await refresh();
       onPropertiesChanged?.();
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'CONFLICT') {
-        setError(`Cannot commit — ${err.message}`);
+        setActionError(`Cannot commit — ${err.message}`);
       } else {
-        setError(err instanceof ApiRequestError ? err.message : 'Commit failed.');
+        setActionError(err instanceof ApiRequestError ? err.message : 'Commit failed.');
       }
     } finally {
       setCommitting(false);
@@ -170,7 +166,7 @@ export function ImportsTab({
           <Download aria-hidden size={13} />
           Template
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => void load()}>
+        <Button variant="ghost" size="sm" onClick={() => void refresh()}>
           <RefreshCw aria-hidden size={13} />
           Refresh
         </Button>
@@ -203,7 +199,7 @@ export function ImportsTab({
             <LoaderCircle aria-hidden size={14} className="animate-spin" />
             Loading import batches…
           </p>
-        ) : !batches || batches.length === 0 ? (
+        ) : batches.length === 0 ? (
           <EmptyState
             title="No import batches yet"
             body={
@@ -233,7 +229,12 @@ export function ImportsTab({
           onCreated={(property) => {
             setRegisterOpen(false);
             toast.success(`Property ${property.identifier} registered.`);
-            void load();
+            void queryClient.invalidateQueries({
+              queryKey: ['properties'],
+              refetchType: 'none',
+            });
+            void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+            void refresh();
             onPropertiesChanged?.();
           }}
         />
@@ -347,31 +348,16 @@ function BatchDetail({
   canCommit: boolean;
   onBack: () => void;
 }) {
-  const [rows, setRows] = useState<ImportRowDto[] | null>(null);
-  const [rowsLoading, setRowsLoading] = useState(false);
-  const [rowsError, setRowsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadRows() {
-      setRowsLoading(true);
-      setRowsError(null);
-      try {
-        const body = await api.getImportBatch(batch.id);
-        if (!cancelled) setRows(body.rows);
-      } catch (err) {
-        if (!cancelled) {
-          setRowsError(err instanceof ApiRequestError ? err.message : 'Could not load batch rows.');
-        }
-      } finally {
-        if (!cancelled) setRowsLoading(false);
-      }
-    }
-    void loadRows();
-    return () => {
-      cancelled = true;
-    };
-  }, [batch.id]);
+  const {
+    data: batchDetail,
+    loading: rowsLoading,
+    error: rowsError,
+  } = useApiQuery(
+    ['import-batch', batch.id],
+    () => api.getImportBatch(batch.id),
+    'Could not load batch rows.',
+  );
+  const rows = batchDetail?.rows ?? null;
 
   const isPreviewed = batch.status === 'PREVIEWED';
 

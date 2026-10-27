@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Home,
@@ -11,8 +11,10 @@ import {
   Link as LinkIcon,
   Trash2,
 } from 'lucide-react';
-import type { EstateDto, PropertyDto, PropertyStatus } from '@silverstone/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import type { PropertyDto, PropertyStatus } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { usePropertyOptions } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
@@ -46,36 +48,53 @@ export function PropertyDetailPage() {
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
   const { view } = usePropertyOptions(true);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const [property, setProperty] = useState<PropertyDto | null>(null);
-  const [estate, setEstate] = useState<EstateDto | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [acting, setActing] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const detail = await api.getProperty(propertyId);
-      setProperty(detail.property);
-      const estateBody = await api.getEstate(detail.property.estateId);
-      setEstate(estateBody.estate);
-    } catch (err) {
-      if (err instanceof ApiRequestError && err.code === 'NOT_FOUND') {
-        setError('This property no longer exists.');
-      } else {
-        setError(err instanceof ApiRequestError ? err.message : 'Could not load the property.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [propertyId]);
+  const {
+    data: detail,
+    loading,
+    error: queryError,
+    errorObject,
+  } = useApiQuery(
+    ['property', propertyId],
+    () => api.getProperty(propertyId),
+    'Could not load the property.',
+  );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const property: PropertyDto | null = detail?.property ?? null;
+  const estateId = property?.estateId ?? '';
+
+  const { data: estateDetail } = useApiQuery(
+    ['estate', estateId],
+    () => api.getEstate(estateId),
+    'Could not load the estate.',
+    Boolean(estateId),
+  );
+  const estate = estateDetail?.estate ?? null;
+
+  const error =
+    errorObject instanceof ApiRequestError && errorObject.code === 'NOT_FOUND'
+      ? 'This property no longer exists.'
+      : queryError;
+
+  function setProperty(next: PropertyDto) {
+    queryClient.setQueryData<Awaited<ReturnType<typeof api.getProperty>>>(
+      ['property', propertyId],
+      (current) => (current ? { ...current, property: next } : current),
+    );
+    void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+    if (estateId) {
+      void queryClient.invalidateQueries({
+        queryKey: ['estate', estateId],
+        refetchType: 'none',
+      });
+    }
+  }
 
   async function archive() {
     if (!property) return;
@@ -125,7 +144,16 @@ export function PropertyDetailPage() {
     try {
       await api.deleteProperty(property.id);
       toast.success('Property deleted.');
-      window.location.href = '/app/properties';
+      void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      if (estateId) {
+        void queryClient.invalidateQueries({
+          queryKey: ['estate', estateId],
+          refetchType: 'none',
+        });
+      }
+      queryClient.removeQueries({ queryKey: ['property', propertyId] });
+      navigate('/app/properties', { replace: true });
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the property.');
     } finally {

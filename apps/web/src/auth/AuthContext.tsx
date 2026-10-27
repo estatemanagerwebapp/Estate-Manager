@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { LoginResponse, UserDto } from '@silverstone/shared';
 import { ApiRequestError, api, setUnauthorizedHandler } from '../api/client';
+import { queryClient } from '../api/query';
 
 /**
  * Session state for the web console.
@@ -67,6 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const body = await api.login(email, password);
     sessionVersion.current += 1;
+    // The previous cache belonged to an anonymous visitor (or another
+    // account). Never let it leak across a session boundary.
+    queryClient.clear();
     setUser(body.user);
     return body;
   }, []);
@@ -79,11 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void error;
     }
     sessionVersion.current += 1;
+    queryClient.clear();
     setUser(null);
   }, []);
 
   const clear = useCallback(() => {
     sessionVersion.current += 1;
+    queryClient.clear();
     setUser(null);
   }, []);
 

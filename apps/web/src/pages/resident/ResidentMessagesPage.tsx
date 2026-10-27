@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Mail, Plus, Send, User, Building2 } from 'lucide-react';
 import type { ResidentMessageThreadDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
 import {
   Button,
@@ -25,9 +26,7 @@ import {
  */
 export function ResidentMessagesPage() {
   const toast = useToast();
-  const [threads, setThreads] = useState<ResidentMessageThreadDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [composing, setComposing] = useState(false);
@@ -35,33 +34,25 @@ export function ResidentMessagesPage() {
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await api.getResidentMessages();
-      setThreads(data.threads);
-      setSelectedId((current) => {
-        if (current && data.threads.some((thread) => thread.id === current)) {
-          return current;
-        }
-        return data.threads[0]?.id ?? null;
-      });
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load your messages.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const selected = threads.find((thread) => thread.id === selectedId) ?? null;
+  const {
+    data,
+    loading,
+    error: queryError,
+    refresh,
+  } = useApiQuery(
+    ['resident', 'messages'],
+    () => api.getResidentMessages(),
+    'Could not load your messages.',
+  );
+  const threads: ResidentMessageThreadDto[] = data?.threads ?? [];
+  const error = actionError ?? queryError;
+  // Keep the operator's selection if it still exists, otherwise fall back to
+  // the newest thread. No effect needed: this is derived from the cache.
+  const selected = threads.find((thread) => thread.id === selectedId) ?? threads[0] ?? null;
 
   async function sendNewThread() {
     setSending(true);
-    setError(null);
+    setActionError(null);
     try {
       const response = await api.sendResidentMessage({ subject, body: reply });
       toast.success('Conversation started.');
@@ -69,9 +60,9 @@ export function ResidentMessagesPage() {
       setReply('');
       setComposing(false);
       setSelectedId(response.thread.id);
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not send your message.');
+      setActionError(err instanceof ApiRequestError ? err.message : 'Could not send your message.');
       toast.error('Could not send your message.');
     } finally {
       setSending(false);
@@ -81,14 +72,14 @@ export function ResidentMessagesPage() {
   async function sendReply() {
     if (!selected) return;
     setSending(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.sendResidentMessage({ threadId: selected.id, body: reply });
       toast.success('Reply sent.');
       setReply('');
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not send your reply.');
+      setActionError(err instanceof ApiRequestError ? err.message : 'Could not send your reply.');
       toast.error('Could not send your reply.');
     } finally {
       setSending(false);
@@ -108,7 +99,7 @@ export function ResidentMessagesPage() {
     <div className="space-y-4">
       <PageHeading />
 
-      {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -201,9 +192,9 @@ export function ResidentMessagesPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedId(thread.id)}
-                      aria-current={thread.id === selectedId ? 'true' : undefined}
+                      aria-current={thread.id === selected?.id ? 'true' : undefined}
                       className={`w-full rounded-md px-3 py-2 text-left transition-colors ${
-                        thread.id === selectedId ? 'bg-slate-100' : 'hover:bg-slate-50'
+                        thread.id === selected?.id ? 'bg-slate-100' : 'hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">

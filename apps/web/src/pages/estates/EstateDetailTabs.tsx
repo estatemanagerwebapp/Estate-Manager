@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Plus, ChevronLeft, ChevronRight, LoaderCircle } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { EstateDto, PropertyListResponse } from '@silverstone/shared';
-import { api, ApiRequestError } from '../../api/client';
+import { api } from '../../api/client';
+import { useApiQuery } from '../../api/query';
 import { usePropertyOptions, registerableAssetTypes } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
@@ -28,11 +30,8 @@ export function PropertiesTab({
 }) {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { view: optionsView } = usePropertyOptions(true);
-
-  const [list, setList] = useState<PropertyListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const [typeKey, setTypeKey] = useState('');
   const [status, setStatus] = useState('');
@@ -41,29 +40,28 @@ export function PropertiesTab({
   const [pageSize] = useState(50);
   const [registerOpen, setRegisterOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const body = await api.listProperties({
-        estateId: estate.id,
-        typeKey: typeKey || undefined,
-        status: status || undefined,
-        identifierContains: identifierSearch.trim() || undefined,
-        page,
-        pageSize,
-      });
-      setList(body);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load properties.');
-    } finally {
-      setLoading(false);
-    }
-  }, [estate.id, typeKey, status, identifierSearch, page, pageSize]);
+  const filter = useMemo(
+    () => ({
+      estateId: estate.id,
+      typeKey: typeKey || undefined,
+      status: status || undefined,
+      identifierContains: identifierSearch.trim() || undefined,
+      page,
+      pageSize,
+    }),
+    [estate.id, typeKey, status, identifierSearch, page, pageSize],
+  );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: list,
+    loading,
+    error,
+    refresh,
+  } = useApiQuery(
+    ['properties', filter],
+    () => api.listProperties(filter),
+    'Could not load properties.',
+  );
 
   const types = registerableAssetTypes(optionsView);
   const estateActive = estate.status === 'ACTIVE';
@@ -210,7 +208,12 @@ export function PropertiesTab({
           onCreated={(property) => {
             setRegisterOpen(false);
             toast.success(`Property ${property.identifier} registered.`);
-            void load();
+            void queryClient.invalidateQueries({
+              queryKey: ['properties'],
+              refetchType: 'none',
+            });
+            void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+            void refresh();
             onPropertiesChanged?.();
           }}
         />
