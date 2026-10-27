@@ -12,6 +12,8 @@ export type CreatePropertyInput = {
   organizationId: string;
   identifier: string;
   typeKey: string;
+  /** For house properties: the nested house type key. Null for land. */
+  houseTypeKey: string | null;
   unitTypeKey: string | null;
   parentPropertyId: string | null;
   addressComponents: Record<string, string>;
@@ -42,6 +44,12 @@ export interface PropertyRecord {
   organizationId: string;
   identifier: string;
   typeKey: string;
+  /**
+   * For a house property: the configured nested house type key
+   * (e.g. `bungalow`, `terrace`, `duplex`, `apartment`, `flat`).
+   * Null for land properties.
+   */
+  houseTypeKey: string | null;
   unitTypeKey: string | null;
   parentPropertyId: string | null;
   /** Parent property projection, when the property is a unit under a parent. */
@@ -70,6 +78,7 @@ export class PrismaPropertyRepository {
         organizationId: input.organizationId,
         identifier: input.identifier,
         typeKey: input.typeKey,
+        houseTypeKey: input.houseTypeKey,
         unitTypeKey: input.unitTypeKey,
         parentPropertyId: input.parentPropertyId,
         addressComponents: input.addressComponents as Prisma.InputJsonValue,
@@ -108,6 +117,7 @@ export class PrismaPropertyRepository {
         organization_id,
         identifier,
         type_key,
+        house_type_key,
         unit_type_key,
         parent_property_id,
         address_components,
@@ -121,6 +131,7 @@ export class PrismaPropertyRepository {
         ${Prisma.sql`${input.organizationId}::uuid`},
         ${input.identifier},
         ${input.typeKey},
+        ${input.houseTypeKey ?? Prisma.sql`NULL::varchar`},
         ${input.unitTypeKey ?? Prisma.sql`NULL::text`},
         ${input.parentPropertyId ?? Prisma.sql`NULL::uuid`},
         ${Prisma.sql`${addressComponentsJson}::jsonb`},
@@ -295,6 +306,7 @@ function toRecord(row: PrismaPropertyRow & { addressComponents: unknown }): Prop
     organizationId: row.organizationId,
     identifier: row.identifier,
     typeKey: row.typeKey,
+    houseTypeKey: row.houseTypeKey,
     unitTypeKey: row.unitTypeKey,
     parentPropertyId: row.parentPropertyId,
     parentProperty: row.parentProperty

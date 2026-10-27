@@ -269,6 +269,9 @@ export function PropertyDetailPage() {
               </code>
             </Fact>
             <Fact label="Type">{property.typeLabel || property.typeKey}</Fact>
+            {property.houseTypeKey && (
+              <Fact label="House type">{property.houseTypeLabel || property.houseTypeKey}</Fact>
+            )}
             <Fact label="Status">
               <Badge tone={statusTone(property.status)}>{isArchived ? 'Archived' : 'Active'}</Badge>
             </Fact>

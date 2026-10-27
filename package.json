@@ -37,7 +37,8 @@
     "db:status": "prisma migrate status --schema prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "e2e": "npm run e2e -w @silverstone/web",
-    "e2e:reset": "npm run e2e:reset -w @silverstone/api"
+    "e2e:reset": "npm run e2e:reset -w @silverstone/api",
+    "db:cleanup-pool": "npm run db:cleanup-pool -w @silverstone/api"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -408,6 +408,9 @@ function PropertyCard({
         <span className="inline-flex items-center gap-1">
           <Tag aria-hidden size={12} />
           {property.typeLabel || property.typeKey}
+          {property.houseTypeKey && property.houseTypeLabel ? (
+            <span className="ml-1 text-[10px] text-(--color-ink-muted)">({property.houseTypeLabel})</span>
+          ) : null}
         </span>
         {estateName && (
           <span className="inline-flex items-center gap-1">

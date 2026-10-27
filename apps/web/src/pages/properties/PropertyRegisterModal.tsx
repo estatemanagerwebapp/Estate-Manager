@@ -10,10 +10,13 @@ import { Modal } from '../../components/dialog';
  *
  * The form is driven by the property-options view:
  *   - an estate picker (optional when the caller pre-selects one)
- *   - a three-option property-type radio: Land, House, Both — mapped to the
- *     configured asset type keys `land_plot`, `house`, `both`
- *   - the address components applicable to the chosen type, rendered
- *     dynamically from `addressComponents`
+ *   - a top-level property-type radio: Land / House (the only two top-level
+ *     types; `both` was dropped)
+ *   - when House is chosen, a nested house-type picker (bungalow, terrace,
+ *     duplex, apartment, flat) from `houseTypes` in the config
+ *   - the address components applicable to the chosen top-level type **and**
+ *     (for house) the chosen nested type, rendered dynamically from
+ *     `addressComponents`
  *   - a required human-facing property name (distinct from the derived
  *     identifier)
  *
@@ -22,18 +25,11 @@ import { Modal } from '../../components/dialog';
  * required / maxLength / pattern for fast inline feedback only.
  */
 
-type PropertyTypeOption = 'land' | 'house' | 'both';
+type TopLevelType = 'land' | 'house';
 
-const TYPE_OPTION_TO_ASSET_KEY: Record<PropertyTypeOption, string> = {
-  land: 'land_plot',
-  house: 'house',
-  both: 'both',
-};
-
-const TYPE_OPTION_LABELS: Record<PropertyTypeOption, string> = {
+const TOP_LEVEL_LABELS: Record<TopLevelType, string> = {
   land: 'Land',
   house: 'House',
-  both: 'Both (land & house)',
 };
 
 export function PropertyRegisterModal({
@@ -53,32 +49,46 @@ export function PropertyRegisterModal({
 }) {
   const { view } = usePropertyOptions(true);
   const [estateId, setEstateId] = useState(estate?.id ?? defaultEstateId ?? '');
-  const [typeOption, setTypeOption] = useState<PropertyTypeOption>('land');
+  const [topLevel, setTopLevel] = useState<TopLevelType>('land');
+  const [houseTypeKey, setHouseTypeKey] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const components = view?.addressComponents ?? [];
+  const houseTypes = view?.houseTypes ?? [];
   const availableEstates = useMemo(() => (estate ? [estate] : (estates ?? [])), [estate, estates]);
 
-  const typeKey = TYPE_OPTION_TO_ASSET_KEY[typeOption];
-  const typeLabel = view?.assetTypes.find((type) => type.key === typeKey)?.label ?? typeKey;
-
-  // The three type options are offered only when their asset type key is known
-  // to the active configuration.
   const knownAssetKeys = new Set((view?.assetTypes ?? []).map((type) => type.key));
+  const activeHouseTypes = houseTypes.filter((type) => type.active);
 
-  // The address components that apply to the chosen type: required for it (by
-  // label), or required for all, and not excluded from it (by key). Rendered
-  // in configuration order.
-  const visibleComponents = components.filter((component) => {
-    const notApplicable = component.notApplicableFor ?? [];
-    if (notApplicable.includes(typeKey)) return false;
-    const appliesToAll = (component.requiredForLabels ?? []).length === 0;
-    const explicitlyRequired = (component.requiredForLabels ?? []).includes(typeLabel);
-    return explicitlyRequired || appliesToAll;
-  });
+  // Resolved keys for the current selection.
+  const typeKey: string | null = topLevel === 'land' ? 'land' : 'house';
+  const resolvedHouseTypeKey =
+    topLevel === 'house' ? houseTypeKey : null;
+
+  // House type selector is required for house properties; its options come
+  // from the configured house types.
+  const houseTypeLabel = activeHouseTypes.find((type) => type.key === houseTypeKey)?.label;
+
+  // The address components that apply to the chosen selection: required for
+  // the top-level type or the nested house type (or required for all), and not
+  // excluded from either. Rendered in configuration order.
+  const visibleComponents = useMemo(() => {
+    if (!typeKey) return [];
+    const houseType = resolvedHouseTypeKey ? `house.${resolvedHouseTypeKey}` : null;
+    return components.filter((component) => {
+      const notApplicable = component.notApplicableFor ?? [];
+      if (notApplicable.includes(typeKey)) return false;
+      if (houseType && notApplicable.includes(houseType)) return false;
+      const appliesToAll = (component.requiredForLabels ?? []).length === 0;
+      const explicitlyRequired =
+        (component.requiredForLabels ?? []).includes(TOP_LEVEL_LABELS[topLevel]) ||
+        (houseTypeLabel && (component.requiredForLabels ?? []).includes(houseTypeLabel));
+      return explicitlyRequired || appliesToAll;
+    });
+  }, [components, topLevel, resolvedHouseTypeKey, houseTypeLabel]);
 
   useEffect(() => {
     setEstateId(
@@ -86,13 +96,28 @@ export function PropertyRegisterModal({
     );
   }, [availableEstates]);
 
+  // When switching away from house, clear the nested type; when entering house,
+  // pick the first active house type by default.
+  useEffect(() => {
+    if (topLevel !== 'house') {
+      setHouseTypeKey(null);
+    } else if (!houseTypeKey && activeHouseTypes.length > 0) {
+      const first = activeHouseTypes[0];
+      if (first) setHouseTypeKey(first.key);
+    }
+  }, [topLevel, houseTypeKey, activeHouseTypes]);
+
   function isRequired(componentKey: string): boolean {
     const component = components.find((item) => item.key === componentKey);
     if (!component) return false;
+    const houseType = resolvedHouseTypeKey ? `house.${resolvedHouseTypeKey}` : null;
     const notApplicable = component.notApplicableFor ?? [];
-    if (notApplicable.includes(typeKey)) return false;
+    if (notApplicable.includes(typeKey ?? '')) return false;
+    if (houseType && notApplicable.includes(houseType)) return false;
     const appliesToAll = (component.requiredForLabels ?? []).length === 0;
-    const explicitlyRequired = (component.requiredForLabels ?? []).includes(typeLabel);
+    const explicitlyRequired =
+      (component.requiredForLabels ?? []).includes(TOP_LEVEL_LABELS[topLevel]) ||
+      (houseTypeLabel && (component.requiredForLabels ?? []).includes(houseTypeLabel));
     return explicitlyRequired || appliesToAll;
   }
 
@@ -100,6 +125,10 @@ export function PropertyRegisterModal({
     event?.preventDefault();
     if (!estateId) {
       setError('Choose an estate to continue.');
+      return;
+    }
+    if (topLevel === 'house' && !resolvedHouseTypeKey) {
+      setError('Choose a house type to continue.');
       return;
     }
     setSubmitting(true);
@@ -136,7 +165,8 @@ export function PropertyRegisterModal({
       }
       const result = await api.createProperty({
         estateId,
-        typeKey,
+        typeKey: typeKey ?? '',
+        houseTypeKey: resolvedHouseTypeKey,
         addressComponents:
           Object.keys(addressComponents).length > 0 ? addressComponents : undefined,
       });
@@ -165,8 +195,8 @@ export function PropertyRegisterModal({
   }
 
   const selectedEstate = availableEstates.find((item) => item.id === estateId);
-  const missingTypes = (Object.keys(TYPE_OPTION_TO_ASSET_KEY) as PropertyTypeOption[]).filter(
-    (option) => !knownAssetKeys.has(TYPE_OPTION_TO_ASSET_KEY[option]),
+  const missingTopLevel = (['land', 'house'] as TopLevelType[]).filter(
+    (option) => !knownAssetKeys.has(option),
   );
 
   return (
@@ -214,14 +244,13 @@ export function PropertyRegisterModal({
 
         <Field label="Property type">
           <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Property type">
-            {(Object.keys(TYPE_OPTION_TO_ASSET_KEY) as PropertyTypeOption[]).map((option) => {
-              const assetKey = TYPE_OPTION_TO_ASSET_KEY[option];
-              const available = knownAssetKeys.has(assetKey);
+            {(['land', 'house'] as TopLevelType[]).map((option) => {
+              const available = knownAssetKeys.has(option);
               return (
                 <label
                   key={option}
                   className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                    typeOption === option
+                    topLevel === option
                       ? 'border-(--color-primary) bg-(--color-primary-soft)'
                       : 'border-slate-200 bg-(--color-surface) hover:bg-slate-50'
                   } ${available ? '' : 'cursor-not-allowed opacity-50'}`}
@@ -230,22 +259,49 @@ export function PropertyRegisterModal({
                     type="radio"
                     name="property-type"
                     value={option}
-                    checked={typeOption === option}
+                    checked={topLevel === option}
                     disabled={!available}
-                    onChange={() => setTypeOption(option)}
+                    onChange={() => setTopLevel(option)}
                     className="accent-(--color-primary)"
                   />
-                  <span>{TYPE_OPTION_LABELS[option]}</span>
-                  <span className="ml-auto text-[11px] text-(--color-ink-muted)">{assetKey}</span>
+                  <span>{TOP_LEVEL_LABELS[option]}</span>
+                  <span className="ml-auto text-[11px] text-(--color-ink-muted)">{option}</span>
                 </label>
               );
             })}
           </div>
         </Field>
 
+        {topLevel === 'house' && (
+          <Field label="House type">
+            <select
+              value={houseTypeKey ?? ''}
+              onChange={(event) => setHouseTypeKey(event.target.value || null)}
+              className={`${selectClass} w-full`}
+              aria-label="House type"
+              required
+              disabled={activeHouseTypes.length === 0}
+            >
+              <option value="" disabled>
+                Select a house type…
+              </option>
+              {activeHouseTypes.map((type) => (
+                <option key={type.key} value={type.key}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            {activeHouseTypes.length === 0 && (
+              <span className="text-[11px] text-(--color-ink-muted)">
+                No house types are configured yet.
+              </span>
+            )}
+          </Field>
+        )}
+
         {visibleComponents.length === 0 && (
           <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800">
-            No address fields are configured for this type. The identifier is derived from the
+            No address fields are configured for this selection. The identifier is derived from the
             estate slug — ask an administrator to configure address components if you need finer
             identifiers.
           </p>
@@ -278,7 +334,7 @@ export function PropertyRegisterModal({
           );
         })}
 
-        {missingTypes.length > 0 && (
+        {missingTopLevel.length > 0 && (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
             Some property types are not configured for this organization yet; they are disabled.
           </p>

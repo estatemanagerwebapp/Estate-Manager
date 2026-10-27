@@ -11,10 +11,11 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/.git/**', '**/e2e/**'],
     // The pooler runs in session mode and accepts only 15 client sessions
     // in total ("max clients reached in session mode ... pool_size: 15").
-    // Every test file opens its own Prisma client and the URL caps each
-    // client at 5 connections, so two workers at a time is the most that
-    // fits the budget. More than that and the suite fails intermittently
-    // with 503 DATABASE_UNAVAILABLE.
+    // Each test file opens its own Prisma client, narrowed to three
+    // connections in test mode (see lib/prisma.ts), so two workers at a
+    // time is six connections — room to spare for a development server
+    // running against the same database. More workers exhausted the pool
+    // and the suite failed intermittently with 503 DATABASE_UNAVAILABLE.
     maxWorkers: 2,
   },
 });

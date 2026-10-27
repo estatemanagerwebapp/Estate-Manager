@@ -107,6 +107,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
         .object({
           estateId: z.string().trim().min(1),
           typeKey: z.string().trim().min(1).max(48),
+          houseTypeKey: z.string().trim().min(1).max(48).optional().nullable(),
           parentPropertyId: z.string().trim().min(1).optional(),
           name: z.string().trim().min(1).max(120).optional(),
           addressComponents: z.record(z.string(), z.string()).optional(),
@@ -121,6 +122,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const input = {
         estateId: body.data.estateId,
         typeKey: body.data.typeKey,
+        houseTypeKey: body.data.houseTypeKey ?? null,
         parentPropertyId: body.data.parentPropertyId,
         name: body.data.name,
         addressComponents: body.data.addressComponents as Record<string, string> | undefined,

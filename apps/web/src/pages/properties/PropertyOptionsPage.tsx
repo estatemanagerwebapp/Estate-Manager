@@ -38,8 +38,16 @@ import {
 type AddressComponentDraft =
   UpdatePropertyOptionsRequest['propertyOptions']['addressComponents'][number];
 
+type HouseTypeDraft = {
+  key: string;
+  label: string;
+  active: boolean;
+};
+
 interface FormDraft {
   addressComponents: AddressComponentDraft[];
+  houseTypes: HouseTypeDraft[];
+  /** Per-type identifier formulas are code-defaulted; this is read-only display. */
   identifierTemplate: string;
   identifierMax: number;
 }
@@ -104,6 +112,7 @@ export function PropertyOptionsPage() {
         baseVersion,
         propertyOptions: {
           addressComponents: draft.addressComponents,
+          houseTypes: draft.houseTypes,
           identifierTemplate: draft.identifierTemplate,
           identifierMax: draft.identifierMax,
         },
@@ -143,6 +152,7 @@ export function PropertyOptionsPage() {
         baseVersion,
         propertyOptions: {
           addressComponents: draft.addressComponents,
+          houseTypes: draft.houseTypes,
           identifierTemplate: draft.identifierTemplate,
           identifierMax: draft.identifierMax,
         },
@@ -175,6 +185,16 @@ export function PropertyOptionsPage() {
   const assetLabels = useMemo(
     () => new Map((view?.assetTypes ?? []).map((type) => [type.key, type.label])),
     [view],
+  );
+
+  const houseLabels = useMemo(
+    () => new Map((view?.houseTypes ?? []).map((type) => [`house.${type.key}`, type.label])),
+    [view],
+  );
+
+  const allOptionLabels = useMemo(
+    () => new Map([...assetLabels, ...houseLabels]),
+    [assetLabels, houseLabels],
   );
 
   return (
@@ -258,8 +278,9 @@ export function PropertyOptionsPage() {
             </Card>
           )}
 
-          <TypeCatalogues view={view} />
+          <HouseTypesCatalogue view={view} />
 
+          <TypeCatalogues view={view} />
           {canEdit ? (
             <Card aria-label="Edit property options">
               <CardHeader
@@ -313,7 +334,7 @@ export function PropertyOptionsPage() {
                 {draft && (
                   <OptionsForm
                     draft={draft}
-                    assetLabels={assetLabels}
+                    optionLabels={allOptionLabels}
                     onChange={setDraft}
                     onSubmit={() => void handleSubmit()}
                     onReApply={() => void reApply()}
@@ -382,7 +403,7 @@ function TypeCatalogues({ view }: { view: PropertyOptionsView }) {
 
 function OptionsForm({
   draft,
-  assetLabels,
+  optionLabels,
   onChange,
   onSubmit,
   onReApply,
@@ -390,7 +411,7 @@ function OptionsForm({
   showReApply,
 }: {
   draft: FormDraft;
-  assetLabels: Map<string, string>;
+  optionLabels: Map<string, string>;
   onChange: (draft: FormDraft) => void;
   onSubmit: () => void;
   onReApply: () => void;
@@ -401,14 +422,13 @@ function OptionsForm({
     <div className="flex flex-col gap-5">
       <Field
         label="Identifier template"
-        hint="Available tokens: {estate_slug} and each address component key above. Max length is a hard cap."
+        hint="Identifier formulas are code-defaulted per property type (land, and each house sub-type) and are not editable here. The template is shown for reference only."
       >
         <div className="flex items-center gap-3">
           <input
             className={inputClass}
             value={draft.identifierTemplate}
-            onChange={(event) => onChange({ ...draft, identifierTemplate: event.target.value })}
-            maxLength={120}
+            readOnly
           />
           <label className="flex items-center gap-2 text-xs text-(--color-ink-muted)">
             Max
@@ -425,9 +445,59 @@ function OptionsForm({
           </label>
         </div>
         <p className="mt-1 text-[11px] text-(--color-ink-muted)">
-          The read API does not return the current length cap; the value above is applied on save.
+          Per-type formulas are fixed in code: land uses estate-slug/street-name/plot-number;
+          house bungalow/terrace/duplex use estate-slug/street-name/house-number; house
+          apartment/flat use estate-slug/block-name/floor-number/unit-number.
         </p>
       </Field>
+
+      <div>
+        <h3 className="text-xs font-medium text-(--color-ink-muted)">House types</h3>
+        <p className="mt-1 text-[11px] text-(--color-ink-muted)">
+          Nested types that appear under the "House" top-level type. Each has a key (slug), a
+          human-facing label, and an active flag. Inactive types cannot be assigned to new
+          properties.
+        </p>
+
+        <div className="mt-3 flex flex-col gap-3">
+          {draft.houseTypes.map((houseType, index) => (
+            <HouseTypeEditor
+              key={index}
+              houseType={houseType}
+              onChange={(next) => {
+                const updated = [...draft.houseTypes];
+                updated[index] = next;
+                onChange({ ...draft, houseTypes: updated });
+              }}
+              onRemove={() =>
+                onChange({
+                  ...draft,
+                  houseTypes: draft.houseTypes.filter((_, i) => i !== index),
+                })
+              }
+            />
+          ))}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              onChange({
+                ...draft,
+                houseTypes: [
+                  ...draft.houseTypes,
+                  {
+                    key: `house_type_${draft.houseTypes.length + 1}`,
+                    label: `House type ${draft.houseTypes.length + 1}`,
+                    active: true,
+                  },
+                ],
+              })
+            }
+          >
+            Add house type
+          </Button>
+        </div>
+      </div>
 
       <div>
         <h3 className="text-xs font-medium text-(--color-ink-muted)">Address components</h3>
@@ -441,7 +511,7 @@ function OptionsForm({
             <AddressComponentEditor
               key={index}
               component={component}
-              assetLabels={assetLabels}
+              optionLabels={optionLabels}
               onChange={(next) => {
                 const updated = [...draft.addressComponents];
                 updated[index] = next;
@@ -496,12 +566,12 @@ function OptionsForm({
 
 function AddressComponentEditor({
   component,
-  assetLabels,
+  optionLabels,
   onChange,
   onRemove,
 }: {
   component: AddressComponentDraft;
-  assetLabels: Map<string, string>;
+  optionLabels: Map<string, string>;
   onChange: (component: AddressComponentDraft) => void;
   onRemove: () => void;
 }) {
@@ -558,7 +628,7 @@ function AddressComponentEditor({
               onChange({ ...component, requiredFor: next }),
             )
           }
-          assetLabels={assetLabels}
+          optionLabels={optionLabels}
         />
         <MultiSelect
           label="Not applicable to"
@@ -568,7 +638,7 @@ function AddressComponentEditor({
               onChange({ ...component, notApplicableFor: next }),
             )
           }
-          assetLabels={assetLabels}
+          optionLabels={optionLabels}
         />
       </div>
       <p className="mt-1 text-[11px] text-(--color-ink-muted)">
@@ -587,14 +657,14 @@ function MultiSelect({
   label,
   selected,
   onToggle,
-  assetLabels,
+  optionLabels,
 }: {
   label: string;
   selected: string[];
   onToggle: (key: string) => void;
-  assetLabels: Map<string, string>;
+  optionLabels: Map<string, string>;
 }) {
-  const keys = Array.from(assetLabels.keys());
+  const keys = Array.from(optionLabels.keys());
   return (
     <div>
       <p className="mb-1 text-[11px] font-medium text-(--color-ink-muted)">{label}</p>
@@ -612,7 +682,7 @@ function MultiSelect({
                   : 'bg-(--color-surface) text-(--color-ink-muted) hover:bg-slate-100'
               }`}
             >
-              {assetLabels.get(key) ?? key}
+              {optionLabels.get(key) ?? key}
             </button>
           );
         })}
@@ -625,21 +695,24 @@ function MultiSelect({
 function emptyDraft(view: PropertyOptionsView): FormDraft {
   // The read view's address components carry `requiredForLabels` (labels, not
   // keys). The PUT request needs keys. Recover the keys by matching labels
-  // back to the asset-type key set; fall back to the raw key if unmatched.
-  const labelToKey = new Map(view.assetTypes.map((type) => [type.label, type.key]));
+  // back to the asset-type key set and house-type key set; fall back to the raw
+  // key if unmatched.
+  const labelToKey = new Map<string, string>();
+  for (const type of view.assetTypes) {
+    labelToKey.set(type.label, type.key);
+  }
+  for (const houseType of view.houseTypes) {
+    labelToKey.set(houseType.label, `house.${houseType.key}`);
+  }
   const template = view.identifierTemplate;
-  // If the template is just `{estate_slug}` and the org has address components
-  // configured, append a placeholder so every property in that estate gets a
-  // distinct identifier.
-  const bareEstateSlug = template === '{estate_slug}' && view.addressComponents.length > 0;
-  const newTemplate = bareEstateSlug ? `${template}-{{view.addressComponents[0].key}}` : template;
   return {
-    identifierTemplate: newTemplate,
-    // Recover the configured caps from the read view rather than hardcoding
-    // them, so a save without edits round-trips the stored configuration.
-    // The `??` fallbacks keep the form usable against an API that predates
-    // these fields, and match the configuration schema's own defaults.
+    identifierTemplate: template,
     identifierMax: view.identifierMax ?? 120,
+    houseTypes: view.houseTypes.map((houseType) => ({
+      key: houseType.key,
+      label: houseType.label,
+      active: houseType.active,
+    })),
     addressComponents: view.addressComponents.map((component) => ({
       key: component.key,
       label: component.label,
@@ -649,4 +722,86 @@ function emptyDraft(view: PropertyOptionsView): FormDraft {
       maxLength: component.maxLength ?? 64,
     })),
   };
+}
+
+function HouseTypesCatalogue({ view }: { view: PropertyOptionsView }) {
+  return (
+    <Card aria-label="House types">
+      <CardHeader title="House types" />
+      <CardBody>
+        <p className="text-xs text-(--color-ink-muted)">
+          Nested types under the "House" top-level type. The register form offers these when an
+          operator chooses House; each address component declares which house types it applies to.
+        </p>
+        <ul className="mt-3 flex flex-col gap-2">
+          {view.houseTypes.map((houseType) => (
+            <li key={houseType.key} className="flex items-center justify-between text-sm">
+              <span>
+                {houseType.label}
+                <span className="ml-2 text-xs text-(--color-ink-muted)">{houseType.key}</span>
+              </span>
+              <Badge tone={houseType.active ? 'success' : 'neutral'}>
+                {houseType.active ? 'active' : 'inactive'}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      </CardBody>
+    </Card>
+  );
+}
+
+function HouseTypeEditor({
+  houseType,
+  onChange,
+  onRemove,
+}: {
+  houseType: HouseTypeDraft;
+  onChange: (houseType: HouseTypeDraft) => void;
+  onRemove: () => void;
+}) {
+  function toggleActive() {
+    onChange({ ...houseType, active: !houseType.active });
+  }
+
+  return (
+    <div className="rounded-md border border-slate-200/80 bg-(--color-surface) p-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Field label="Key">
+          <input
+            className={inputClass}
+            value={houseType.key}
+            onChange={(event) => onChange({ ...houseType, key: event.target.value })}
+            maxLength={48}
+          />
+        </Field>
+        <Field label="Label">
+          <input
+            className={inputClass}
+            value={houseType.label}
+            onChange={(event) => onChange({ ...houseType, label: event.target.value })}
+            maxLength={80}
+          />
+        </Field>
+        <Field label="Active" hint="Inactive types cannot be assigned to new properties.">
+          <button
+            type="button"
+            onClick={toggleActive}
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              houseType.active
+                ? 'bg-(--color-primary-soft) text-(--color-primary)'
+                : 'bg-slate-100 text-(--color-ink-muted)'
+            }`}
+          >
+            {houseType.active ? 'Active' : 'Inactive'}
+          </button>
+        </Field>
+      </div>
+      <div className="mt-2 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={onRemove}>
+          Remove
+        </Button>
+      </div>
+    </div>
+  );
 }

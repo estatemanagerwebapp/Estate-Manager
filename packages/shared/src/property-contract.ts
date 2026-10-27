@@ -87,12 +87,20 @@ export interface PropertyDto {
    */
   name: string | null;
   /**
-   * Config asset type key (e.g. `house`, `apartment_block`, `land_plot`).
+   * Config asset type key (e.g. `house`, `land`).
    * Validated against the organization configuration at write time.
    */
   typeKey: string;
   /** Human-facing label, when the configured type has one. */
   typeLabel: string;
+  /**
+   * When `typeKey` is `house`, the configured nested house type
+   * (e.g. `bungalow`, `terrace`, `duplex`, `apartment`, `flat`).
+   * Null for land properties and for legacy rows created before this field.
+   */
+  houseTypeKey: string | null;
+  /** Human-facing label for the configured nested house type. */
+  houseTypeLabel: string | null;
   status: PropertyStatus;
   /** Parent property id for unit-in-building relationships; null when top-level. */
   parentPropertyId: string | null;
@@ -119,6 +127,8 @@ export interface PropertyDto {
 export interface CreatePropertyInput {
   estateId: string;
   typeKey: string;
+  /** For house properties: the nested house type key (bungalow, terrace, …). */
+  houseTypeKey?: string | null;
   parentPropertyId?: string;
   /** Human-facing property name. Optional; import-created rows leave it null. */
   name?: string;
@@ -172,6 +182,8 @@ export interface PropertyOptionsView {
   assetTypes: Array<{ key: string; label: string; active: boolean; detailKind: string }>;
   /** Available unit type options. */
   unitTypes: Array<{ key: string; label: string; bedrooms: number; active: boolean }>;
+  /** Available nested house type options (code + label + active). */
+  houseTypes: Array<{ key: string; label: string; active: boolean }>;
 }
 
 // --- Import batches ------------------------------------------------------------
@@ -301,7 +313,8 @@ export interface UpdatePropertyOptionsRequest {
       pattern?: string | null;
       maxLength: number;
     }>;
-    identifierTemplate: string;
+      houseTypes: Array<{ key: string; label: string; active: boolean }>;
+      identifierTemplate: string;
     identifierMax: number;
   };
 }
