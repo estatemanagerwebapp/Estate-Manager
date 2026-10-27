@@ -151,6 +151,36 @@ async function buildApp(): Promise<HttpHandler> {
   return app as unknown as HttpHandler;
 }
 
+/**
+ * Prisma's own codes are safe to publish: they identify the failure class
+ * without disclosing the connection string, host, or credentials.
+ */
+const DATABASE_ERROR_DETAIL: Record<string, string> = {
+  P1000: 'the database rejected the credentials',
+  P1001: 'the database server cannot be reached',
+  P1002: 'the database connection timed out',
+  P1003: 'the database does not exist',
+  P1010: 'the database user is not allowed to access it',
+  P1011: 'TLS negotiation with the database failed',
+  P1013: 'the database connection string is invalid',
+  P1017: 'the database closed the connection',
+  P2021: 'a required table does not exist',
+  P2022: 'a required column does not exist',
+};
+
+function findDatabaseErrorCode(error: unknown): { code: string; detail: string } | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current !== null && current !== undefined; depth += 1) {
+    const candidate = current as { code?: unknown; errorCode?: unknown; cause?: unknown };
+    const raw = typeof candidate.errorCode === 'string' ? candidate.errorCode : candidate.code;
+    if (typeof raw === 'string' && /^P\d{4}$/.test(raw)) {
+      return { code: raw, detail: DATABASE_ERROR_DETAIL[raw] ?? 'database error' };
+    }
+    current = candidate.cause;
+  }
+  return undefined;
+}
+
 function describeStartupError(error: unknown): string {
   const issues = (error as { issues?: unknown }).issues;
   if (Array.isArray(issues) && issues.length > 0) {
@@ -165,12 +195,16 @@ function describeStartupError(error: unknown): string {
   }
 
   const raw = error instanceof Error ? error.message : String(error);
-  return (
+  const message =
     raw
       .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, 'postgresql://[redacted]@')
       .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
-      .slice(0, 1000) || 'The API failed to start.'
-  );
+      .slice(0, 1000) || 'The API failed to start.';
+
+  const databaseError = findDatabaseErrorCode(error);
+  return databaseError
+    ? `${message} (${databaseError.code}: ${databaseError.detail})`
+    : message;
 }
 
 /**
