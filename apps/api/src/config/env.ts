@@ -130,6 +130,16 @@ export const EnvSchema = z
 
     /** Media backend: local for development, R2 for durable deployments. */
     MEDIA_STORAGE: z.enum(['local', 'r2']).default('local'),
+    /**
+     * Temporary escape hatch for a first deployment without R2 yet. When
+     * `true`, production may boot with ephemeral local storage under the
+     * function's temp directory. Uploads are NOT durable and disappear when
+     * the instance recycles, so never enable this for a real deployment.
+     */
+    ALLOW_EPHEMERAL_MEDIA: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     R2_ACCOUNT_ID: z.string().optional(),
     R2_ACCESS_KEY_ID: z.string().optional(),
     R2_SECRET_ACCESS_KEY: z.string().optional(),
@@ -159,11 +169,13 @@ export const EnvSchema = z
         }
       }
     }
-    if (env.NODE_ENV === 'production' && env.MEDIA_STORAGE !== 'r2') {
+    if (env.NODE_ENV === 'production' && env.MEDIA_STORAGE !== 'r2' && !env.ALLOW_EPHEMERAL_MEDIA) {
       ctx.addIssue({
         code: 'custom',
         path: ['MEDIA_STORAGE'],
-        message: 'Production deployments require durable media storage (MEDIA_STORAGE=r2)',
+        message:
+          'Production deployments require durable media storage (MEDIA_STORAGE=r2). ' +
+          'Set ALLOW_EPHEMERAL_MEDIA=true only for a temporary, non-durable deployment.',
       });
     }
   })

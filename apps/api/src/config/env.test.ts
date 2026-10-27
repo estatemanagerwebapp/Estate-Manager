@@ -71,6 +71,26 @@ describe('parseEnv', () => {
     ).toThrow(/MEDIA_STORAGE=r2/);
   });
 
+  it('allows ephemeral media in production only when explicitly enabled', () => {
+    const env = parseEnv({
+      ...base,
+      NODE_ENV: 'production',
+      CORS_ORIGINS: 'https://example.com',
+      ALLOW_EPHEMERAL_MEDIA: 'true',
+    } as NodeJS.ProcessEnv);
+    expect(env.ALLOW_EPHEMERAL_MEDIA).toBe(true);
+    expect(env.MEDIA_STORAGE).toBe('local');
+
+    expect(() =>
+      parseEnv({
+        ...base,
+        NODE_ENV: 'production',
+        CORS_ORIGINS: 'https://example.com',
+        ALLOW_EPHEMERAL_MEDIA: 'false',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/MEDIA_STORAGE=r2/);
+  });
+
   it('requires all R2 settings when R2 storage is selected', () => {
     expect(() =>
       parseEnv({

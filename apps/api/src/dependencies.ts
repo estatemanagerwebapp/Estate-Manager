@@ -7,7 +7,9 @@
  */
 import { getEnv } from './config/env.js';
 import * as path from 'node:path';
+import { tmpdir } from 'node:os';
 import { getPrismaClient } from './lib/prisma.js';
+import { logger } from './lib/logger.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
 import {
   PrismaOrganizationConfigRepository,
@@ -186,6 +188,11 @@ export async function createAppDependencies(): Promise<AppDependencies> {
 
   // Phase 2 — resident onboarding (persistent code, payment-gated).
   const residentDrafts = new PrismaResidentOnboardingRepository(prisma);
+  if (env.ALLOW_EPHEMERAL_MEDIA) {
+    logger.warn(
+      'ALLOW_EPHEMERAL_MEDIA is enabled — media uploads use ephemeral storage and are lost when the instance recycles',
+    );
+  }
   const mediaStorage: MediaStorage =
     env.MEDIA_STORAGE === 'r2'
       ? new R2MediaStorage(prisma, {
@@ -197,7 +204,9 @@ export async function createAppDependencies(): Promise<AppDependencies> {
         })
       : new LocalMediaStorage(
           prisma,
-          path.resolve(process.cwd(), 'uploads'),
+          env.ALLOW_EPHEMERAL_MEDIA
+            ? path.join(tmpdir(), 'silverstone-uploads')
+            : path.resolve(process.cwd(), 'uploads'),
           `${env.API_BASE_PATH}/media`,
         );
 

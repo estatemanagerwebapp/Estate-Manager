@@ -26,6 +26,7 @@ listing every problem.
 | `RESEND_API_KEY`          | no*      | —                            | *Required when `EMAIL_PROVIDER=resend`                                         |
 | `EMAIL_FROM`              | no       | `no-reply@silverstone.local` | From address for outbound email                                                |
 | `MEDIA_STORAGE`           | no       | `local`                      | `local` \| `r2`; use `r2` on Vercel because function filesystems are ephemeral |
+| `ALLOW_EPHEMERAL_MEDIA`   | no       | `false`                      | Temporary: allow production to boot with local temp-dir media (not durable)    |
 | `R2_ACCOUNT_ID`           | no*      | —                            | *Required when `MEDIA_STORAGE=r2`; Cloudflare account ID                       |
 | `R2_ACCESS_KEY_ID`        | no*      | —                            | *Required when `MEDIA_STORAGE=r2`; R2 API token access key                     |
 | `R2_SECRET_ACCESS_KEY`    | no*      | —                            | *Required when `MEDIA_STORAGE=r2`; R2 API token secret                         |
@@ -44,7 +45,9 @@ listing every problem.
   links in emails are absolute.
 - Set `MEDIA_STORAGE=r2` and configure the four `R2_*` variables for durable,
   private ID-document storage. R2 credentials must have access only to the
-  intended bucket; do not make the bucket public.
+  intended bucket; do not make the bucket public. If you need to boot a first
+  deployment before R2 exists, set `ALLOW_EPHEMERAL_MEDIA=true` — uploads then
+  live in the function's temp directory and are lost on recycle.
 - After the first `db:deploy` + `db:seed`, run `ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run bootstrap:admin` to create the first `SUPER_ADMIN`.
 
 ## Vercel notes
@@ -55,4 +58,4 @@ listing every problem.
   `npm ci` omit devDependencies, `vercel.json` installs with
   `npm ci --include=dev` for both services. Keep that flag when editing an
   install command, or the build fails with `TS2688: Cannot find type
-  definition file for 'node'`.
+definition file for 'node'`.
