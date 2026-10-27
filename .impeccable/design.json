@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T00:00:00.000Z",
+  "title": "Design System: Silverstone Managers",
+  "extensions": {
+    "colorMeta": {
+      "commit": {
+        "role": "primary",
+        "displayName": "Commit Orange",
+        "canonical": "#ff5a1f",
+        "tonalRamp": [
+          "#3d1306",
+          "#5c1c09",
+          "#7d260c",
+          "#a8320f",
+          "#d54114",
+          "#ff5a1f",
+          "#ff8b5f",
+          "#ffc2a8"
+        ]
+      },
+      "deep-pine": {
+        "role": "neutral",
+        "displayName": "Deep Pine",
+        "canonical": "#192923",
+        "tonalRamp": [
+          "#0b110e",
+          "#111b17",
+          "#192923",
+          "#223830",
+          "#2d493e",
+          "#3d5f51",
+          "#628274",
+          "#a9beb4"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#f7f6f2",
+        "tonalRamp": [
+          "#3a3935",
+          "#5c5b56",
+          "#7e7d77",
+          "#a3a29b",
+          "#c6c5be",
+          "#deddd7",
+          "#ebeae5",
+          "#f7f6f2"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#17231f",
+        "tonalRamp": [
+          "#0a100d",
+          "#101814",
+          "#17231f",
+          "#283a34",
+          "#3c534a",
+          "#5c6f66",
+          "#8a9a92",
+          "#c3ccc7"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "#5c675f",
+        "tonalRamp": [
+          "#20261f",
+          "#2e352f",
+          "#3f4a43",
+          "#4d5851",
+          "#5c675f",
+          "#7c867e",
+          "#a6aea7",
+          "#d6dbd7"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#e2e4dd",
+        "tonalRamp": [
+          "#5a5c55",
+          "#767870",
+          "#91938b",
+          "#aeb0a7",
+          "#c7c9c1",
+          "#d6d8d0",
+          "#e2e4dd",
+          "#f1f2ee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero headline only; two lines maximum, tight tracking."
+      },
+      "accent": {
+        "displayName": "Serif Accent",
+        "purpose": "Italic emphasis words inside headings; never a whole heading."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings across all six bands."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Paragraphs and supporting copy; measure capped at 460–560px."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, partner strip label, CTA contact label, copyright."
+      }
+    },
+    "shadows": [
+      {
+        "name": "mobile-nav",
+        "value": "0 14px 26px rgb(23 35 31 / 8%)",
+        "purpose": "Separates the open mobile menu from the hero photograph. The only resting shadow in the system."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-default",
+        "value": "160ms ease",
+        "purpose": "Hover and focus transitions on links, buttons, and borders."
+      },
+      {
+        "name": "lift",
+        "value": "translateY(-1px)",
+        "purpose": "Single button hover lift; no other choreography."
+      }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "900px" },
+      { "name": "sm", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Orange action with ink label; used for hero sign-in.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#\">Sign in <span aria-hidden=\"true\">&#8594;</span></a>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 0 22px; background: #ff5a1f; border: 1px solid #ff5a1f; color: #17231f; font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; line-height: 1; text-transform: uppercase; text-decoration: none; transition: background 160ms ease, border-color 160ms ease, transform 160ms ease; } .ds-btn-primary:hover { background: #ff7a4a; border-color: #ff7a4a; transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 2px solid #17231f; outline-offset: 3px; }"
+    },
+    {
+      "name": "Dark Button",
+      "kind": "button",
+      "refersTo": "button-dark",
+      "description": "Ink action with white label; used inside the orange CTA band.",
+      "html": "<a class=\"ds-btn-dark\" href=\"#\">Sign in <span aria-hidden=\"true\">&#8594;</span></a>",
+      "css": ".ds-btn-dark { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 0 22px; background: #17231f; border: 1px solid #17231f; color: #ffffff; font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; line-height: 1; text-transform: uppercase; text-decoration: none; transition: background 160ms ease, transform 160ms ease; } .ds-btn-dark:hover { background: #0d1512; transform: translateY(-1px); } .ds-btn-dark:focus-visible { outline: 2px solid #ffffff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Quiet Outline Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Transparent white-outline action for use over hero photography.",
+      "html": "<a class=\"ds-btn-quiet\" href=\"#\">Onboard <span aria-hidden=\"true\">&#8594;</span></a>",
+      "css": ".ds-btn-quiet { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 0 22px; background: transparent; border: 1px solid rgba(255,255,255,0.42); color: #ffffff; font-family: 'DM Sans', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; line-height: 1; text-transform: uppercase; text-decoration: none; transition: background 160ms ease, border-color 160ms ease; } .ds-btn-quiet:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.7); } .ds-btn-quiet:focus-visible { outline: 2px solid #ffffff; outline-offset: 3px; }"
+    },
+    {
+      "name": "Sticky Navigation",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Paper bar with hairline, text links, Onboard, and a bordered sign-in action.",
+      "html": "<header class=\"ds-nav\"><a class=\"ds-nav-mark\" href=\"#\"><span></span><span></span><span></span><span></span></a><nav class=\"ds-nav-links\"><a href=\"#\">Partners</a><a href=\"#\">How we work</a><a href=\"#\">Who we serve</a><a href=\"#\">Contact</a><a class=\"ds-nav-cta\" href=\"#\">Sign in</a></nav></header>",
+      "css": ".ds-nav { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 112px; background: #f7f6f2; border-bottom: 1px solid #e2e4dd; font-family: 'DM Sans', sans-serif; } .ds-nav-mark { display: grid; grid-template-columns: repeat(2, 10px); gap: 3px; transform: rotate(-6deg); } .ds-nav-mark span { width: 10px; height: 10px; background: #17231f; } .ds-nav-mark span:nth-child(2) { background: #ff5a1f; } .ds-nav-links { display: flex; align-items: center; gap: 40px; } .ds-nav-links a { color: #4c5751; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-decoration: none; } .ds-nav-links a:hover { color: #d8573d; } .ds-nav-cta { border: 1px solid #e2e4dd; padding: 10px 15px; color: #17231f !important; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; } .ds-nav-cta:hover { background: #17231f; border-color: #17231f; color: #ffffff !important; }"
+    },
+    {
+      "name": "Partner Strip",
+      "kind": "custom",
+      "refersTo": "partner-strip",
+      "description": "Bordered band pairing a small label with four partner categories.",
+      "html": "<section class=\"ds-partners\"><h2>Who we work with</h2><ul><li>Estate associations</li><li>Property developers</li><li>Facility partners</li><li>Resident communities</li></ul></section>",
+      "css": ".ds-partners { display: grid; grid-template-columns: minmax(150px, 0.5fr) minmax(0, 1.5fr); align-items: center; gap: 24px; padding: 38px 112px; background: #f7f6f2; border-top: 1px solid #e2e4dd; border-bottom: 1px solid #e2e4dd; font-family: 'DM Sans', sans-serif; } .ds-partners h2 { margin: 0; color: #5c675f; font-size: 9px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; } .ds-partners ul { display: flex; flex-wrap: wrap; gap: 14px 48px; margin: 0; padding: 0; list-style: none; } .ds-partners li { color: #3a453e; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }"
+    },
+    {
+      "name": "Rule-Topped Item",
+      "kind": "custom",
+      "refersTo": "confidence-item",
+      "description": "Icon, title, and short paragraph separated by a hairline instead of a card.",
+      "html": "<article class=\"ds-rule-item\"><span class=\"ds-rule-icon\" aria-hidden=\"true\">&#9675;</span><h3>Verified access</h3><p>Every sign-in is authenticated, with role-based permissions and a clear audit trail.</p></article>",
+      "css": ".ds-rule-item { border-top: 1px solid #e2e4dd; padding-top: 26px; font-family: 'DM Sans', sans-serif; } .ds-rule-icon { color: #d8573d; font-size: 18px; line-height: 1; } .ds-rule-item h3 { margin: 18px 0 8px; color: #17231f; font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.35; } .ds-rule-item p { margin: 0; max-width: 320px; color: #5c675f; font-size: 11.5px; line-height: 1.85; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Estate Office",
+    "overview": "The landing page should feel like walking into a well-run estate office: quiet, ordered, and confident. The paper ground, square edges, and hairline rules do the work that decoration would otherwise do. Photography supplies the warmth; typography supplies the authority. The system is deliberately sparse. There are six sections, each with one job: hero, partners, confidence, built-for, CTA, footer. Sections change tone through full-bleed ground shifts — paper, deep pine, warm orange — rather than through cards, shadows, or ornament. The orange is a committed brand signal, not a sprinkle: it carries the primary action and one drenched band. Emphasis inside headlines is always the same move: Manrope for the claim, DM Serif Display italic for the human half of the sentence.",
+    "keyCharacteristics": [
+      "Paper-first neutral ground with three full-bleed tonal bands.",
+      "Manrope display paired with DM Serif Display italic accents.",
+      "Square edges, 1px hairline rules, zero resting shadows.",
+      "Photographic hero; no illustration, no icon-card grid.",
+      "Small, wide-tracked uppercase labels for wayfinding."
+    ],
+    "rules": [
+      {
+        "name": "The One Band Rule",
+        "body": "Orange is allowed one full-bleed section per page. Everywhere else it appears only as a button, a mark, or a 28px rule.",
+        "section": "colors"
+      },
+      {
+        "name": "The No White Body Rule",
+        "body": "Small text on Commit Orange uses Ink on Commit, not white. White on orange fails 4.5:1 below large-text sizes.",
+        "section": "colors"
+      },
+      {
+        "name": "The Split Headline Rule",
+        "body": "Every section heading ends in DM Serif Display italic. Never set a full heading in the serif, and never set the accent word in the same sans as the claim.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two-Line Rule",
+        "body": "Display headlines break at a meaningful clause boundary, never mid-phrase. At 1440px, \"Better managed.\" and \"Better for life.\" each hold one line.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Card Rule",
+        "body": "Content is separated by hairlines and ground shifts, never by elevated boxes.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep one full-bleed orange band per page and use orange elsewhere only as action, mark, or rule.",
+      "Do pair Manrope claims with DM Serif Display italic accent words in every heading.",
+      "Do separate content with 1px rules and tonal ground shifts.",
+      "Do keep body measure within 460–560px.",
+      "Do put Ink or Ink on Commit text on orange surfaces.",
+      "Do preserve both auth paths: operator /login and resident /resident/login, plus /onboard."
+    ],
+    "donts": [
+      "Don't use white body text on Commit Orange.",
+      "Don't introduce cards, shadows, rounded corners, or glass panels.",
+      "Don't add eyebrow kickers, section numbers, or a metric strip above headlines.",
+      "Don't set an entire heading in the serif accent face.",
+      "Don't replace the square button language with pills.",
+      "Don't invent partner logos or claims; the partner strip lists categories, not companies."
+    ]
+  }
+}
