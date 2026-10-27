@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { getEnv, normalizeDatabaseUrl } from '../config/env.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
 
@@ -26,12 +27,21 @@ function testDatabaseUrl(): string | undefined {
   return `${base}?${params.toString()}`;
 }
 
+/**
+ * Prisma validates the raw `process.env.DATABASE_URL` itself, so it never sees
+ * the quoting/whitespace normalisation applied by `parseEnv`. Pass the
+ * validated URL explicitly to keep both consumers on the same value.
+ */
+function databaseUrl(): string {
+  const url = testDatabaseUrl() ?? getEnv().DATABASE_URL;
+  return normalizeDatabaseUrl(url);
+}
+
 export function getPrismaClient(): PrismaClient {
   if (client) return client;
-  const url = testDatabaseUrl();
   client = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-    ...(url ? { datasources: { db: { url } } } : {}),
+    datasources: { db: { url: databaseUrl() } },
   });
   return client;
 }
