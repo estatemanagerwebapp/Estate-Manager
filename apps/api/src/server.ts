@@ -168,20 +168,56 @@ const DATABASE_ERROR_DETAIL: Record<string, string> = {
   P2022: 'a required column does not exist',
 };
 
-function findDatabaseErrorCode(error: unknown): { code: string; detail: string } | undefined {
+const NETWORK_ERROR_DETAIL: Record<string, string> = {
+  ENOTFOUND: 'the database host could not be resolved',
+  ECONNREFUSED: 'the database refused the connection',
+  ETIMEDOUT: 'the database connection timed out',
+  EHOSTUNREACH: 'the database host is unreachable',
+};
+
+/**
+ * Prisma does not always attach an error code (connection failures often only
+ * carry a message), so fall back to classifying the message. Only a fixed,
+ * safe phrase is published — never the original text, which contains the host.
+ */
+function classifyDatabaseError(error: unknown): string | undefined {
   let current: unknown = error;
   for (let depth = 0; depth < 6 && current !== null && current !== undefined; depth += 1) {
-    const candidate = current as { code?: unknown; errorCode?: unknown; cause?: unknown };
-    const raw = typeof candidate.errorCode === 'string' ? candidate.errorCode : candidate.code;
-    if (typeof raw === 'string' && /^P\d{4}$/.test(raw)) {
-      return { code: raw, detail: DATABASE_ERROR_DETAIL[raw] ?? 'database error' };
+    const candidate = current as {
+      code?: unknown;
+      errorCode?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    const rawCode =
+      typeof candidate.errorCode === 'string' ? candidate.errorCode : candidate.code;
+
+    if (typeof rawCode === 'string') {
+      if (/^P\d{4}$/.test(rawCode)) {
+        return `${rawCode}: ${DATABASE_ERROR_DETAIL[rawCode] ?? 'database error'}`;
+      }
+      if (NETWORK_ERROR_DETAIL[rawCode]) return NETWORK_ERROR_DETAIL[rawCode];
     }
+
+    const message = typeof candidate.message === 'string' ? candidate.message : '';
+    if (/Authentication failed|password authentication failed|credentials.*not valid/i.test(message)) {
+      return 'the database rejected the credentials';
+    }
+    if (/too many clients|max clients|pool_size|connection pool.*(exhausted|timed out)/i.test(message)) {
+      return 'the database connection pool is exhausted';
+    }
+    if (/Timed out|timeout/i.test(message)) return 'the database connection timed out';
+    if (/does not exist/i.test(message)) return 'the database does not exist';
+    if (/Can't reach database server|ECONNREFUSED|EHOSTUNREACH|ENOTFOUND/i.test(message)) {
+      return 'the database server cannot be reached (network, host, or allowlist)';
+    }
+
     current = candidate.cause;
   }
   return undefined;
 }
 
-function describeStartupError(error: unknown): string {
+export function describeStartupError(error: unknown): string {
   const issues = (error as { issues?: unknown }).issues;
   if (Array.isArray(issues) && issues.length > 0) {
     return issues
@@ -201,10 +237,8 @@ function describeStartupError(error: unknown): string {
       .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
       .slice(0, 1000) || 'The API failed to start.';
 
-  const databaseError = findDatabaseErrorCode(error);
-  return databaseError
-    ? `${message} (${databaseError.code}: ${databaseError.detail})`
-    : message;
+  const databaseIssue = classifyDatabaseError(error);
+  return databaseIssue ? `${message} — ${databaseIssue}` : message;
 }
 
 /**
