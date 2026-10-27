@@ -43,39 +43,39 @@ listing every problem.
   real password-reset delivery.
 - Set `WEB_BASE_URL` to the public origin of the web console so reset
   links in emails are absolute.
-
-## Serverless database pooling
-
-Supabase's session-mode pooler (port `5432`) admits only **15 client
-sessions** in total. A serverless platform runs many function instances, each
-with its own Prisma pool, so a per-instance `connection_limit` above 1 can
-exhaust that budget and surface as:
-
-```text
-P2024: Timed out fetching a new connection from the connection pool
-```
-
-The API defensively caps Vercel instances at `connection_limit=1` and
-`pool_timeout=30`. That fits a small deployment, but the durable fix is to
-point the runtime at Supabase's **transaction pooler** (port `6543`):
-
-```text
-postgresql://postgres.<ref>:<password>@aws-1-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
-```
-
-- Transaction mode multiplexes many function instances over a small number of
-  real database connections.
-- Keep the session-mode URL (port `5432`) in your local `.env` for
-  `prisma migrate` — migrations hold a connection for their whole run.
-- `pgbouncer=true` disables prepared statements, which transaction mode does
-  not support.
-
 - Set `MEDIA_STORAGE=r2` and configure the four `R2_*` variables for durable,
   private ID-document storage. R2 credentials must have access only to the
   intended bucket; do not make the bucket public. If you need to boot a first
   deployment before R2 exists, set `ALLOW_EPHEMERAL_MEDIA=true` — uploads then
   live in the function's temp directory and are lost on recycle.
 - After the first `db:deploy` + `db:seed`, run `ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run bootstrap:admin` to create the first `SUPER_ADMIN`.
+
+## Serverless database pooling
+
+Supabase exposes the same database through two poolers:
+
+| Mode        | Port   | Behaviour                                          |
+| ----------- | ------ | -------------------------------------------------- |
+| Session     | `5432` | **15 client sessions total** for the whole project |
+| Transaction | `6543` | Many clients multiplexed over a small server pool  |
+
+A serverless platform runs many function instances, each with its own Prisma
+pool. A session-mode URL therefore exhausts the 15-client budget as soon as a
+few instances are warm, and requests fail with:
+
+```text
+P2024: Timed out fetching a new connection from the connection pool
+```
+
+On Vercel the API rewrites a `*.pooler.supabase.com` URL from `5432` to
+`6543`, sets `pgbouncer=true` (transaction mode has no prepared statements),
+and caps each instance at `connection_limit=1` with `pool_timeout=30`. Leave
+the dashboard value in session mode if you prefer; the runtime switch is
+automatic.
+
+Keep the session-mode URL (port `5432`) in your local `.env` for
+`prisma migrate` — migrations hold a connection for their whole run, and the
+rewrite only applies inside Vercel.
 
 ## Vercel notes
 

@@ -1,5 +1,5 @@
 import {
-  applyServerlessConnectionLimit,
+  applyServerlessDatabaseSettings,
   getEnv,
   parseEnv as parseEnvWithFiles,
   resetEnvForTests,
@@ -165,27 +165,42 @@ describe('parseEnv', () => {
   });
 });
 
-describe('applyServerlessConnectionLimit', () => {
+describe('applyServerlessDatabaseSettings', () => {
   const poolerUrl =
     'postgresql://postgres.project:secret@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?connection_limit=5';
 
   it('leaves the URL untouched outside a serverless runtime', () => {
-    expect(applyServerlessConnectionLimit(poolerUrl, false)).toBe(poolerUrl);
+    expect(applyServerlessDatabaseSettings(poolerUrl, false)).toBe(poolerUrl);
   });
 
-  it('caps a serverless instance at one connection and keeps other params', () => {
-    const limited = applyServerlessConnectionLimit(poolerUrl, true);
-    const params = new URL(limited).searchParams;
-    expect(params.get('connection_limit')).toBe('1');
-    expect(params.get('pool_timeout')).toBe('30');
+  it('switches a Supabase pooler to transaction mode and caps connections', () => {
+    const limited = applyServerlessDatabaseSettings(poolerUrl, true);
+    const parsed = new URL(limited);
+    expect(parsed.port).toBe('6543');
+    expect(parsed.searchParams.get('pgbouncer')).toBe('true');
+    expect(parsed.searchParams.get('connection_limit')).toBe('1');
+    expect(parsed.searchParams.get('pool_timeout')).toBe('30');
   });
 
-  it('adds the limit when the URL has no query string', () => {
-    const limited = applyServerlessConnectionLimit(
+  it('keeps an existing transaction-mode URL on 6543', () => {
+    const limited = applyServerlessDatabaseSettings(
+      'postgresql://user:pass@aws-0-eu-west-1.pooler.supabase.com:6543/postgres',
+      true,
+    );
+    const parsed = new URL(limited);
+    expect(parsed.port).toBe('6543');
+    expect(parsed.searchParams.get('pgbouncer')).toBe('true');
+  });
+
+  it('leaves a non-Supabase host on its configured port', () => {
+    const limited = applyServerlessDatabaseSettings(
       'postgresql://user:pass@localhost:5432/db',
       true,
     );
-    expect(limited).toContain('connection_limit=1');
-    expect(limited).toContain('pool_timeout=30');
+    const parsed = new URL(limited);
+    expect(parsed.port).toBe('5432');
+    expect(parsed.searchParams.get('pgbouncer')).toBeNull();
+    expect(parsed.searchParams.get('connection_limit')).toBe('1');
+    expect(parsed.searchParams.get('pool_timeout')).toBe('30');
   });
 });

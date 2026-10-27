@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { applyServerlessConnectionLimit, getEnv, normalizeDatabaseUrl } from '../config/env.js';
+import { applyServerlessDatabaseSettings, getEnv, normalizeDatabaseUrl } from '../config/env.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
 
@@ -12,7 +12,8 @@ let client: PrismaClient | undefined;
  * narrowed for tests: three connections per client with a generous wait.
  * That keeps two workers (six connections) comfortably inside the budget,
  * even while a development server holds its own connections against the
- * same database. Production keeps the URL as configured.
+ * same database. Serverless runtimes switch Supabase pooler URLs to
+ * transaction mode in `applyServerlessDatabaseSettings`.
  */
 function testDatabaseUrl(): string | undefined {
   if (process.env.VITEST !== 'true') return undefined;
@@ -34,7 +35,7 @@ function testDatabaseUrl(): string | undefined {
  */
 function databaseUrl(): string {
   const url = testDatabaseUrl() ?? getEnv().DATABASE_URL;
-  return applyServerlessConnectionLimit(normalizeDatabaseUrl(url));
+  return applyServerlessDatabaseSettings(normalizeDatabaseUrl(url));
 }
 
 export function getPrismaClient(): PrismaClient {

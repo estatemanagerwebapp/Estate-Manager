@@ -60,23 +60,33 @@ export function normalizeDatabaseUrl(input: string): string {
 
 /**
  * Serverless deployments hold a separate Prisma pool per function instance.
- * Supabase's pooler admits only 15 sessions in total, so a per-instance limit
- * of 5 meant three warm instances could starve every other caller
- * (`P2024: Timed out fetching a new connection from the connection pool`).
- * On Vercel we therefore keep one connection per instance and let requests
- * queue instead of failing; a transaction-mode pooler is the longer-term fix.
+ *
+ * The Supabase pooler exposes session mode on 5432 and transaction mode on
+ * 6543. Session mode admits only 15 clients in total, so a fleet of function
+ * instances exhausts it (`P2024: Timed out fetching a new connection from the
+ * connection pool`). On Vercel, Supabase pooler URLs are therefore switched
+ * to transaction mode, which multiplexes many clients over a small
+ * server-side pool, and each instance is capped at one connection.
+ *
+ * Migration commands run outside Vercel and keep the URL as configured.
  */
-export function applyServerlessConnectionLimit(
+export function applyServerlessDatabaseSettings(
   url: string,
   isServerless: boolean = process.env.VERCEL === '1',
 ): string {
   if (!isServerless) return url;
-  const separator = url.indexOf('?');
-  const base = separator === -1 ? url : url.slice(0, separator);
-  const params = new URLSearchParams(separator === -1 ? '' : url.slice(separator + 1));
-  params.set('connection_limit', '1');
-  params.set('pool_timeout', '30');
-  return `${base}?${params.toString()}`;
+
+  const parsed = new URL(url);
+  if (parsed.hostname.endsWith('.pooler.supabase.com')) {
+    if (parsed.port === '' || parsed.port === '5432') parsed.port = '6543';
+    if (parsed.port === '6543') {
+      // Transaction mode does not support prepared statements.
+      parsed.searchParams.set('pgbouncer', 'true');
+    }
+  }
+  parsed.searchParams.set('connection_limit', '1');
+  parsed.searchParams.set('pool_timeout', '30');
+  return parsed.toString();
 }
 
 /** Returns a readable reason the URL is unusable, or undefined when valid. */
