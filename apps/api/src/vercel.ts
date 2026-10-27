@@ -1,7 +1,7 @@
 import { ResidentProfileService } from './modules/resident/profile.service.js';
 import { ResidentPropertiesService } from './modules/resident/properties.service.js';
 import { ResidentDashboardService } from './modules/resident/dashboard.service.js';
-import express, { type Express } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import { createApp } from './app.js';
 import { EnvironmentError, getEnv } from './config/env.js';
 import { createAppDependencies } from './dependencies.js';
@@ -170,9 +170,24 @@ function redactStartupMessage(error: unknown): string {
     .slice(0, 1000);
 }
 
-const app = await buildApp().catch((error: unknown) => {
-  logger.fatal({ err: error }, 'API failed to start');
-  return startupFailureApp(error);
-});
+let appPromise: Promise<Express> | undefined;
 
-export default app;
+function loadApp(): Promise<Express> {
+  appPromise ??= buildApp().catch((error: unknown) => {
+    logger.fatal({ err: error }, 'API failed to start');
+    return startupFailureApp(error);
+  });
+  return appPromise;
+}
+
+/**
+ * Vercel invokes this per request. The Express app is built lazily so a
+ * startup failure is reported as JSON instead of crashing module evaluation
+ * (which the platform surfaces as an opaque FUNCTION_INVOCATION_FAILED).
+ * Keeping module evaluation synchronous also avoids relying on top-level
+ * await support in the function bundler.
+ */
+export default async function handler(req: Request, res: Response): Promise<void> {
+  const app = await loadApp();
+  app(req, res);
+}
