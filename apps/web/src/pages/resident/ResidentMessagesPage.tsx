@@ -47,9 +47,7 @@ export function ResidentMessagesPage() {
         return data.threads[0]?.id ?? null;
       });
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not load your messages.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your messages.');
     } finally {
       setLoading(false);
     }
@@ -73,9 +71,7 @@ export function ResidentMessagesPage() {
       setSelectedId(response.thread.id);
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not send your message.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send your message.');
       toast.error('Could not send your message.');
     } finally {
       setSending(false);
@@ -92,9 +88,7 @@ export function ResidentMessagesPage() {
       setReply('');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not send your reply.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send your reply.');
       toast.error('Could not send your reply.');
     } finally {
       setSending(false);
@@ -209,23 +203,18 @@ export function ResidentMessagesPage() {
                       onClick={() => setSelectedId(thread.id)}
                       aria-current={thread.id === selectedId ? 'true' : undefined}
                       className={`w-full rounded-md px-3 py-2 text-left transition-colors ${
-                        thread.id === selectedId
-                          ? 'bg-slate-100'
-                          : 'hover:bg-slate-50'
+                        thread.id === selectedId ? 'bg-slate-100' : 'hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-medium text-(--color-ink)">
                           {thread.subject}
                         </span>
-                        {thread.status === 'CLOSED' && (
-                          <Badge tone="neutral">CLOSED</Badge>
-                        )}
+                        {thread.status === 'CLOSED' && <Badge tone="neutral">CLOSED</Badge>}
                       </div>
                       <p className="mt-0.5 truncate text-xs text-(--color-ink-muted)">
                         {thread.messages.length} message
-                        {thread.messages.length === 1 ? '' : 's'} ·{' '}
-                        {formatDate(thread.updatedAt)}
+                        {thread.messages.length === 1 ? '' : 's'} · {formatDate(thread.updatedAt)}
                       </p>
                     </button>
                   </li>
@@ -258,11 +247,7 @@ export function ResidentMessagesPage() {
                         ) : (
                           <Building2 aria-hidden size={11} />
                         )}
-                        <span>
-                          {message.senderRole === 'RESIDENT'
-                            ? 'You'
-                            : 'Estate office'}
-                        </span>
+                        <span>{message.senderRole === 'RESIDENT' ? 'You' : 'Estate office'}</span>
                         <span>· {formatDate(message.createdAt)}</span>
                       </div>
                       <p className="mt-1 whitespace-pre-line text-sm text-(--color-ink)">

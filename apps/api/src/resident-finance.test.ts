@@ -411,9 +411,7 @@ describe('resident finance (S3)', () => {
     const invoiceId = await seedOutstandingInvoice('2026-11');
 
     // The invoice shows up in the `outstanding` section now.
-    const before = await request(app)
-      .get('/api/v1/resident/finance')
-      .set('Cookie', residentCookie);
+    const before = await request(app).get('/api/v1/resident/finance').set('Cookie', residentCookie);
     expect(before.status).toBe(200);
     expect(before.body.data.outstanding.some((i: { id: string }) => i.id === invoiceId)).toBe(true);
 
@@ -446,7 +444,13 @@ describe('resident finance (S3)', () => {
     expect(credit!.signed).toBe(2_000_000);
 
     const settledDebit = await prisma.transaction.findFirst({
-      where: { organizationId, userId: residentUserId, kind: 'INVOICE', reference: invoiceId, memo: { contains: 'settled' } },
+      where: {
+        organizationId,
+        userId: residentUserId,
+        kind: 'INVOICE',
+        reference: invoiceId,
+        memo: { contains: 'settled' },
+      },
     });
     expect(settledDebit).not.toBeNull();
     expect(settledDebit!.signed).toBe(-2_000_000);
@@ -480,7 +484,7 @@ describe('resident finance (S3)', () => {
     expect(response.status).toBe(404);
   });
 
-  it('enforces self-scoping: a resident cannot pay another resident\'s invoice', async () => {
+  it("enforces self-scoping: a resident cannot pay another resident's invoice", async () => {
     // The primary resident's invoice (seeded in the previous test, now PAID,
     // but still owned by the primary resident). Fetch its id, then have the
     // second resident try to pay it.

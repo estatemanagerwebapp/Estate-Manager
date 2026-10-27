@@ -258,14 +258,16 @@ async function onboardResident(
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'MALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: `Kin ${firstName}`,
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'MALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: `Kin ${firstName}`,
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({
@@ -465,7 +467,7 @@ describe('resident facilities & bookings (S8)', () => {
     expect(response.body.data.past[0].status).toBe('CANCELLED');
   });
 
-  it('does not let one resident cancel another resident\'s booking', async () => {
+  it("does not let one resident cancel another resident's booking", async () => {
     const created = await request(app)
       .post('/api/v1/resident/bookings')
       .set('Cookie', secondResidentCookie)
@@ -483,7 +485,7 @@ describe('resident facilities & bookings (S8)', () => {
     expect(row!.status).toBe('REQUESTED');
   });
 
-  it('keeps each resident\'s bookings independent', async () => {
+  it("keeps each resident's bookings independent", async () => {
     const first = await request(app)
       .get('/api/v1/resident/facilities')
       .set('Cookie', residentCookie);

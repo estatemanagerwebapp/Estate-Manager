@@ -189,9 +189,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   // non-breaking. Self-scoped: the property is resolved through the
   // acting user's onboarding draft, never from a path param.
 
-  const propertyViewGuard = requirePermission((ctx) =>
-    permissions.can(ctx.role, 'property.view'),
-  );
+  const propertyViewGuard = requirePermission((ctx) => permissions.can(ctx.role, 'property.view'));
 
   router.get(
     '/properties',
@@ -224,9 +222,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   // All endpoints are self-scoped: the acting user id comes from the
   // session; a resident can never address another resident's data.
 
-  const invoiceViewGuard = requirePermission((ctx) =>
-    permissions.can(ctx.role, 'invoice.view'),
-  );
+  const invoiceViewGuard = requirePermission((ctx) => permissions.can(ctx.role, 'invoice.view'));
   const paymentCreateGuard = requirePermission((ctx) =>
     permissions.can(ctx.role, 'payment.create'),
   );
@@ -301,9 +297,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   // is filtered by it, so a resident can never address another resident's
   // code (404).
 
-  const codeCreateGuard = requirePermission((ctx) =>
-    permissions.can(ctx.role, 'code.create'),
-  );
+  const codeCreateGuard = requirePermission((ctx) => permissions.can(ctx.role, 'code.create'));
   const codeDeactivateGuard = requirePermission((ctx) =>
     permissions.can(ctx.role, 'code.deactivate'),
   );
@@ -458,11 +452,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint filter'));
         return;
       }
-      const response = await options.complaints.list(
-        organizationId,
-        ctx.userId,
-        query.data.status,
-      );
+      const response = await options.complaints.list(organizationId, ctx.userId, query.data.status);
       res.status(200).json({ data: response });
     }),
   );
@@ -510,9 +500,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   // Self-scoped: the thread id is resolved against the session user, so
   // another resident's thread is invisible (404).
 
-  const messageGuard = requirePermission((ctx) =>
-    permissions.can(ctx.role, 'message.view'),
-  );
+  const messageGuard = requirePermission((ctx) => permissions.can(ctx.role, 'message.view'));
 
   router.get(
     '/messages',
@@ -598,9 +586,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   // POST /bookings             — request a booking (self scope).
   // POST /bookings/:id/cancel  — cancel one of the resident's own bookings.
 
-  const bookingGuard = requirePermission((ctx) =>
-    permissions.can(ctx.role, 'facility.book'),
-  );
+  const bookingGuard = requirePermission((ctx) => permissions.can(ctx.role, 'facility.book'));
 
   router.get(
     '/facilities',

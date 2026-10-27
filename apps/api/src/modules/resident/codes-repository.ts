@@ -101,10 +101,7 @@ export class PrismaAccessCodeRepository {
     return row ? toRecord(row) : null;
   }
 
-  async extendValidUntil(
-    id: string,
-    validUntil: Date,
-  ): Promise<AccessCodeRecord | null> {
+  async extendValidUntil(id: string, validUntil: Date): Promise<AccessCodeRecord | null> {
     const row = await this.prisma.accessCode.update({
       where: { id },
       data: { validUntil },

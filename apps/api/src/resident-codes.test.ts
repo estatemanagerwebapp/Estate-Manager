@@ -83,14 +83,16 @@ async function onboardResident(
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'MALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: `Kin ${firstName}`,
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'MALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: `Kin ${firstName}`,
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({
@@ -264,9 +266,9 @@ afterAll(async () => {
 describe('resident access codes (S4)', () => {
   it('rejects the code routes without a session', async () => {
     expect((await request(app).get('/api/v1/resident/codes')).status).toBe(401);
-    expect(
-      (await request(app).post('/api/v1/resident/codes').send({ kind: 'ENTRY' })).status,
-    ).toBe(401);
+    expect((await request(app).post('/api/v1/resident/codes').send({ kind: 'ENTRY' })).status).toBe(
+      401,
+    );
   });
 
   it('generates a code, returns the full code once, and stores only the hash + prefix', async () => {
@@ -306,9 +308,7 @@ describe('resident access codes (S4)', () => {
   });
 
   it('lists the codes without ever exposing the full secret', async () => {
-    const response = await request(app)
-      .get('/api/v1/resident/codes')
-      .set('Cookie', residentCookie);
+    const response = await request(app).get('/api/v1/resident/codes').set('Cookie', residentCookie);
     expect(response.status).toBe(200);
 
     const { codes } = response.body.data;
@@ -386,7 +386,7 @@ describe('resident access codes (S4)', () => {
     expect(auditRows.length).toBe(1);
   });
 
-  it('enforces self-scoping: a resident cannot touch another resident\'s code', async () => {
+  it("enforces self-scoping: a resident cannot touch another resident's code", async () => {
     // The second resident generates their own code.
     const generated = await request(app)
       .post('/api/v1/resident/codes')
@@ -415,10 +415,8 @@ describe('resident access codes (S4)', () => {
     expect(row!.userId).toBe(secondResidentUserId);
   });
 
-  it('keeps each resident\'s code list independent', async () => {
-    const first = await request(app)
-      .get('/api/v1/resident/codes')
-      .set('Cookie', residentCookie);
+  it("keeps each resident's code list independent", async () => {
+    const first = await request(app).get('/api/v1/resident/codes').set('Cookie', residentCookie);
     expect(first.status).toBe(200);
     expect(first.body.data.codes).toHaveLength(1);
     expect(first.body.data.codes[0].status).toBe('REVOKED');

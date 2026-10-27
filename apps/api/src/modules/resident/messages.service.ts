@@ -1,8 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import type {
-  PrismaMessageRepository,
-  MessageThreadRecord,
-} from './messages-repository.js';
+import type { PrismaMessageRepository, MessageThreadRecord } from './messages-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   ResidentMessageThreadDto,
@@ -32,10 +29,7 @@ export class ResidentMessagesService {
   constructor(private readonly options: ResidentMessagesServiceOptions) {}
 
   /** The acting resident's threads, most recently touched first. */
-  async list(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentMessagesResponse> {
+  async list(organizationId: string, userId: string): Promise<ResidentMessagesResponse> {
     const records = await this.options.messages.listByUser(organizationId, userId);
     return { threads: records.map(toDto) };
   }
@@ -101,11 +95,7 @@ export class ResidentMessagesService {
     threadId: string,
     body: string,
   ): Promise<MessageThreadRecord> {
-    const thread = await this.options.messages.findById(
-      organizationId,
-      userId,
-      threadId,
-    );
+    const thread = await this.options.messages.findById(organizationId, userId, threadId);
     if (!thread) {
       throw new AppError(404, 'NOT_FOUND', 'Conversation not found');
     }

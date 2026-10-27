@@ -28,20 +28,11 @@ export interface ResidentCommunityServiceOptions {
 export class ResidentCommunityService {
   constructor(private readonly options: ResidentCommunityServiceOptions) {}
 
-  async get(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentCommunityView> {
-    const announcements = await this.options.community.listAnnouncements(
-      organizationId,
-    );
+  async get(organizationId: string, userId: string): Promise<ResidentCommunityView> {
+    const announcements = await this.options.community.listAnnouncements(organizationId);
     const estateId = await this.options.loadEstateId(organizationId, userId);
     const broadcast = estateId
-      ? await this.options.community.findActiveBroadcast(
-          organizationId,
-          estateId,
-          new Date(),
-        )
+      ? await this.options.community.findActiveBroadcast(organizationId, estateId, new Date())
       : null;
 
     return {

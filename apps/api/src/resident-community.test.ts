@@ -201,14 +201,16 @@ beforeAll(async () => {
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'MALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: 'Kin Ada',
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${uniqueSuffix()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'MALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: 'Kin Ada',
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${uniqueSuffix()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({

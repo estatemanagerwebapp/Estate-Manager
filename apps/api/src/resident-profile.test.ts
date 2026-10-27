@@ -393,7 +393,7 @@ describe('resident properties (S2)', () => {
     expect((await request(app).get('/api/v1/resident/properties')).status).toBe(401);
   });
 
-  it('returns the acting resident\'s assigned property with formatted address', async () => {
+  it("returns the acting resident's assigned property with formatted address", async () => {
     const response = await request(app)
       .get('/api/v1/resident/properties')
       .set('Cookie', residentCookie);

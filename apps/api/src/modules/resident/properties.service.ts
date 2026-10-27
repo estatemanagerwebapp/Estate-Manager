@@ -1,13 +1,11 @@
+import type { PrismaResidentOnboardingRepository } from '../auth/resident-onboarding-repository.js';
 import type {
-  PrismaResidentOnboardingRepository,
-} from '../auth/resident-onboarding-repository.js';
-import type { PrismaPropertyRepository, PropertyRecord } from '../properties/property-repository.js';
+  PrismaPropertyRepository,
+  PropertyRecord,
+} from '../properties/property-repository.js';
 import type { PrismaEstateRepository, EstateRecord } from '../estates/estate-repository.js';
 import type { PropertyConfigSnapshot } from '../properties/property.service.js';
-import type {
-  ResidentPropertyDto,
-  ResidentPropertiesResponse,
-} from '@silverstone/shared';
+import type { ResidentPropertyDto, ResidentPropertiesResponse } from '@silverstone/shared';
 
 export interface ResidentPropertiesServiceOptions {
   drafts: PrismaResidentOnboardingRepository;
@@ -32,10 +30,7 @@ export interface ResidentPropertiesServiceOptions {
 export class ResidentPropertiesService {
   constructor(private readonly options: ResidentPropertiesServiceOptions) {}
 
-  async list(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentPropertiesResponse> {
+  async list(organizationId: string, userId: string): Promise<ResidentPropertiesResponse> {
     const draft = await this.options.drafts.findByUser(userId);
     if (!draft) {
       // No linked onboarding: an acting user that is not a resident with an
@@ -77,9 +72,7 @@ function toResidentPropertyDto(
     typeKey: property.typeKey,
     typeLabel,
     status: property.status,
-    estate: estate
-      ? { name: estate.name, slug: estate.slug }
-      : { name: '—', slug: '' },
+    estate: estate ? { name: estate.name, slug: estate.slug } : { name: '—', slug: '' },
     fullAddress,
     addressComponents: property.addressComponents,
   };

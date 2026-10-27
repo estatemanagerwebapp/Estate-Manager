@@ -74,14 +74,16 @@ async function onboardResident(
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'MALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: `Kin ${firstName}`,
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'MALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: `Kin ${firstName}`,
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({
@@ -343,7 +345,7 @@ describe('resident complaints (S5)', () => {
     expect(invalid.status).toBe(400);
   });
 
-  it('keeps each resident\'s complaints independent', async () => {
+  it("keeps each resident's complaints independent", async () => {
     // The second resident files their own complaint.
     const created = await request(app)
       .post('/api/v1/resident/complaints')

@@ -1,8 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import type {
-  PrismaSosRepository,
-  SosEventRecord,
-} from './sos-repository.js';
+import type { PrismaSosRepository, SosEventRecord } from './sos-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   ResidentCreateSosInput,
@@ -35,10 +32,7 @@ export class ResidentSosService {
   constructor(private readonly options: ResidentSosServiceOptions) {}
 
   /** The resident's own SOS history, most recent first. */
-  async list(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentSosEventsResponse> {
+  async list(organizationId: string, userId: string): Promise<ResidentSosEventsResponse> {
     const records = await this.options.sos.listByUser(organizationId, userId);
     return { events: records.map(toDto) };
   }
@@ -92,9 +86,7 @@ function toDto(record: SosEventRecord): SosEventDto {
     note: record.note,
     status: record.status,
     raisedAt: record.raisedAt.toISOString(),
-    acknowledgedAt: record.acknowledgedAt
-      ? record.acknowledgedAt.toISOString()
-      : null,
+    acknowledgedAt: record.acknowledgedAt ? record.acknowledgedAt.toISOString() : null,
     resolvedAt: record.resolvedAt ? record.resolvedAt.toISOString() : null,
   };
 }

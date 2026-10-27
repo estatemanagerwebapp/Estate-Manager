@@ -533,12 +533,10 @@ export const api = {
     }),
 
   /** S2: the acting resident's assigned property(ies). */
-  getResidentProperties: () =>
-    request<ResidentPropertiesResponse>('/api/v1/resident/properties'),
+  getResidentProperties: () => request<ResidentPropertiesResponse>('/api/v1/resident/properties'),
 
   /** S3: the acting resident's finance view (4 sections). */
-  getResidentFinance: () =>
-    request<ResidentFinanceView>('/api/v1/resident/finance'),
+  getResidentFinance: () => request<ResidentFinanceView>('/api/v1/resident/finance'),
 
   /** S3: record a payment against one of the acting resident's invoices. */
   createResidentPayment: (input: ResidentCreatePaymentInput) =>
@@ -548,8 +546,7 @@ export const api = {
     }),
 
   /** S4: the acting resident's access codes (prefix + validity, never the secret). */
-  getResidentCodes: () =>
-    request<{ codes: ResidentAccessCodeDto[] }>('/api/v1/resident/codes'),
+  getResidentCodes: () => request<{ codes: ResidentAccessCodeDto[] }>('/api/v1/resident/codes'),
 
   /** S4: generate an access code. The full code is returned exactly once. */
   generateResidentAccessCode: (input: ResidentGenerateAccessCodeInput) =>
@@ -589,8 +586,7 @@ export const api = {
     }),
 
   /** S6: the acting resident's conversation threads with the estate office. */
-  getResidentMessages: () =>
-    request<ResidentMessagesResponse>('/api/v1/resident/messages'),
+  getResidentMessages: () => request<ResidentMessagesResponse>('/api/v1/resident/messages'),
 
   /** S6: start a thread (no threadId) or reply into an open one. */
   sendResidentMessage: (input: ResidentSendMessageInput) =>
@@ -600,12 +596,10 @@ export const api = {
     }),
 
   /** S7: community feed — latest announcements + the estate broadcast. */
-  getResidentCommunity: () =>
-    request<ResidentCommunityView>('/api/v1/resident/community'),
+  getResidentCommunity: () => request<ResidentCommunityView>('/api/v1/resident/community'),
 
   /** S8: bookable facilities plus the resident's upcoming and past bookings. */
-  getResidentFacilities: () =>
-    request<ResidentBookingsView>('/api/v1/resident/facilities'),
+  getResidentFacilities: () => request<ResidentBookingsView>('/api/v1/resident/facilities'),
 
   /** S8: request a booking. */
   createResidentBooking: (input: ResidentCreateBookingInput) =>

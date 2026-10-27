@@ -34,9 +34,7 @@ export function ResidentPropertiesPage() {
       const data = await api.getResidentProperties();
       setResponse(data);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not load your property.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your property.');
     } finally {
       setLoading(false);
     }

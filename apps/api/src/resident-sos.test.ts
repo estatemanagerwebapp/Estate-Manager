@@ -74,14 +74,16 @@ async function onboardResident(
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'FEMALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: `Kin ${firstName}`,
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'FEMALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: `Kin ${firstName}`,
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({
@@ -253,9 +255,9 @@ afterAll(async () => {
 describe('resident emergency / SOS (S9)', () => {
   it('rejects the SOS routes without a session', async () => {
     expect((await request(app).get('/api/v1/resident/sos')).status).toBe(401);
-    expect(
-      (await request(app).post('/api/v1/resident/sos').send({ note: 'Help' })).status,
-    ).toBe(401);
+    expect((await request(app).post('/api/v1/resident/sos').send({ note: 'Help' })).status).toBe(
+      401,
+    );
   });
 
   it('raises an SOS against the resident property and audits it', async () => {
@@ -289,9 +291,7 @@ describe('resident emergency / SOS (S9)', () => {
   });
 
   it('lists the resident own alert history', async () => {
-    const response = await request(app)
-      .get('/api/v1/resident/sos')
-      .set('Cookie', residentCookie);
+    const response = await request(app).get('/api/v1/resident/sos').set('Cookie', residentCookie);
     expect(response.status).toBe(200);
 
     const { events } = response.body.data;
@@ -324,9 +324,7 @@ describe('resident emergency / SOS (S9)', () => {
       .send({ note: 'Fallen gate.' });
     expect(created.status).toBe(201);
 
-    const first = await request(app)
-      .get('/api/v1/resident/sos')
-      .set('Cookie', residentCookie);
+    const first = await request(app).get('/api/v1/resident/sos').set('Cookie', residentCookie);
     expect(first.body.data.events.length).toBe(2);
     expect(
       first.body.data.events.some(

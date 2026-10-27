@@ -45,10 +45,7 @@ export class ResidentFinanceService {
    * The four-section finance view for the acting resident: outstanding
    * invoices, paid invoices, payment history and the transaction ledger.
    */
-  async view(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentFinanceView> {
+  async view(organizationId: string, userId: string): Promise<ResidentFinanceView> {
     const [outstanding, paid, payments, transactions] = await Promise.all([
       this.options.finance.listInvoicesByStatus(organizationId, userId, 'UNPAID'),
       this.options.finance.listInvoicesByStatus(organizationId, userId, 'PAID'),
@@ -79,11 +76,7 @@ export class ResidentFinanceService {
     input: { invoiceId: string; method?: string; reference: string | null },
     requestId: string | null,
   ): Promise<ResidentCreatePaymentResponse> {
-    const invoice = await this.options.finance.findInvoice(
-      organizationId,
-      userId,
-      input.invoiceId,
-    );
+    const invoice = await this.options.finance.findInvoice(organizationId, userId, input.invoiceId);
     if (!invoice) {
       // Never reveals whether another user's invoice exists with this id.
       throw new AppError(404, 'NOT_FOUND', 'Invoice not found');

@@ -37,11 +37,7 @@ export function ResidentSosPage() {
       const data = await api.getResidentSosEvents();
       setEvents(data.events);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not load your SOS history.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your SOS history.');
     } finally {
       setLoading(false);
     }
@@ -60,9 +56,7 @@ export function ResidentSosPage() {
       setNote('');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not raise the SOS alert.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not raise the SOS alert.');
       toast.error('Could not raise the SOS alert.');
     } finally {
       setRaising(false);
@@ -98,8 +92,8 @@ export function ResidentSosPage() {
         <CardBody>
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3">
             <p className="text-sm text-(--color-ink)">
-              Use this only for a genuine emergency. If you are in immediate
-              danger, call the emergency services first.
+              Use this only for a genuine emergency. If you are in immediate danger, call the
+              emergency services first.
             </p>
           </div>
 
@@ -139,10 +133,7 @@ export function ResidentSosPage() {
           ) : (
             <ul className="space-y-2">
               {events.map((event) => (
-                <li
-                  key={event.id}
-                  className="rounded-md border border-slate-200/80 px-3 py-3"
-                >
+                <li key={event.id} className="rounded-md border border-slate-200/80 px-3 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <ShieldCheck aria-hidden size={14} className="text-(--color-ink-muted)" />
@@ -160,9 +151,7 @@ export function ResidentSosPage() {
                   {event.acknowledgedAt && (
                     <p className="mt-1 text-xs text-(--color-ink-muted)">
                       Acknowledged {formatDate(event.acknowledgedAt)}
-                      {event.resolvedAt
-                        ? ` · resolved ${formatDate(event.resolvedAt)}`
-                        : ''}
+                      {event.resolvedAt ? ` · resolved ${formatDate(event.resolvedAt)}` : ''}
                     </p>
                   )}
                 </li>

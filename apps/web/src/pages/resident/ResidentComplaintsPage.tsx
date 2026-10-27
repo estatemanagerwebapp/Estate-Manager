@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquareWarning, Plus, Send, User } from 'lucide-react';
-import type {
-  ResidentComplaintDto,
-  ComplaintStatus,
-} from '@silverstone/shared';
+import type { ResidentComplaintDto, ComplaintStatus } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useToast } from '../../toast/Toast';
 import {
@@ -62,14 +59,10 @@ export function ResidentComplaintsPage() {
     setError(null);
     setLoading(true);
     try {
-      const data = await api.getResidentComplaints(
-        filter === 'ALL' ? undefined : filter,
-      );
+      const data = await api.getResidentComplaints(filter === 'ALL' ? undefined : filter);
       setComplaints(data.complaints);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not load your complaints.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your complaints.');
     } finally {
       setLoading(false);
     }
@@ -91,9 +84,7 @@ export function ResidentComplaintsPage() {
       setShowForm(false);
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not file the complaint.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not file the complaint.');
       toast.error('Could not file the complaint.');
     } finally {
       setSubmitting(false);
@@ -258,9 +249,7 @@ function ComplaintCard({ complaint }: { complaint: ResidentComplaintDto }) {
         <Badge tone={statusTone(complaint.status)}>{complaint.status}</Badge>
       </div>
 
-      <p className="mt-3 whitespace-pre-line text-sm text-(--color-ink)">
-        {complaint.description}
-      </p>
+      <p className="mt-3 whitespace-pre-line text-sm text-(--color-ink)">{complaint.description}</p>
 
       {complaint.replies.length > 0 && (
         <ul className="mt-4 space-y-2 border-l-2 border-slate-100 pl-3">

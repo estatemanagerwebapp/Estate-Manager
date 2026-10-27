@@ -7,12 +7,7 @@ import type { PrismaClient } from '@prisma/client';
  * resident can only ever reach their own notifications.
  */
 
-export type NotificationKind =
-  | 'BOOKING'
-  | 'ANNOUNCEMENT'
-  | 'BROADCAST'
-  | 'COMPLANT'
-  | 'SYSTEM';
+export type NotificationKind = 'BOOKING' | 'ANNOUNCEMENT' | 'BROADCAST' | 'COMPLANT' | 'SYSTEM';
 
 export interface NotificationRecord {
   id: string;
@@ -53,10 +48,7 @@ export class PrismaNotificationRepository {
   }
 
   /** How many notifications the user has not read yet. */
-  async countUnread(
-    organizationId: string,
-    userId: string,
-  ): Promise<number> {
+  async countUnread(organizationId: string, userId: string): Promise<number> {
     return this.prisma.notification.count({
       where: { organizationId, userId, read: false },
     });

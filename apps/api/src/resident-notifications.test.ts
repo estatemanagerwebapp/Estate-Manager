@@ -81,14 +81,16 @@ async function onboardResident(
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'MALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: `Kin ${firstName}`,
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'MALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: `Kin ${firstName}`,
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({
@@ -289,8 +291,9 @@ describe('resident notifications (S10)', () => {
     expect((await request(app).get('/api/v1/resident/notifications')).status).toBe(401);
     expect(
       (
-        await request(app)
-          .post('/api/v1/resident/notifications/00000000-0000-4000-8000-000000000000/read')
+        await request(app).post(
+          '/api/v1/resident/notifications/00000000-0000-4000-8000-000000000000/read',
+        )
       ).status,
     ).toBe(401);
   });

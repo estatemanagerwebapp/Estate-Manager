@@ -1,8 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import type {
-  PrismaBookingRepository,
-  BookingRecord,
-} from './bookings-repository.js';
+import type { PrismaBookingRepository, BookingRecord } from './bookings-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   BookingDto,
@@ -52,10 +49,7 @@ export class ResidentBookingsService {
   constructor(private readonly options: ResidentBookingsServiceOptions) {}
 
   /** Facilities plus the resident's upcoming and past bookings. */
-  async list(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentBookingsView> {
+  async list(organizationId: string, userId: string): Promise<ResidentBookingsView> {
     const estateId = await this.options.loadEstateId(organizationId, userId);
     const [facilities, bookings] = await Promise.all([
       this.options.bookings.listFacilities(organizationId, estateId),
@@ -76,10 +70,7 @@ export class ResidentBookingsService {
         .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
         .map(toDto),
       past: bookings
-        .filter(
-          (booking) =>
-            !live.has(booking.status) || booking.endsAt <= now,
-        )
+        .filter((booking) => !live.has(booking.status) || booking.endsAt <= now)
         .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
         .map(toDto),
     };
@@ -143,17 +134,9 @@ export class ResidentBookingsService {
       throw new AppError(409, 'CONFLICT', 'This facility cannot be booked');
     }
 
-    const clash = await this.options.bookings.findOverlappingBooking(
-      facility.id,
-      startsAt,
-      endsAt,
-    );
+    const clash = await this.options.bookings.findOverlappingBooking(facility.id, startsAt, endsAt);
     if (clash) {
-      throw new AppError(
-        409,
-        'CONFLICT',
-        'This facility is already booked for part of that time',
-      );
+      throw new AppError(409, 'CONFLICT', 'This facility is already booked for part of that time');
     }
 
     const record = await this.options.bookings.create({
@@ -209,11 +192,7 @@ export class ResidentBookingsService {
     bookingId: string,
     requestId: string | null,
   ): Promise<ResidentCancelBookingResponse> {
-    const record = await this.options.bookings.findBookingById(
-      organizationId,
-      userId,
-      bookingId,
-    );
+    const record = await this.options.bookings.findBookingById(organizationId, userId, bookingId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Booking not found');
     }

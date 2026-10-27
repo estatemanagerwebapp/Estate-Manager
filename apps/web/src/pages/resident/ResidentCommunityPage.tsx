@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Megaphone, AlertTriangle, Info, Siren } from 'lucide-react';
-import type {
-  AnnouncementDto,
-  EstateBroadcastDto,
-} from '@silverstone/shared';
+import type { AnnouncementDto, EstateBroadcastDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import {
   Card,
@@ -35,11 +32,7 @@ export function ResidentCommunityPage() {
       setAnnouncements(data.announcements);
       setBroadcast(data.broadcast);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not load community updates.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load community updates.');
     } finally {
       setLoading(false);
     }
@@ -68,10 +61,7 @@ export function ResidentCommunityPage() {
       {broadcast && <BroadcastBanner broadcast={broadcast} />}
 
       <Card>
-        <CardHeader
-          title="Latest announcements"
-          subtitle="Updates from the estate office."
-        />
+        <CardHeader title="Latest announcements" subtitle="Updates from the estate office." />
         <CardBody>
           {announcements.length === 0 ? (
             <EmptyState
@@ -81,13 +71,8 @@ export function ResidentCommunityPage() {
           ) : (
             <ul className="space-y-4">
               {announcements.map((announcement) => (
-                <li
-                  key={announcement.id}
-                  className="border-l-2 border-slate-100 pl-3"
-                >
-                  <p className="text-sm font-semibold text-(--color-ink)">
-                    {announcement.title}
-                  </p>
+                <li key={announcement.id} className="border-l-2 border-slate-100 pl-3">
+                  <p className="text-sm font-semibold text-(--color-ink)">{announcement.title}</p>
                   <p className="mt-0.5 text-xs text-(--color-ink-muted)">
                     {formatDate(announcement.publishedAt)}
                   </p>
@@ -135,21 +120,13 @@ function BroadcastBanner({ broadcast }: { broadcast: EstateBroadcastDto }) {
                 : 'text-(--color-primary)'
           }
         />
-        <span className="text-sm font-semibold text-(--color-ink)">
-          {broadcast.title}
-        </span>
-        <Badge tone={priorityTone(broadcast.priority)}>
-          {broadcast.priority}
-        </Badge>
+        <span className="text-sm font-semibold text-(--color-ink)">{broadcast.title}</span>
+        <Badge tone={priorityTone(broadcast.priority)}>{broadcast.priority}</Badge>
       </div>
-      <p className="mt-2 whitespace-pre-line text-sm text-(--color-ink)">
-        {broadcast.body}
-      </p>
+      <p className="mt-2 whitespace-pre-line text-sm text-(--color-ink)">{broadcast.body}</p>
       <p className="mt-2 text-xs text-(--color-ink-muted)">
         Issued {formatDate(broadcast.issuedAt)}
-        {broadcast.expiresAt
-          ? ` · expires ${formatDate(broadcast.expiresAt)}`
-          : ''}
+        {broadcast.expiresAt ? ` · expires ${formatDate(broadcast.expiresAt)}` : ''}
       </p>
     </div>
   );

@@ -1,8 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import type {
-  PrismaAccessCodeRepository,
-  AccessCodeRecord,
-} from './codes-repository.js';
+import type { PrismaAccessCodeRepository, AccessCodeRecord } from './codes-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   ResidentAccessCodeDto,
@@ -44,10 +41,7 @@ export class ResidentCodesService {
    * revoked ones as REVOKED) so the list stays truthful without mutating
    * rows on read.
    */
-  async list(
-    organizationId: string,
-    userId: string,
-  ): Promise<{ codes: ResidentAccessCodeDto[] }> {
+  async list(organizationId: string, userId: string): Promise<{ codes: ResidentAccessCodeDto[] }> {
     const records = await this.options.codes.listByUser(organizationId, userId);
     const now = new Date();
     return {

@@ -35,10 +35,7 @@ export class PrismaCommunityRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /** The organization's announcements, newest first. */
-  async listAnnouncements(
-    organizationId: string,
-    limit = 20,
-  ): Promise<AnnouncementRecord[]> {
+  async listAnnouncements(organizationId: string, limit = 20): Promise<AnnouncementRecord[]> {
     const rows = await this.prisma.announcement.findMany({
       where: { organizationId },
       orderBy: { publishedAt: 'desc' },

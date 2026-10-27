@@ -84,9 +84,7 @@ export function ResidentInvoicesPage() {
       closePay();
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not record the payment.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not record the payment.');
       toast.error('Could not record the payment.');
     } finally {
       setPaying(false);
@@ -192,7 +190,9 @@ export function ResidentInvoicesPage() {
                   <span className="text-sm">{invoice.period}</span>
                   <div className="flex items-center gap-3">
                     <Badge tone="success">PAID</Badge>
-                    <span className="text-sm">{formatMoney(invoice.amountKobo, invoice.currency)}</span>
+                    <span className="text-sm">
+                      {formatMoney(invoice.amountKobo, invoice.currency)}
+                    </span>
                   </div>
                 </li>
               ))}
@@ -238,10 +238,7 @@ export function ResidentInvoicesPage() {
         />
         <CardBody>
           {transactions.length === 0 ? (
-            <EmptyState
-              title="No transactions yet"
-              body="Ledger entries will appear here."
-            />
+            <EmptyState title="No transactions yet" body="Ledger entries will appear here." />
           ) : (
             <ul className="space-y-2">
               {transactions.map((transaction) => (

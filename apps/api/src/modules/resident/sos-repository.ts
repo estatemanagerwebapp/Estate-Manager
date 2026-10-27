@@ -33,11 +33,7 @@ export class PrismaSosRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   /** The acting user's SOS events, most recent first. */
-  async listByUser(
-    organizationId: string,
-    userId: string,
-    limit = 50,
-  ): Promise<SosEventRecord[]> {
+  async listByUser(organizationId: string, userId: string, limit = 50): Promise<SosEventRecord[]> {
     const rows = await this.prisma.sosEvent.findMany({
       where: { organizationId, userId },
       orderBy: { raisedAt: 'desc' },

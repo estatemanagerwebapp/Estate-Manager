@@ -80,9 +80,9 @@ export interface CreateTransactionInput {
   reference?: string | null;
 }
 
-type PrismaInvoiceRow = Prisma.InvoiceGetPayload<{}>;
-type PrismaPaymentRow = Prisma.PaymentGetPayload<{}>;
-type PrismaTransactionRow = Prisma.TransactionGetPayload<{}>;
+type PrismaInvoiceRow = Prisma.InvoiceGetPayload<Prisma.InvoiceDefaultArgs>;
+type PrismaPaymentRow = Prisma.PaymentGetPayload<Prisma.PaymentDefaultArgs>;
+type PrismaTransactionRow = Prisma.TransactionGetPayload<Prisma.TransactionDefaultArgs>;
 
 export class PrismaFinanceRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -194,11 +194,7 @@ export class PrismaFinanceRepository {
    * the seed-on-registration hook to avoid double-seeding when the account
    * is created through either path (markPaid immediate or complete).
    */
-  async hasSeededInvoice(
-    organizationId: string,
-    userId: string,
-    period: string,
-  ): Promise<boolean> {
+  async hasSeededInvoice(organizationId: string, userId: string, period: string): Promise<boolean> {
     const row = await this.prisma.invoice.findFirst({
       where: { organizationId, userId, period },
       select: { id: true },

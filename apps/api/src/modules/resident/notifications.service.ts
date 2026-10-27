@@ -1,8 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import type {
-  PrismaNotificationRepository,
-  NotificationKind,
-} from './notifications-repository.js';
+import type { PrismaNotificationRepository, NotificationKind } from './notifications-repository.js';
 import type {
   ResidentMarkNotificationReadResponse,
   ResidentNotificationDto,
@@ -35,10 +32,7 @@ export class ResidentNotificationsService {
   constructor(private readonly options: ResidentNotificationsServiceOptions) {}
 
   /** The resident's recent notifications plus the unread count. */
-  async list(
-    organizationId: string,
-    userId: string,
-  ): Promise<ResidentNotificationInbox> {
+  async list(organizationId: string, userId: string): Promise<ResidentNotificationInbox> {
     const [records, unreadCount] = await Promise.all([
       this.options.notifications.listByUser(organizationId, userId),
       this.options.notifications.countUnread(organizationId, userId),
@@ -71,11 +65,7 @@ export class ResidentNotificationsService {
   }
 
   /** Enqueue a notification for a resident. */
-  async notify(
-    organizationId: string,
-    userId: string,
-    input: NotifyInput,
-  ): Promise<void> {
+  async notify(organizationId: string, userId: string, input: NotifyInput): Promise<void> {
     await this.options.notifications.create({
       organizationId,
       userId,

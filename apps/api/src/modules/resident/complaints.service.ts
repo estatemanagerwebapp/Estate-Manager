@@ -45,11 +45,7 @@ export class ResidentComplaintsService {
     userId: string,
     status?: ComplaintStatus,
   ): Promise<ResidentComplaintsResponse> {
-    const records = await this.options.complaints.listByUser(
-      organizationId,
-      userId,
-      status,
-    );
+    const records = await this.options.complaints.listByUser(organizationId, userId, status);
     return { complaints: records.map(toDto) };
   }
 

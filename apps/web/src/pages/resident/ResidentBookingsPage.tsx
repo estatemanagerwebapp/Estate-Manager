@@ -35,11 +35,7 @@ export function ResidentBookingsPage() {
       setUpcoming(data.upcoming);
       setPast(data.past);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not load your bookings.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your bookings.');
     } finally {
       setLoading(false);
     }
@@ -57,9 +53,7 @@ export function ResidentBookingsPage() {
       toast.success('Booking cancelled.');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not cancel the booking.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not cancel the booking.');
       toast.error('Could not cancel the booking.');
     } finally {
       setBusyId(null);
@@ -148,9 +142,7 @@ function BookingRow({
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200/80 px-3 py-3">
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-(--color-ink)">
-            {booking.facilityName}
-          </span>
+          <span className="text-sm font-semibold text-(--color-ink)">{booking.facilityName}</span>
           <Badge tone={statusTone(booking.status)}>{booking.status}</Badge>
         </div>
         <p className="mt-1 text-xs text-(--color-ink-muted)">

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Copy, Check, Plus, TimerReset, Ban } from 'lucide-react';
-import type {
-  ResidentAccessCodeDto,
-  AccessCodeKind,
-} from '@silverstone/shared';
+import type { ResidentAccessCodeDto, AccessCodeKind } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useToast } from '../../toast/Toast';
 import {
@@ -54,9 +51,7 @@ export function ResidentCodesPage() {
       const data = await api.getResidentCodes();
       setCodes(data.codes);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not load your access codes.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your access codes.');
     } finally {
       setLoading(false);
     }
@@ -81,9 +76,7 @@ export function ResidentCodesPage() {
       toast.success('Access code generated.');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not generate an access code.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not generate an access code.');
       toast.error('Could not generate an access code.');
     } finally {
       setGenerating(false);
@@ -98,9 +91,7 @@ export function ResidentCodesPage() {
       toast.success('Code validity extended.');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not extend the code.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not extend the code.');
       toast.error('Could not extend the code.');
     } finally {
       setBusyCodeId(null);
@@ -115,9 +106,7 @@ export function ResidentCodesPage() {
       toast.success('Code deactivated.');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not deactivate the code.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not deactivate the code.');
       toast.error('Could not deactivate the code.');
     } finally {
       setBusyCodeId(null);
@@ -297,20 +286,13 @@ function CodeRow({
           <span className="text-xs text-(--color-ink-muted)">{kindLabel(code.kind)}</span>
         </div>
         <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-          {code.validUntil
-            ? `Valid until ${formatDate(code.validUntil)}`
-            : 'No expiry'}
+          {code.validUntil ? `Valid until ${formatDate(code.validUntil)}` : 'No expiry'}
           {code.revokedAt ? ` · deactivated ${formatDate(code.revokedAt)}` : ''}
         </p>
       </div>
       {isActive && (
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={onExtend}
-          >
+          <Button size="sm" variant="secondary" disabled={busy} onClick={onExtend}>
             <TimerReset aria-hidden size={13} className="mr-1" />
             Extend
           </Button>

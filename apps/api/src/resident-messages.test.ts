@@ -74,14 +74,16 @@ async function onboardResident(
   const residentId = registered.body.data.resident.id as string;
   const code = registered.body.data.onboardingCode as string;
 
-  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
-    gender: 'FEMALE',
-    maritalStatus: 'SINGLE',
-    nextOfKinName: `Kin ${firstName}`,
-    nextOfKinPhone: '+2348009990000',
-    nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
-    idType: 'NATIONAL_ID',
-  });
+  const saved = await request(app)
+    .patch(`/api/v1/onboard/by-code/${code}`)
+    .send({
+      gender: 'FEMALE',
+      maritalStatus: 'SINGLE',
+      nextOfKinName: `Kin ${firstName}`,
+      nextOfKinPhone: '+2348009990000',
+      nextOfKinEmail: `kin_${firstName.toLowerCase()}@example.com`,
+      idType: 'NATIONAL_ID',
+    });
   expect(saved.status).toBe(200);
 
   await prisma.residentOnboarding.update({
@@ -251,11 +253,8 @@ describe('resident messages (S6)', () => {
   it('rejects the message routes without a session', async () => {
     expect((await request(app).get('/api/v1/resident/messages')).status).toBe(401);
     expect(
-      (
-        await request(app)
-          .post('/api/v1/resident/messages')
-          .send({ subject: 'Hi', body: 'Hello' })
-      ).status,
+      (await request(app).post('/api/v1/resident/messages').send({ subject: 'Hi', body: 'Hello' }))
+        .status,
     ).toBe(401);
   });
 
@@ -325,16 +324,14 @@ describe('resident messages (S6)', () => {
       },
     });
 
-    const after = await request(app)
-      .get('/api/v1/resident/messages')
-      .set('Cookie', residentCookie);
+    const after = await request(app).get('/api/v1/resident/messages').set('Cookie', residentCookie);
     const messages = after.body.data.threads[0].messages;
     expect(messages.length).toBe(3);
     expect(messages[2].senderRole).toBe('ESTATE_OFFICE');
     expect(messages[2].body).toContain('tanker');
   });
 
-  it('keeps each resident\'s threads independent', async () => {
+  it("keeps each resident's threads independent", async () => {
     const created = await request(app)
       .post('/api/v1/resident/messages')
       .set('Cookie', secondResidentCookie)
@@ -344,9 +341,7 @@ describe('resident messages (S6)', () => {
       });
     expect(created.status).toBe(201);
 
-    const first = await request(app)
-      .get('/api/v1/resident/messages')
-      .set('Cookie', residentCookie);
+    const first = await request(app).get('/api/v1/resident/messages').set('Cookie', residentCookie);
     expect(first.body.data.threads.length).toBe(1);
     expect(first.body.data.threads[0].subject).toBe('Water supply interruption');
 
@@ -357,7 +352,7 @@ describe('resident messages (S6)', () => {
     expect(second.body.data.threads[0].subject).toBe('Visitor parking');
   });
 
-  it('does not let one resident reply into another resident\'s thread', async () => {
+  it("does not let one resident reply into another resident's thread", async () => {
     const second = await request(app)
       .get('/api/v1/resident/messages')
       .set('Cookie', secondResidentCookie);

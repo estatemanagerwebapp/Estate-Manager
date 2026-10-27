@@ -40,11 +40,7 @@ export function ResidentFacilitiesPage() {
       const data = await api.getResidentFacilities();
       setFacilities(data.facilities);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not load the facilities.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load the facilities.');
     } finally {
       setLoading(false);
     }
@@ -73,9 +69,7 @@ export function ResidentFacilitiesPage() {
       setAttendees('');
       await load();
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : 'Could not request the booking.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not request the booking.');
       toast.error('Could not request the booking.');
     } finally {
       setSubmitting(false);
@@ -162,10 +156,7 @@ export function ResidentFacilitiesPage() {
       )}
 
       <Card>
-        <CardHeader
-          title="Facilities"
-          subtitle="Amenities you can book on your estate."
-        />
+        <CardHeader title="Facilities" subtitle="Amenities you can book on your estate." />
         <CardBody>
           {facilities.length === 0 ? (
             <EmptyState

@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, BellRing, CalendarDays, Check } from 'lucide-react';
-import type {
-  BookingDto,
-  ResidentNotificationDto,
-} from '@silverstone/shared';
+import type { BookingDto, ResidentNotificationDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import {
   Button,
@@ -41,11 +38,7 @@ export function ResidentNotificationsPage() {
       setUpcoming(data.upcomingBookings);
       setUnreadCount(data.unreadCount);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not load your notifications.',
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load your notifications.');
     } finally {
       setLoading(false);
     }
@@ -63,9 +56,7 @@ export function ResidentNotificationsPage() {
       await load();
     } catch (err) {
       setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : 'Could not mark the notification as read.',
+        err instanceof ApiRequestError ? err.message : 'Could not mark the notification as read.',
       );
     } finally {
       setBusyId(null);
@@ -107,11 +98,7 @@ export function ResidentNotificationsPage() {
                   className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200/80 px-3 py-3"
                 >
                   <div className="flex items-center gap-2">
-                    <CalendarDays
-                      aria-hidden
-                      size={14}
-                      className="text-(--color-ink-muted)"
-                    />
+                    <CalendarDays aria-hidden size={14} className="text-(--color-ink-muted)" />
                     <span className="text-sm font-semibold text-(--color-ink)">
                       {booking.facilityName}
                     </span>
@@ -119,9 +106,7 @@ export function ResidentNotificationsPage() {
                       {booking.status}
                     </Badge>
                   </div>
-                  <span className="text-xs text-(--color-ink-muted)">
-                    {formatWindow(booking)}
-                  </span>
+                  <span className="text-xs text-(--color-ink-muted)">{formatWindow(booking)}</span>
                 </li>
               ))}
             </ul>
@@ -136,19 +121,14 @@ export function ResidentNotificationsPage() {
         />
         <CardBody>
           {notifications.length === 0 ? (
-            <EmptyState
-              title="Nothing new"
-              body="Updates will appear here as they happen."
-            />
+            <EmptyState title="Nothing new" body="Updates will appear here as they happen." />
           ) : (
             <ul className="space-y-2">
               {notifications.map((notification) => (
                 <li
                   key={notification.id}
                   className={`rounded-md border px-3 py-3 ${
-                    notification.read
-                      ? 'border-slate-200/80'
-                      : 'border-slate-300 bg-slate-50'
+                    notification.read ? 'border-slate-200/80' : 'border-slate-300 bg-slate-50'
                   }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -157,9 +137,7 @@ export function ResidentNotificationsPage() {
                         <span className="text-sm font-semibold text-(--color-ink)">
                           {notification.title}
                         </span>
-                        <Badge tone={kindTone(notification.kind)}>
-                          {notification.kind}
-                        </Badge>
+                        <Badge tone={kindTone(notification.kind)}>{notification.kind}</Badge>
                         {!notification.read && (
                           <span className="inline-flex items-center gap-1 text-xs font-medium text-(--color-primary)">
                             <BellRing aria-hidden size={11} />
