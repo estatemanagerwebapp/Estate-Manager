@@ -58,13 +58,15 @@ export class PropertyOptionsService {
     },
     input: UpdatePropertyOptionsRequest,
   ): Promise<PropertyOptionsView> {
-    // Load the active config and verify the base version.
-    const snapshot = await this.loadConfig();
-    if (input.baseVersion !== snapshot.configVersion) {
+    // Read the committed version directly. A config write must never be
+    // validated against a cached snapshot, or two writers could both pass
+    // the optimistic-concurrency check.
+    const resolved = await this.configService.resolve({ bypassCache: true });
+    if (input.baseVersion !== resolved.version) {
       throw new AppError(
         409,
         'CONFLICT',
-        `Configuration has changed since this edit began (base version ${input.baseVersion}, active version ${snapshot.configVersion}). Reload and re-apply your changes.`,
+        `Configuration has changed since this edit began (base version ${input.baseVersion}, active version ${resolved.version}). Reload and re-apply your changes.`,
       );
     }
 
@@ -80,7 +82,6 @@ export class PropertyOptionsService {
 
     // Build the new full config document: carry over everything except
     // propertyOptions from the active version.
-    const resolved = await this.configService.resolve();
     const updatedConfig = OrganizationConfigSchema.safeParse({
       ...resolved.config,
       propertyOptions: parsed.data,
@@ -99,6 +100,10 @@ export class PropertyOptionsService {
       createdBy: context.actorId ?? undefined,
     });
 
+    // Permissions and property validation read the same cached config on this
+    // instance. Drop it so the new active version is visible immediately.
+    this.configService.invalidate();
+
     await this.audit.record({
       organizationId: context.organizationId,
       actorId: context.actorId,
@@ -115,8 +120,8 @@ export class PropertyOptionsService {
     });
 
     return buildPropertyOptionsView({
-      assetTypes: snapshot.assetTypes,
-      unitTypes: snapshot.unitTypes,
+      assetTypes: resolved.config.assetModel.types,
+      unitTypes: resolved.config.assetModel.unitTypes,
       propertyOptions: parsed.data,
       configVersion: created.version,
     });

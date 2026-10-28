@@ -9,7 +9,8 @@
       "buildCommand": "cd ../.. && npm run prisma:generate && npm run build:packages && cp config/organization.default.json apps/api/organization.default.json && npm run build:api",
       "functions": {
         "src/server.ts": {
-          "includeFiles": "{organization.default.json,package.json}"
+          "includeFiles": "{organization.default.json,package.json}",
+          "regions": ["fra1"]
         }
       }
     },

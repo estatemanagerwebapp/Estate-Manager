@@ -127,14 +127,57 @@ function isPrismaError(error: unknown): boolean {
  * truth once provisioned, and a live deployment must not silently run on
  * repository defaults.
  */
+const DEFAULT_CONFIG_CACHE_TTL_MS = 30_000;
+
+/**
+ * Tests create config rows through the repository directly, so a cached
+ * active version would make those writes invisible. Production keeps the
+ * short-lived cache that removes repeated organization/config lookups from
+ * every authenticated request.
+ */
+function defaultConfigCacheTtlMs(): number {
+  return process.env.VITEST === 'true' ? 0 : DEFAULT_CONFIG_CACHE_TTL_MS;
+}
+
 export class OrganizationConfigService {
+  private cachedConfig: { resolved: ResolvedOrganizationConfig; expiresAt: number } | null = null;
+
   constructor(
     private readonly repository: PrismaOrganizationConfigRepository,
     private readonly bootstrapLoader: () => OrganizationConfig,
     private readonly organizationSlug: string,
+    private readonly cacheTtlMs: number = defaultConfigCacheTtlMs(),
   ) {}
 
-  async resolve(): Promise<ResolvedOrganizationConfig> {
+  /**
+   * Resolves the active config, reusing the last result for a short window.
+   * Pass `bypassCache` on write paths that must compare against the committed
+   * version (for example the property-options optimistic-concurrency check).
+   */
+  async resolve(options: { bypassCache?: boolean } = {}): Promise<ResolvedOrganizationConfig> {
+    const cached = this.cachedConfig;
+    if (!options.bypassCache && cached !== null && cached.expiresAt > Date.now()) {
+      return cached.resolved;
+    }
+
+    const resolved = await this.loadResolved();
+    if (this.cacheTtlMs > 0) {
+      this.cachedConfig = {
+        resolved,
+        expiresAt: Date.now() + this.cacheTtlMs,
+      };
+    } else {
+      this.cachedConfig = null;
+    }
+    return resolved;
+  }
+
+  /** Drops the per-instance cache after a configuration write. */
+  invalidate(): void {
+    this.cachedConfig = null;
+  }
+
+  private async loadResolved(): Promise<ResolvedOrganizationConfig> {
     let stored: StoredConfigRecord | null;
     try {
       stored = await this.repository.findActiveRecord(this.organizationSlug);
@@ -176,10 +219,12 @@ export class OrganizationConfigService {
   /** Provisions the organization with the current bootstrap defaults. */
   async provision(createdBy?: string): Promise<StoredConfigRecord> {
     const bootstrap = this.bootstrapLoader();
-    return this.repository.createRecord({
+    const created = await this.repository.createRecord({
       organizationSlug: this.organizationSlug,
       config: bootstrap,
       createdBy,
     });
+    this.invalidate();
+    return created;
   }
 }
