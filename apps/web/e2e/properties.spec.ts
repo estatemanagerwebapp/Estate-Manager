@@ -37,26 +37,29 @@ test.describe('Properties', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    // Every *active* configured asset type is offered — including kinds that
-    // are not `detailKind === 'PROPERTY'` (the API accepts any active type).
-    // The assertion auto-retries while the options are still loading.
+    // The explicit model offers the three kinds, then the house-type catalogue
+    // drives which address fields are required.
     const typeSelect = dialog.getByLabel('Property type');
     await expect(typeSelect.locator('option')).toHaveText([
-      'Select a type…',
+      'Select a property type…',
       'House',
-      'Apartment block',
-      'Land plot',
+      'Land',
+      'Both',
     ]);
 
-    await typeSelect.selectOption('house');
+    await typeSelect.selectOption('HOUSE');
+    await dialog.getByLabel('House type').selectOption('bungalow');
+    await dialog.getByLabel('Street name (required)').fill('Main St');
+    await dialog.getByLabel('House number (required)').fill('12');
     await dialog.getByRole('button', { name: 'Register property' }).click();
 
     // --- the server-derived identifier ---------------------------------------
-    await expect(notifications(page).getByText(`Property ${estateSlug} registered.`)).toBeVisible();
+    const identifier = `${estateSlug}-Main St-12`;
+    await expect(notifications(page).getByText(`Property ${identifier} registered.`)).toBeVisible();
 
-    const propertyRow = page.getByRole('row').filter({ hasText: estateSlug });
+    const propertyRow = page.getByRole('row').filter({ hasText: identifier });
     await expect(propertyRow).toBeVisible();
-    await expect(propertyRow.getByRole('link', { name: estateSlug })).toBeVisible();
+    await expect(propertyRow.getByRole('link', { name: identifier })).toBeVisible();
     await expect(propertyRow.getByText('House')).toBeVisible();
     await expect(propertyRow.getByText('ACTIVE')).toBeVisible();
 

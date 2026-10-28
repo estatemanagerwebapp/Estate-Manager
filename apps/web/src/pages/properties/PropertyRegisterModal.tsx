@@ -250,28 +250,21 @@ export function PropertyRegisterModal({
         )}
 
         <Field label="Property type" error={fieldErrors.kind}>
-          <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Property type">
+          <select
+            value={kind ?? ''}
+            onChange={(event) => chooseKind(event.target.value as PropertyKind)}
+            className={`${selectClass} w-full`}
+            required
+          >
+            <option value="" disabled>
+              Select a property type…
+            </option>
             {PROPERTY_KINDS.map((option) => (
-              <label
-                key={option}
-                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                  kind === option
-                    ? 'border-(--color-primary) bg-(--color-primary-soft)'
-                    : 'border-slate-200 bg-(--color-surface) hover:bg-slate-50'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="property-kind"
-                  value={option}
-                  checked={kind === option}
-                  onChange={() => chooseKind(option)}
-                  className="accent-(--color-primary)"
-                />
-                <span>{PROPERTY_KIND_LABELS[option]}</span>
-              </label>
+              <option key={option} value={option}>
+                {PROPERTY_KIND_LABELS[option]}
+              </option>
             ))}
-          </div>
+          </select>
         </Field>
 
         {showsHouseFields && (

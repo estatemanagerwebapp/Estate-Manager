@@ -34,8 +34,8 @@ export function Modal({
         if (event.key === 'Escape') onClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-(--radius-card) bg-white shadow-(--shadow-card)">
-        <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-(--radius-card) bg-white shadow-(--shadow-card)">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200/80 px-5 py-4">
           <h2 className="text-sm font-semibold text-(--color-ink)">{title}</h2>
           <button
             type="button"
@@ -46,9 +46,11 @@ export function Modal({
             <X aria-hidden size={16} />
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {children}
+        </div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-slate-200/80 px-5 py-3">
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200/80 px-5 py-3">
             {footer}
           </div>
         )}
