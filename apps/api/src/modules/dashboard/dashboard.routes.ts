@@ -93,7 +93,9 @@ export async function loadDashboardKpis(
       : Promise.resolve(null),
     held.has('user.manage') ? users.countAll(organizationId) : Promise.resolve(null),
     held.has('resident.manage')
-      ? residentOnboarding.listByOrganization(organizationId).then((rows) => rows.length)
+      ? residentOnboarding
+          .listByOrganization(organizationId)
+          .then((rows) => rows.filter((row) => row.archivedAt === null).length)
       : Promise.resolve(null),
     held.has('audit.read')
       ? audit

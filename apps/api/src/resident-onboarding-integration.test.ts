@@ -49,6 +49,51 @@ function cookieFrom(response: request.Response): string {
   return raw ? raw.split(';')[0] : '';
 }
 
+async function completeResident(firstName: string) {
+  const email = `${firstName.toLowerCase()}_${uniqueSuffix()}@example.com`;
+  const registered = await request(app)
+    .post('/api/v1/onboard/residents')
+    .set('Cookie', adminCookie)
+    .send({ firstName, email, phone: '+2348000000000', propertyId });
+  expect(registered.status).toBe(201);
+
+  const residentId = registered.body.data.resident.id as string;
+  const code = registered.body.data.onboardingCode as string;
+
+  const saved = await request(app).patch(`/api/v1/onboard/by-code/${code}`).send({
+    gender: 'FEMALE',
+    maritalStatus: 'SINGLE',
+    nextOfKinName: 'John Doe',
+    nextOfKinPhone: '+2348000000001',
+    idType: 'NATIONAL_ID',
+  });
+  expect(saved.status).toBe(200);
+
+  const paid = await request(app)
+    .post(`/api/v1/onboard/residents/${residentId}/payment`)
+    .set('Cookie', adminCookie)
+    .send({ paymentRef: 'CASH-001' });
+  expect(paid.status).toBe(200);
+
+  await prisma.residentOnboarding.update({
+    where: { id: residentId },
+    data: { idDocumentUrl: `/media/${organizationId}/doc-${residentId}` },
+  });
+
+  const completed = await request(app)
+    .post(`/api/v1/onboard/by-code/${code}/complete`)
+    .send({ code });
+  expect(completed.status).toBe(200);
+
+  return {
+    residentId,
+    code,
+    email,
+    userId: completed.body.data.user.id as string,
+    password: completed.body.data.demoPassword as string,
+  };
+}
+
 beforeAll(async () => {
   prisma = getPrismaClient();
 
@@ -304,5 +349,161 @@ describe('resident onboarding (integration)', () => {
   it('refuses the resident list without user.manage', async () => {
     const response = await request(app).get('/api/v1/onboard/residents');
     expect(response.status).toBe(401);
+  });
+
+  it('edits, archives and restores a resident draft', async () => {
+    const email = `archive_${uniqueSuffix()}@example.com`;
+    const registered = await request(app)
+      .post('/api/v1/onboard/residents')
+      .set('Cookie', adminCookie)
+      .send({ firstName: 'Archive', email, phone: '+2348000000000', propertyId });
+    expect(registered.status).toBe(201);
+
+    const residentId = registered.body.data.resident.id as string;
+    const code = registered.body.data.onboardingCode as string;
+
+    const updatedEmail = `archive_updated_${uniqueSuffix()}@example.com`;
+    const updated = await request(app)
+      .patch(`/api/v1/onboard/residents/${residentId}`)
+      .set('Cookie', adminCookie)
+      .send({
+        firstName: 'Archive Updated',
+        email: updatedEmail,
+        phone: '+2348000000099',
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.resident.firstName).toBe('Archive Updated');
+    expect(updated.body.data.resident.email).toBe(updatedEmail);
+    expect(updated.body.data.resident.propertyId).toBe(propertyId);
+
+    const guestAfterEdit = await request(app).get(`/api/v1/onboard/by-code/${code}`);
+    expect(guestAfterEdit.status).toBe(200);
+    expect(guestAfterEdit.body.data.resident.firstName).toBe('Archive Updated');
+
+    const archived = await request(app)
+      .post(`/api/v1/onboard/residents/${residentId}/archive`)
+      .set('Cookie', adminCookie);
+    expect(archived.status).toBe(200);
+    expect(archived.body.data.resident.archivedAt).toBeTruthy();
+
+    const archivedCode = await request(app).get(`/api/v1/onboard/by-code/${code}`);
+    expect(archivedCode.status).toBe(404);
+
+    const list = await request(app).get('/api/v1/onboard/residents').set('Cookie', adminCookie);
+    const listed = list.body.data.residents.find(
+      (resident: { id: string }) => resident.id === residentId,
+    );
+    expect(listed.archivedAt).toBeTruthy();
+
+    const restored = await request(app)
+      .post(`/api/v1/onboard/residents/${residentId}/restore`)
+      .set('Cookie', adminCookie);
+    expect(restored.status).toBe(200);
+    expect(restored.body.data.resident.archivedAt).toBeNull();
+
+    const restoredCode = await request(app).get(`/api/v1/onboard/by-code/${code}`);
+    expect(restoredCode.status).toBe(200);
+
+    const audit = await prisma.auditEvent.findMany({
+      where: { organizationId, targetId: residentId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const eventTypes = audit.map((event) => event.eventType);
+    expect(eventTypes).toEqual(
+      expect.arrayContaining(['resident_updated', 'resident_archived', 'resident_restored']),
+    );
+  });
+
+  it('deletes a pending resident draft that has no linked account', async () => {
+    const email = `delete_${uniqueSuffix()}@example.com`;
+    const registered = await request(app)
+      .post('/api/v1/onboard/residents')
+      .set('Cookie', adminCookie)
+      .send({ firstName: 'Delete Me', email, propertyId });
+    expect(registered.status).toBe(201);
+
+    const residentId = registered.body.data.resident.id as string;
+    const code = registered.body.data.onboardingCode as string;
+
+    const deleted = await request(app)
+      .delete(`/api/v1/onboard/residents/${residentId}`)
+      .set('Cookie', adminCookie);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data.id).toBe(residentId);
+
+    const guestAfterDelete = await request(app).get(`/api/v1/onboard/by-code/${code}`);
+    expect(guestAfterDelete.status).toBe(404);
+
+    const list = await request(app).get('/api/v1/onboard/residents').set('Cookie', adminCookie);
+    expect(
+      list.body.data.residents.some((resident: { id: string }) => resident.id === residentId),
+    ).toBe(false);
+  });
+
+  it('disables and re-enables portal access and refuses deleting a linked resident', async () => {
+    const resident = await completeResident('Ngozi');
+
+    const firstLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: resident.email, password: resident.password });
+    expect(firstLogin.status).toBe(200);
+    const residentCookie = cookieFrom(firstLogin);
+
+    const sessionBefore = await request(app).get('/api/v1/auth/me').set('Cookie', residentCookie);
+    expect(sessionBefore.status).toBe(200);
+
+    const disabled = await request(app)
+      .post(`/api/v1/onboard/residents/${resident.residentId}/portal-access`)
+      .set('Cookie', adminCookie)
+      .send({ enabled: false, reason: 'Resident left the estate' });
+    expect(disabled.status).toBe(200);
+    expect(disabled.body.data.resident.accountStatus).toBe('DISABLED');
+
+    // Existing sessions are denied on their next request, not just new logins.
+    const blockedSession = await request(app).get('/api/v1/auth/me').set('Cookie', residentCookie);
+    expect(blockedSession.status).toBe(401);
+
+    const blockedLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: resident.email, password: resident.password });
+    expect(blockedLogin.status).toBe(401);
+
+    const deleteBlocked = await request(app)
+      .delete(`/api/v1/onboard/residents/${resident.residentId}`)
+      .set('Cookie', adminCookie);
+    expect(deleteBlocked.status).toBe(409);
+    expect(deleteBlocked.body.error.code).toBe('CONFLICT');
+
+    const enabled = await request(app)
+      .post(`/api/v1/onboard/residents/${resident.residentId}/portal-access`)
+      .set('Cookie', adminCookie)
+      .send({ enabled: true });
+    expect(enabled.status).toBe(200);
+    expect(enabled.body.data.resident.accountStatus).toBe('ACTIVE');
+
+    const loginAgain = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: resident.email, password: resident.password });
+    expect(loginAgain.status).toBe(200);
+
+    // Editing a completed resident keeps the linked login identity in sync.
+    const newEmail = `ngozi_updated_${uniqueSuffix()}@example.com`;
+    const edited = await request(app)
+      .patch(`/api/v1/onboard/residents/${resident.residentId}`)
+      .set('Cookie', adminCookie)
+      .send({ firstName: 'Ngozi Updated', email: newEmail });
+    expect(edited.status).toBe(200);
+    expect(edited.body.data.resident.email).toBe(newEmail);
+    expect(edited.body.data.resident.firstName).toBe('Ngozi Updated');
+
+    const oldEmailLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: resident.email, password: resident.password });
+    expect(oldEmailLogin.status).toBe(401);
+
+    const newEmailLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: newEmail, password: resident.password });
+    expect(newEmailLogin.status).toBe(200);
   });
 });

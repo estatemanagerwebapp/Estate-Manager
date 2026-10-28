@@ -19,7 +19,10 @@ identity surface:
   fields (gender, marital status, next of kin, ID type + document URL),
   payment status, and an optional link to the `User` once the account is
   created. Revocable by admin deletion; no TTL, no attempt cap, not
-  single-use — re-shareable from the Residents page.
+  single-use — re-shareable from the Residents page. Phase 1 adds a nullable
+  `archivedAt` soft-archive timestamp: archived records stay for history but
+  their onboarding code stops resolving. Portal access is controlled
+  separately by the linked `User.status`.
 - `MediaFile` — uploaded ID documents tracked by organization and relative
   object key. Local development stores files under `apps/api/uploads`; Vercel
   deployments use a private Cloudflare R2 bucket and serve authorized files

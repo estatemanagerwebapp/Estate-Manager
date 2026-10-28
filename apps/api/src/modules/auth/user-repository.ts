@@ -95,6 +95,24 @@ export class PrismaUserRepository {
     await this.prisma.user.update({ where: { id: userId }, data: { phone } });
   }
 
+  /**
+   * Operator edit of the identity fields shared with the resident draft.
+   * Email is normalized exactly like login and account creation.
+   */
+  async updateProfile(
+    userId: string,
+    input: { email?: string; fullName?: string | null; phone?: string | null },
+  ): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: input.email === undefined ? undefined : input.email.toLowerCase(),
+        fullName: input.fullName === undefined ? undefined : input.fullName,
+        phone: input.phone === undefined ? undefined : input.phone,
+      },
+    });
+  }
+
   async updatePassword(userId: string, passwordHash: string): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },

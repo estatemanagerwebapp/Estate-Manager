@@ -18,6 +18,9 @@ import type {
   CompleteResidentOnboardingResponse,
   AdminMarkPaidInput,
   AdminMarkPaidResponse,
+  AdminSetResidentPortalAccessInput,
+  AdminUpdateResidentInput,
+  ResidentMutationResponse,
   ResidentOnboardingDto,
   UserListItemDto,
 } from '@silverstone/shared';
@@ -237,8 +240,7 @@ export class ResidentOnboardingService {
     residentId: string,
     input: AdminMarkPaidInput,
   ): Promise<AdminMarkPaidResponse> {
-    const record = await this.drafts.findById(residentId);
-    if (!record) throw new AppError(404, 'NOT_FOUND', 'Resident onboarding not found');
+    const record = await this.findOwnedDraft(context, residentId);
     if (record.status === 'COMPLETED') {
       throw new AppError(409, 'CONFLICT', 'This onboarding is already completed');
     }
@@ -295,9 +297,10 @@ export class ResidentOnboardingService {
         },
       });
 
+      const linked = (await this.drafts.findById(updated.id)) ?? updated;
       return {
         ok: true,
-        resident: await this.toDto(updated, property),
+        resident: await this.toDto(linked, property),
         user,
         demoPassword,
       };
@@ -332,14 +335,224 @@ export class ResidentOnboardingService {
     };
   }
 
-  /** Admin: delete a resident onboarding draft (testing cleanup). */
+  // --- Admin: edit / archive / portal access ---------------------------------
+
+  /** Operator edit of the admin-owned fields (name, contact, assignment). */
+  async update(
+    context: AuthAuditContext,
+    _actorRole: string,
+    residentId: string,
+    input: AdminUpdateResidentInput,
+  ): Promise<ResidentMutationResponse> {
+    const record = await this.findOwnedDraft(context, residentId);
+
+    const firstName = input.firstName === undefined ? undefined : input.firstName.trim();
+    if (firstName !== undefined && firstName.length === 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'First name is required');
+    }
+    const email =
+      input.email === undefined
+        ? undefined
+        : (normalizeNullable(input.email)?.toLowerCase() ?? null);
+    const phone = input.phone === undefined ? undefined : normalizeNullable(input.phone);
+
+    if (input.propertyId !== undefined) {
+      const property = await this.loadProperty(context.organizationId, input.propertyId);
+      if (!property) throw new AppError(404, 'NOT_FOUND', 'Property not found');
+    }
+
+    const currentEmail = record.email?.trim().toLowerCase() ?? null;
+    if (email !== undefined && email !== currentEmail && email) {
+      const existing = await this.users.findByEmail(context.organizationId, email);
+      if (existing && existing.id !== record.userId) {
+        throw new AppError(409, 'CONFLICT', 'A user with this email already exists');
+      }
+    }
+    // A portal account needs a login address. Clearing it is only valid while
+    // the resident is still an onboarding draft.
+    if (record.userId && email === null) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Email is required for a portal account');
+    }
+
+    const changed: string[] = [];
+    if (firstName !== undefined && firstName !== record.firstName) changed.push('firstName');
+    if (email !== undefined && email !== currentEmail) changed.push('email');
+    if (phone !== undefined && phone !== record.phone) changed.push('phone');
+    if (input.propertyId !== undefined && input.propertyId !== record.propertyId) {
+      changed.push('propertyId');
+    }
+
+    if (changed.length === 0) {
+      const property = await this.loadProperty(context.organizationId, record.propertyId);
+      return { ok: true, resident: await this.toDto(record, property) };
+    }
+
+    const updated = await this.drafts.updateAdminFields({
+      id: record.id,
+      ...(firstName !== undefined ? { firstName } : {}),
+      ...(email !== undefined ? { email } : {}),
+      ...(phone !== undefined ? { phone } : {}),
+      ...(input.propertyId !== undefined ? { propertyId: input.propertyId } : {}),
+    });
+    if (!updated) throw new AppError(404, 'NOT_FOUND', 'Resident onboarding not found');
+
+    if (record.userId) {
+      await this.users.updateProfile(record.userId, {
+        ...(firstName !== undefined && firstName !== record.firstName
+          ? { fullName: firstName }
+          : {}),
+        ...(email !== undefined && email !== currentEmail ? { email: email! } : {}),
+        ...(phone !== undefined && phone !== record.phone ? { phone } : {}),
+      });
+    }
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'resident.updated',
+      targetType: 'resident',
+      targetId: record.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { fields: changed, propertyId: updated.propertyId },
+    });
+
+    const property = await this.loadProperty(context.organizationId, updated.propertyId);
+    return { ok: true, resident: await this.toDto(updated, property) };
+  }
+
+  /**
+   * Soft-archive a resident. The record and its history remain, but the
+   * onboarding code stops resolving and the active register hides it.
+   * Portal access is deliberately separate: archive never enables or disables
+   * the linked account behind the operator's back.
+   */
+  async archive(
+    context: AuthAuditContext,
+    _actorRole: string,
+    residentId: string,
+  ): Promise<ResidentMutationResponse> {
+    const record = await this.findOwnedDraft(context, residentId);
+    if (record.archivedAt) {
+      const property = await this.loadProperty(context.organizationId, record.propertyId);
+      return { ok: true, resident: await this.toDto(record, property) };
+    }
+
+    const updated = await this.drafts.setArchived(record.id, new Date());
+    if (!updated) throw new AppError(404, 'NOT_FOUND', 'Resident onboarding not found');
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'resident.archived',
+      targetType: 'resident',
+      targetId: record.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { propertyId: record.propertyId, accountStatus: record.accountStatus },
+    });
+
+    const property = await this.loadProperty(context.organizationId, updated.propertyId);
+    return { ok: true, resident: await this.toDto(updated, property) };
+  }
+
+  /** Restore a soft-archived resident. */
+  async restore(
+    context: AuthAuditContext,
+    _actorRole: string,
+    residentId: string,
+  ): Promise<ResidentMutationResponse> {
+    const record = await this.findOwnedDraft(context, residentId);
+    if (!record.archivedAt) {
+      const property = await this.loadProperty(context.organizationId, record.propertyId);
+      return { ok: true, resident: await this.toDto(record, property) };
+    }
+
+    const updated = await this.drafts.setArchived(record.id, null);
+    if (!updated) throw new AppError(404, 'NOT_FOUND', 'Resident onboarding not found');
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'resident.restored',
+      targetType: 'resident',
+      targetId: record.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { propertyId: record.propertyId },
+    });
+
+    const property = await this.loadProperty(context.organizationId, updated.propertyId);
+    return { ok: true, resident: await this.toDto(updated, property) };
+  }
+
+  /**
+   * Enable or disable the linked resident account. Disabling relies on the
+   * same ACTIVE-status gate as login/session verification, so every existing
+   * session is immediately denied on its next request.
+   */
+  async setPortalAccess(
+    context: AuthAuditContext,
+    _actorRole: string,
+    residentId: string,
+    input: AdminSetResidentPortalAccessInput,
+  ): Promise<ResidentMutationResponse> {
+    const record = await this.findOwnedDraft(context, residentId);
+    if (!record.userId) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'Portal access is available only after the resident account is created',
+      );
+    }
+    const user = await this.users.findById(context.organizationId, record.userId);
+    if (!user) {
+      throw new AppError(409, 'CONFLICT', 'The linked portal account no longer exists');
+    }
+
+    const targetStatus = input.enabled ? 'ACTIVE' : 'DISABLED';
+    if (user.status !== targetStatus) {
+      await this.users.updateStatus(user.id, targetStatus);
+
+      await this.audit.record({
+        organizationId: context.organizationId,
+        actorId: context.actorId,
+        eventType: input.enabled ? 'resident.access_enabled' : 'resident.access_disabled',
+        targetType: 'resident',
+        targetId: record.id,
+        requestId: context.requestId,
+        outcome: 'success',
+        metadata: {
+          userId: user.id,
+          previousStatus: user.status,
+          reason: normalizeNullable(input.reason),
+        },
+      });
+    }
+
+    const updated = (await this.drafts.findById(record.id)) ?? record;
+    const property = await this.loadProperty(context.organizationId, updated.propertyId);
+    return { ok: true, resident: await this.toDto(updated, property) };
+  }
+
+  /**
+   * Admin: delete a resident draft. Records with a linked portal account are
+   * refused: deleting the account would remove billing/history that archive
+   * is designed to preserve.
+   */
   async remove(
     context: AuthAuditContext,
     _actorRole: string,
     residentId: string,
   ): Promise<{ ok: true; id: string }> {
-    const record = await this.drafts.findById(residentId);
-    if (!record) throw new AppError(404, 'NOT_FOUND', 'Resident onboarding not found');
+    const record = await this.findOwnedDraft(context, residentId);
+    if (record.userId) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'This resident has a portal account. Disable portal access and archive the record instead.',
+      );
+    }
 
     await this.drafts.remove(residentId);
 
@@ -596,6 +809,18 @@ export class ResidentOnboardingService {
 
   // --- Projection --------------------------------------------------------------
 
+  /** Every admin action is scoped to the authenticated organization. */
+  private async findOwnedDraft(
+    context: AuthAuditContext,
+    residentId: string,
+  ): Promise<ResidentOnboardingRecord> {
+    const record = await this.drafts.findById(residentId);
+    if (!record || record.organizationId !== context.organizationId) {
+      throw new AppError(404, 'NOT_FOUND', 'Resident onboarding not found');
+    }
+    return record;
+  }
+
   private async toDto(
     record: ResidentOnboardingRecord,
     property: PropertyDetail | null,
@@ -627,6 +852,8 @@ export class ResidentOnboardingService {
       paymentRef: record.paymentRef,
       userId: record.userId,
       completedAt: record.completedAt ? record.completedAt.toISOString() : null,
+      archivedAt: record.archivedAt ? record.archivedAt.toISOString() : null,
+      accountStatus: record.accountStatus,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };

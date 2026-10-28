@@ -2,9 +2,14 @@
  * Onboarding routes (resident draft model).
  *
  * Admin (auth + user.manage):
- *   POST /onboard/residents               — register a resident draft
- *   GET  /onboard/residents               — list all drafts (pending + completed)
- *   POST /onboard/residents/:id/payment  — mark the draft PAID
+ *   POST   /onboard/residents                    — register a resident draft
+ *   GET    /onboard/residents                    — list drafts (active + archived)
+ *   PATCH  /onboard/residents/:id                — edit admin-owned fields
+ *   POST   /onboard/residents/:id/archive        — soft-archive the record
+ *   POST   /onboard/residents/:id/restore        — restore an archived record
+ *   POST   /onboard/residents/:id/portal-access  — enable/disable the account
+ *   POST   /onboard/residents/:id/payment        — mark the draft PAID
+ *   DELETE /onboard/residents/:id                — remove a draft without an account
  *
  * Guest (public, rate-limited):
  *   GET    /onboard/by-code/:code        — load the draft + property + fee
@@ -129,6 +134,129 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
       const context = makeContext(req, res);
       const residents = await residentOnboarding.list(context);
       res.status(200).json({ data: { residents } });
+    }),
+  );
+
+  // --- Admin: PATCH /residents/:id ---------------------------------------------
+
+  router.patch(
+    '/residents/:id',
+    authGuard,
+    userManage,
+    asyncWrap(async (req, res, next) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (typeof id !== 'string' || id.length === 0) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+        return;
+      }
+      const body = z
+        .object({
+          firstName: z.string().trim().min(1).max(120).optional(),
+          email: z.string().trim().max(255).nullish(),
+          phone: z.string().trim().max(40).nullish(),
+          propertyId: z.string().trim().min(1).optional(),
+        })
+        .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid resident update input'));
+        return;
+      }
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      const context = makeContext(req, res);
+      const response = await residentOnboarding.update(context, auth.role, id, {
+        firstName: body.data.firstName,
+        email: body.data.email,
+        phone: body.data.phone,
+        propertyId: body.data.propertyId,
+      });
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- Admin: POST /residents/:id/archive --------------------------------------
+
+  router.post(
+    '/residents/:id/archive',
+    authGuard,
+    userManage,
+    asyncWrap(async (req, res, next) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (typeof id !== 'string' || id.length === 0) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+        return;
+      }
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      const context = makeContext(req, res);
+      const response = await residentOnboarding.archive(context, auth.role, id);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- Admin: POST /residents/:id/restore --------------------------------------
+
+  router.post(
+    '/residents/:id/restore',
+    authGuard,
+    userManage,
+    asyncWrap(async (req, res, next) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (typeof id !== 'string' || id.length === 0) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+        return;
+      }
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      const context = makeContext(req, res);
+      const response = await residentOnboarding.restore(context, auth.role, id);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- Admin: POST /residents/:id/portal-access --------------------------------
+
+  router.post(
+    '/residents/:id/portal-access',
+    authGuard,
+    userManage,
+    asyncWrap(async (req, res, next) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (typeof id !== 'string' || id.length === 0) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+        return;
+      }
+      const body = z
+        .object({
+          enabled: z.boolean(),
+          reason: z.string().trim().max(200).nullish(),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid portal access input'));
+        return;
+      }
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      const context = makeContext(req, res);
+      const response = await residentOnboarding.setPortalAccess(context, auth.role, id, {
+        enabled: body.data.enabled,
+        reason: body.data.reason ?? null,
+      });
+      res.status(200).json({ data: response });
     }),
   );
 

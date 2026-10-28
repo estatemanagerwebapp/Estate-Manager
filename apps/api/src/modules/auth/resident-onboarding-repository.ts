@@ -36,6 +36,10 @@ export interface ResidentOnboardingRecord {
   paidAt: Date | null;
   userId: string | null;
   completedAt: Date | null;
+  /** Soft-archive timestamp; null while the record is active. */
+  archivedAt: Date | null;
+  /** Status of the linked portal account; null while no account exists. */
+  accountStatus: 'ACTIVE' | 'SUSPENDED' | 'DISABLED' | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,6 +68,14 @@ export interface SaveResidentDraftInput {
   nextOfKinEmail?: string | null;
   idType?: string | null;
   idDocumentUrl?: string | null;
+}
+
+export interface UpdateResidentAdminFieldsInput {
+  id: string;
+  firstName?: string;
+  email?: string | null;
+  phone?: string | null;
+  propertyId?: string;
 }
 
 /**
@@ -103,6 +115,8 @@ type PrismaResidentRow = {
   paidAt: Date | null;
   userId: string | null;
   completedAt: Date | null;
+  archivedAt: Date | null;
+  user?: { status: string } | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -130,6 +144,8 @@ function toRecord(row: PrismaResidentRow): ResidentOnboardingRecord {
     paidAt: row.paidAt,
     userId: row.userId,
     completedAt: row.completedAt,
+    archivedAt: row.archivedAt,
+    accountStatus: (row.user?.status as ResidentOnboardingRecord['accountStatus']) ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -166,7 +182,7 @@ export class PrismaResidentOnboardingRepository {
   async findByCode(code: string, organizationId: string): Promise<ResidentOnboardingRecord | null> {
     const targetHash = sha256Hex(code);
     const rows = await this.prisma.residentOnboarding.findMany({
-      where: { organizationId, status: 'PENDING' },
+      where: { organizationId, status: 'PENDING', archivedAt: null },
     });
     for (const row of rows) {
       if (constantTimeEqualsHex(row.codeHash, targetHash)) {
@@ -182,7 +198,10 @@ export class PrismaResidentOnboardingRepository {
   }
 
   async findById(id: string): Promise<ResidentOnboardingRecord | null> {
-    const row = await this.prisma.residentOnboarding.findUnique({ where: { id } });
+    const row = await this.prisma.residentOnboarding.findUnique({
+      where: { id },
+      include: { user: { select: { status: true } } },
+    });
     return row ? toRecord(row) : null;
   }
 
@@ -190,8 +209,36 @@ export class PrismaResidentOnboardingRepository {
     const rows = await this.prisma.residentOnboarding.findMany({
       where: { organizationId },
       orderBy: { createdAt: 'desc' },
+      include: { user: { select: { status: true } } },
     });
     return rows.map(toRecord);
+  }
+
+  /** Operator edit of the admin-owned fields. Omitted fields stay unchanged. */
+  async updateAdminFields(
+    input: UpdateResidentAdminFieldsInput,
+  ): Promise<ResidentOnboardingRecord | null> {
+    const row = await this.prisma.residentOnboarding.update({
+      where: { id: input.id },
+      data: {
+        firstName: input.firstName ?? undefined,
+        email: input.email === undefined ? undefined : input.email,
+        phone: input.phone === undefined ? undefined : input.phone,
+        propertyId: input.propertyId ?? undefined,
+      },
+      include: { user: { select: { status: true } } },
+    });
+    return toRecord(row);
+  }
+
+  /** Set or clear the soft-archive timestamp. */
+  async setArchived(id: string, archivedAt: Date | null): Promise<ResidentOnboardingRecord | null> {
+    const row = await this.prisma.residentOnboarding.update({
+      where: { id },
+      data: { archivedAt },
+      include: { user: { select: { status: true } } },
+    });
+    return toRecord(row);
   }
 
   async saveDraft(input: SaveResidentDraftInput): Promise<ResidentOnboardingRecord | null> {
@@ -247,6 +294,7 @@ export class PrismaResidentOnboardingRepository {
     const row = await this.prisma.residentOnboarding.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
+      include: { user: { select: { status: true } } },
     });
     return row ? toRecord(row) : null;
   }
@@ -259,6 +307,7 @@ export class PrismaResidentOnboardingRepository {
         status: 'COMPLETED',
         completedAt: new Date(),
       },
+      include: { user: { select: { status: true } } },
     });
     return toRecord(row);
   }

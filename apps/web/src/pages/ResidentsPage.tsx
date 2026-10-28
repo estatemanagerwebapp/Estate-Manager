@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   UserRound,
@@ -11,8 +11,15 @@ import {
   Trash2,
   Copy,
   CreditCard,
+  Pencil,
+  Archive,
+  RotateCcw,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 import {
+  type EstateDto,
+  type PropertyDto,
   type RegisterResidentResponse,
   type ResidentOnboardingDto,
   GENDERS,
@@ -21,9 +28,19 @@ import {
 } from '@silverstone/shared';
 import { api, ApiRequestError } from '../api/client';
 import { useApiQuery } from '../api/query';
+import { queryKeys } from '../api/query-keys';
 import { useToast } from '../toast/Toast';
 import { Modal, useConfirm } from '../components/dialog';
-import { Button, EmptyState, ErrorBanner, LoadingPanel } from '../components/ui';
+import { FilterBar, OperatorPageHeader } from '../components/operator';
+import {
+  Button,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  LoadingPanel,
+  inputClass,
+  selectClass,
+} from '../components/ui';
 import { ResidentRegisterModal, OnboardingCodePanel } from './ResidentRegisterModal';
 
 /**
@@ -36,18 +53,23 @@ import { ResidentRegisterModal, OnboardingCodePanel } from './ResidentRegisterMo
  * A resident only becomes a *user* when onboarding completes (payment
  * verified): the account is then created with the RESIDENT role and appears
  * on the Users screen. Until then the resident exists here, as a draft.
+ *
+ * Phase 1 adds operator edit, soft archive/restore, portal-access control and
+ * safe deletion. Archive deliberately does not change portal access; the two
+ * controls are separate so an operator never disables an account by surprise.
  */
-type ResidentFilter = 'ALL' | 'PENDING' | 'COMPLETED';
+type ResidentFilter = 'ACTIVE' | 'PENDING' | 'COMPLETED' | 'ARCHIVED' | 'ALL';
 
 export function ResidentsPage() {
   const toast = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<ResidentFilter>('ALL');
+  const [filter, setFilter] = useState<ResidentFilter>('ACTIVE');
   const [search, setSearch] = useState('');
   const [registerOpen, setRegisterOpen] = useState(false);
   const [issuedCode, setIssuedCode] = useState<RegisterResidentResponse | null>(null);
   const [detail, setDetail] = useState<ResidentOnboardingDto | null>(null);
+  const [editTarget, setEditTarget] = useState<ResidentOnboardingDto | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -55,16 +77,22 @@ export function ResidentsPage() {
   const [demoPasswordResident, setDemoPasswordResident] = useState<string | null>(null);
 
   const { data, loading, error, refresh } = useApiQuery(
-    ['residents'],
+    queryKeys.residents.all,
     () => api.listResidents(),
     'Could not load the resident register.',
   );
   const residents = useMemo(() => data?.residents ?? [], [data]);
 
+  function syncResident(updated: ResidentOnboardingDto) {
+    setDetail((current) => (current && current.id === updated.id ? updated : current));
+    setEditTarget((current) => (current && current.id === updated.id ? updated : current));
+  }
+
   async function markPaid(resident: ResidentOnboardingDto) {
     setActingId(resident.id);
     try {
       const response = await api.markResidentPaid(resident.id);
+      syncResident(response.resident);
       if (response.demoPassword) {
         // Account was created immediately — show the demo password once.
         setDemoPassword(response.demoPassword);
@@ -86,21 +114,85 @@ export function ResidentsPage() {
     }
   }
 
+  async function archiveResident(resident: ResidentOnboardingDto) {
+    const ok = await confirm({
+      title: 'Archive this resident?',
+      body: `"${resident.firstName}" will be hidden from the active register and their onboarding code will stop working. Portal access is not changed. You can restore them later.`,
+    });
+    if (!ok) return;
+    setActingId(resident.id);
+    try {
+      const response = await api.archiveResident(resident.id);
+      syncResident(response.resident);
+      toast.success(`Archived ${resident.firstName}.`);
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not archive the resident.');
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  async function restoreResident(resident: ResidentOnboardingDto) {
+    setActingId(resident.id);
+    try {
+      const response = await api.restoreResident(resident.id);
+      syncResident(response.resident);
+      toast.success(`Restored ${resident.firstName}.`);
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not restore the resident.');
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  async function togglePortalAccess(resident: ResidentOnboardingDto) {
+    const enable = resident.accountStatus !== 'ACTIVE';
+    if (!enable) {
+      const ok = await confirm({
+        title: 'Disable portal access?',
+        body: `${resident.firstName} will be signed out and unable to sign in until portal access is enabled again. The resident record and billing history stay intact.`,
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setActingId(resident.id);
+    try {
+      const response = await api.setResidentPortalAccess(resident.id, { enabled: enable });
+      syncResident(response.resident);
+      toast.success(
+        enable
+          ? `Portal access enabled for ${resident.firstName}.`
+          : `Portal access disabled for ${resident.firstName}.`,
+      );
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiRequestError ? err.message : 'Could not change portal access.');
+    } finally {
+      setActingId(null);
+    }
+  }
+
   async function deleteResident(resident: ResidentOnboardingDto) {
+    if (resident.userId) {
+      toast.error('Disable portal access and archive this resident instead.');
+      return;
+    }
     const ok = await confirm({
       title: 'Delete this resident?',
-      body: `Permanently remove "${resident.firstName}" and their onboarding draft. This cannot be undone.`,
+      body: `Permanently remove "${resident.firstName}" and their onboarding record. This cannot be undone.`,
       danger: true,
     });
     if (!ok) return;
     setDeletingId(resident.id);
     try {
       await api.deleteResident(resident.id);
+      if (detail?.id === resident.id) setDetail(null);
       toast.success(`Deleted ${resident.firstName}.`);
-      // Deleting a completed resident also removes their account; keep the
-      // Users screen and the KPI row honest without re-pulling them now.
-      void queryClient.invalidateQueries({ queryKey: ['users'], refetchType: 'none' });
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the resident.');
@@ -121,11 +213,21 @@ export function ResidentsPage() {
     }
   }
 
+  const activeResidents = useMemo(
+    () => residents.filter((resident) => resident.archivedAt === null),
+    [residents],
+  );
+  const archivedCount = residents.length - activeResidents.length;
+  const pendingCount = activeResidents.filter((resident) => resident.status === 'PENDING').length;
+
   const visibleResidents = useMemo(() => {
     const query = search.trim().toLowerCase();
     return residents.filter((resident) => {
-      if (filter === 'PENDING' && resident.status !== 'PENDING') return false;
-      if (filter === 'COMPLETED' && resident.status !== 'COMPLETED') return false;
+      const archived = resident.archivedAt !== null;
+      if (filter === 'ACTIVE' && archived) return false;
+      if (filter === 'PENDING' && (archived || resident.status !== 'PENDING')) return false;
+      if (filter === 'COMPLETED' && (archived || resident.status !== 'COMPLETED')) return false;
+      if (filter === 'ARCHIVED' && !archived) return false;
       if (!query) return true;
       return (
         resident.firstName.toLowerCase().includes(query) ||
@@ -135,32 +237,19 @@ export function ResidentsPage() {
     });
   }, [residents, filter, search]);
 
-  const pendingCount = residents.filter((r) => r.status === 'PENDING').length;
-
   return (
     <div>
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-(--color-primary-soft)">
-            <UserRound aria-hidden size={20} className="text-(--color-primary)" />
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Residents</h1>
-            <p className="text-sm text-(--color-ink-muted)">
-              Residents registered by an admin. A resident becomes a user once onboarding and
-              payment are complete.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setRegisterOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-(--color-primary) px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-        >
-          <Plus aria-hidden size={14} />
-          Register resident
-        </button>
-      </header>
+      <OperatorPageHeader
+        icon={<UserRound aria-hidden size={20} className="text-(--color-primary)" />}
+        title="Residents"
+        description="Register, edit and archive residents. Accounts are created only after onboarding and payment are complete."
+        actions={
+          <Button onClick={() => setRegisterOpen(true)} size="sm">
+            <Plus aria-hidden size={14} />
+            Register resident
+          </Button>
+        }
+      />
 
       {pendingCount > 0 && (
         <p className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
@@ -169,7 +258,9 @@ export function ResidentsPage() {
         </p>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      <FilterBar
+        summary={`${visibleResidents.length} of ${residents.length} resident${residents.length === 1 ? '' : 's'}`}
+      >
         <div className="relative">
           <Search
             aria-hidden
@@ -189,13 +280,15 @@ export function ResidentsPage() {
           value={filter}
           onChange={(event) => setFilter(event.target.value as ResidentFilter)}
           aria-label="Filter residents by onboarding status"
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-(--color-primary)"
+          className={selectClass}
         >
-          <option value="ALL">All residents</option>
+          <option value="ACTIVE">Active residents</option>
           <option value="PENDING">Onboarding pending</option>
           <option value="COMPLETED">Onboarding complete</option>
+          <option value="ARCHIVED">Archived{archivedCount > 0 ? ` (${archivedCount})` : ''}</option>
+          <option value="ALL">All residents</option>
         </select>
-      </div>
+      </FilterBar>
 
       {error && (
         <div className="mt-4">
@@ -208,8 +301,12 @@ export function ResidentsPage() {
           <LoadingPanel label="Loading residents…" />
         ) : visibleResidents.length === 0 ? (
           <EmptyState
-            title="No residents here yet"
-            body="Register a resident to issue a persistent onboarding code."
+            title={filter === 'ARCHIVED' ? 'No archived residents' : 'No residents here yet'}
+            body={
+              filter === 'ARCHIVED'
+                ? 'Archived residents are kept for history and can be restored at any time.'
+                : 'Register a resident to issue a persistent onboarding code.'
+            }
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -217,10 +314,14 @@ export function ResidentsPage() {
               <ResidentCard
                 key={resident.id}
                 resident={resident}
-                actingId={actingId}
-                deletingId={deletingId}
+                busy={actingId === resident.id}
+                deleting={deletingId === resident.id}
                 copiedId={copiedId}
                 onMarkPaid={() => void markPaid(resident)}
+                onEdit={() => setEditTarget(resident)}
+                onArchive={() => void archiveResident(resident)}
+                onRestore={() => void restoreResident(resident)}
+                onTogglePortal={() => void togglePortalAccess(resident)}
                 onDelete={() => void deleteResident(resident)}
                 onCopyCode={() => void copyResidentCode(resident.onboardingCode, resident.id)}
                 onDetails={() => setDetail(resident)}
@@ -247,6 +348,21 @@ export function ResidentsPage() {
       )}
 
       {detail && <ResidentDetailModal resident={detail} onClose={() => setDetail(null)} />}
+
+      {editTarget && (
+        <ResidentEditModal
+          resident={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={(updated) => {
+            syncResident(updated);
+            setEditTarget(null);
+            toast.success(`Updated ${updated.firstName}.`);
+            void queryClient.invalidateQueries({ queryKey: ['users'] });
+            void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            void refresh();
+          }}
+        />
+      )}
 
       {confirmDialog}
 
@@ -286,37 +402,54 @@ export function ResidentsPage() {
     </div>
   );
 }
+
 /**
  * A single resident card shown in the register grid. Keeps the most useful
- * fields visible at a glance with actions for details, payment marking and
- * deletion.
+ * fields visible at a glance with actions for details, editing, payment,
+ * archive/restore and portal access.
  */
 function ResidentCard({
   resident,
-  actingId,
-  deletingId,
+  busy,
+  deleting,
   copiedId,
   onMarkPaid,
+  onEdit,
+  onArchive,
+  onRestore,
+  onTogglePortal,
   onDelete,
   onCopyCode,
   onDetails,
 }: {
   resident: ResidentOnboardingDto;
-  actingId: string | null;
-  deletingId: string | null;
+  busy: boolean;
+  deleting: boolean;
   copiedId: string | null;
   onMarkPaid: () => void;
+  onEdit: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
+  onTogglePortal: () => void;
   onDelete: () => void;
   onCopyCode: () => void;
   onDetails: () => void;
 }) {
-  const canMarkPaid = resident.status === 'PENDING' && resident.paymentStatus === 'UNPAID';
-
+  const archived = resident.archivedAt !== null;
   const paid = resident.paymentStatus === 'PAID';
   const completed = resident.status === 'COMPLETED';
+  const canMarkPaid = !archived && resident.status === 'PENDING' && !paid;
+  const portalActive = resident.accountStatus === 'ACTIVE';
+  const hasPortal = resident.accountStatus !== null;
+  const portalLabel =
+    resident.accountStatus === 'ACTIVE'
+      ? 'Portal active'
+      : resident.accountStatus === 'SUSPENDED'
+        ? 'Portal suspended'
+        : 'Portal disabled';
 
   return (
-    <article className="overflow-hidden rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card) transition-all hover:shadow-(--shadow-card-hover)">
+    <article className="overflow-hidden rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card) transition-all hover:shadow-md">
       <div className="p-4">
         {/* Header: name + onboarding status */}
         <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
@@ -335,11 +468,21 @@ function ResidentCard({
           </div>
           <span
             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              completed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              archived
+                ? 'bg-slate-100 text-slate-700'
+                : completed
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-amber-50 text-amber-700'
             }`}
           >
-            {completed ? <CheckCircle2 aria-hidden size={10} /> : <Clock aria-hidden size={10} />}
-            {completed ? 'Account created' : 'In progress'}
+            {archived ? (
+              <Archive aria-hidden size={10} />
+            ) : completed ? (
+              <CheckCircle2 aria-hidden size={10} />
+            ) : (
+              <Clock aria-hidden size={10} />
+            )}
+            {archived ? 'Archived' : completed ? 'Account created' : 'In progress'}
           </span>
         </div>
 
@@ -364,15 +507,21 @@ function ResidentCard({
         {/* Onboarding code + copy */}
         <div className="mb-3 flex items-center gap-2">
           <span
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-(--color-surface) px-2.5 py-1.5 text-[11px] font-medium text-(--color-ink) select-all truncate max-w-[140px]"
-            title={resident.onboardingCode ?? 'No code available'}
+            className={`inline-flex items-center gap-1 rounded-md border border-slate-200 bg-(--color-surface) px-2.5 py-1.5 text-[11px] font-medium select-all truncate max-w-[140px] ${
+              archived ? 'text-(--color-ink-muted) line-through' : 'text-(--color-ink)'
+            }`}
+            title={
+              archived
+                ? 'Archived onboarding codes no longer work'
+                : (resident.onboardingCode ?? 'No code available')
+            }
           >
             {resident.onboardingCode ?? <span className="text-(--color-ink-muted) italic">—</span>}
           </span>
           <button
             type="button"
             onClick={onCopyCode}
-            disabled={!resident.onboardingCode || copiedId === resident.id}
+            disabled={!resident.onboardingCode || archived || copiedId === resident.id}
             aria-label={copiedId === resident.id ? 'Copied' : 'Copy onboarding code'}
             className="rounded-md border border-slate-300 px-2 py-1.5 text-[10px] font-medium text-(--color-ink-muted) hover:bg-(--color-surface) disabled:opacity-50"
           >
@@ -384,23 +533,39 @@ function ResidentCard({
           </button>
         </div>
 
-        {/* Payment status + registered */}
-        <div className="flex items-center justify-between gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              paid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-            }`}
-          >
-            {paid ? <CheckCircle2 aria-hidden size={10} /> : <Clock aria-hidden size={10} />}
-            {paid ? 'Paid' : 'Unpaid'}
-          </span>
+        {/* Payment status + portal access + registered */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                paid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              {paid ? <CheckCircle2 aria-hidden size={10} /> : <Clock aria-hidden size={10} />}
+              {paid ? 'Paid' : 'Unpaid'}
+            </span>
+            {hasPortal && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  portalActive ? 'bg-sky-50 text-sky-700' : 'bg-rose-50 text-rose-700'
+                }`}
+              >
+                {portalActive ? (
+                  <Power aria-hidden size={10} />
+                ) : (
+                  <PowerOff aria-hidden size={10} />
+                )}
+                {portalLabel}
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-(--color-ink-muted)">
             Registered {new Date(resident.createdAt).toLocaleDateString()}
           </p>
         </div>
       </div>
 
-      <div className="border-t border-slate-100 bg-(--color-surface-soft)/50 p-3 flex items-center justify-between gap-2">
+      <div className="border-t border-slate-100 bg-(--color-surface-soft)/50 p-3 flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
           onClick={onDetails}
@@ -411,74 +576,299 @@ function ResidentCard({
         </button>
         <div className="flex items-center gap-1">
           {canMarkPaid && (
-            <button
-              type="button"
-              onClick={onMarkPaid}
-              disabled={actingId === resident.id}
-              aria-label="Mark paid"
-              className="rounded-md border border-emerald-200 bg-emerald-50 p-1.5 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
-            >
-              {actingId === resident.id ? (
-                <svg
-                  className="animate-spin -ml-1 h-5 w-5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-              ) : (
-                <CreditCard aria-hidden size={14} />
-              )}
-            </button>
+            <IconAction label="Mark paid" tone="success" onClick={onMarkPaid} disabled={busy}>
+              {busy ? <ActionSpinner /> : <CreditCard aria-hidden size={14} />}
+            </IconAction>
           )}
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={deletingId === resident.id}
-            aria-label="Delete resident"
-            className="rounded-md border border-rose-200 bg-rose-50 p-1.5 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-          >
-            {deletingId === resident.id ? (
-              <svg
-                className="animate-spin -ml-1 h-5 w-5"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-            ) : (
-              <Trash2 aria-hidden size={14} />
-            )}
-          </button>
+          {hasPortal && (
+            <IconAction
+              label={portalActive ? 'Disable portal access' : 'Enable portal access'}
+              tone={portalActive ? 'default' : 'success'}
+              onClick={onTogglePortal}
+              disabled={busy}
+            >
+              {portalActive ? <PowerOff aria-hidden size={14} /> : <Power aria-hidden size={14} />}
+            </IconAction>
+          )}
+          <IconAction label="Edit resident" onClick={onEdit} disabled={busy}>
+            <Pencil aria-hidden size={14} />
+          </IconAction>
+          {archived ? (
+            <IconAction label="Restore resident" tone="success" onClick={onRestore} disabled={busy}>
+              <RotateCcw aria-hidden size={14} />
+            </IconAction>
+          ) : (
+            <IconAction label="Archive resident" onClick={onArchive} disabled={busy}>
+              <Archive aria-hidden size={14} />
+            </IconAction>
+          )}
+          {!resident.userId && (
+            <IconAction
+              label="Delete resident"
+              tone="danger"
+              onClick={onDelete}
+              disabled={busy || deleting}
+            >
+              {deleting ? <ActionSpinner /> : <Trash2 aria-hidden size={14} />}
+            </IconAction>
+          )}
         </div>
       </div>
     </article>
+  );
+}
+
+function IconAction({
+  label,
+  tone = 'default',
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  tone?: 'default' | 'success' | 'danger';
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const styles =
+    tone === 'success'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+      : tone === 'danger'
+        ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+        : 'border-slate-300 text-(--color-ink-muted) hover:bg-(--color-surface)';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className={`rounded-md border p-1.5 disabled:opacity-60 ${styles}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ActionSpinner() {
+  return (
+    <svg
+      className="animate-spin h-3.5 w-3.5"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      ></circle>
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      ></path>
+    </svg>
+  );
+}
+
+/**
+ * Operator edit for the admin-owned fields. Resident-provided profile fields
+ * stay resident-owned; this modal corrects the name, contact details and
+ * property assignment.
+ */
+function ResidentEditModal({
+  resident,
+  onClose,
+  onSaved,
+}: {
+  resident: ResidentOnboardingDto;
+  onClose: () => void;
+  onSaved: (resident: ResidentOnboardingDto) => void;
+}) {
+  const [firstName, setFirstName] = useState(resident.firstName);
+  const [email, setEmail] = useState(resident.email ?? '');
+  const [phone, setPhone] = useState(resident.phone ?? '');
+  const [estateId, setEstateId] = useState('');
+  const [propertyId, setPropertyId] = useState(resident.propertyId);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reuse the same cache entries as the register modal so switching between
+  // the two never duplicates the estate/property reads.
+  const { data: estateData } = useApiQuery(
+    ['estates', {}],
+    () => api.listEstates(),
+    'Could not load estates.',
+  );
+  const { data: propertyData } = useApiQuery(
+    ['properties', 'picker', estateId],
+    () => api.listProperties({ estateId, pageSize: 200 }),
+    'Could not load properties.',
+    Boolean(estateId),
+  );
+  const estates: EstateDto[] = estateData?.estates ?? [];
+  const properties: PropertyDto[] = estateId ? (propertyData?.properties ?? []) : [];
+
+  const currentEstate = estates.find((estate) => estate.slug === resident.property.estate.slug);
+  useEffect(() => {
+    if (!estateId && currentEstate) setEstateId(currentEstate.id);
+  }, [currentEstate, estateId]);
+
+  async function handleSubmit(event?: FormEvent) {
+    event?.preventDefault();
+    if (!firstName.trim()) {
+      setError('Enter the resident’s first name.');
+      return;
+    }
+    if (resident.userId && !email.trim()) {
+      setError('A portal account requires an email address.');
+      return;
+    }
+    if (!propertyId) {
+      setError('Select the property to assign.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await api.updateResident(resident.id, {
+        firstName: firstName.trim(),
+        email: email.trim() || null,
+        phone: phone.trim() || null,
+        propertyId,
+      });
+      onSaved(response.resident);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'NOT_FOUND') {
+        setError('Property not found.');
+      } else if (err instanceof ApiRequestError && err.code === 'CONFLICT') {
+        setError(err.message);
+      } else {
+        setError(err instanceof ApiRequestError ? err.message : 'Could not update the resident.');
+      }
+      setSubmitting(false);
+    }
+  }
+
+  const selectedProperty = properties.find((property) => property.id === propertyId);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Edit ${resident.firstName}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={submitting || !firstName.trim() || !propertyId}
+          >
+            {submitting ? 'Saving…' : 'Save changes'}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {error && (
+          <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            {error}
+          </p>
+        )}
+
+        <Field label="First name (required)">
+          <input
+            className={inputClass}
+            value={firstName}
+            onChange={(event) => setFirstName(event.target.value)}
+            maxLength={120}
+            required
+          />
+        </Field>
+
+        <Field
+          label={resident.userId ? 'Email (required for the portal account)' : 'Email (optional)'}
+        >
+          <input
+            type="email"
+            className={inputClass}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            maxLength={255}
+            required={Boolean(resident.userId)}
+            placeholder="name@example.com"
+          />
+        </Field>
+
+        <Field label="Phone (optional)">
+          <input
+            type="tel"
+            className={inputClass}
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            maxLength={40}
+            placeholder="+234 800 000 0000"
+          />
+        </Field>
+
+        <Field label="Estate">
+          <select
+            value={estateId}
+            onChange={(event) => {
+              setEstateId(event.target.value);
+              setPropertyId('');
+            }}
+            className={`${selectClass} w-full`}
+            aria-label="Estate"
+          >
+            <option value="">Select an estate…</option>
+            {estates.map((estate) => (
+              <option key={estate.id} value={estate.id}>
+                {estate.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label="Property (required)"
+          hint={
+            selectedProperty
+              ? `Identifier: ${selectedProperty.identifier}`
+              : 'Required to assign the resident.'
+          }
+        >
+          <select
+            value={propertyId}
+            onChange={(event) => setPropertyId(event.target.value)}
+            className={`${selectClass} w-full`}
+            disabled={!estateId}
+            aria-label="Property"
+          >
+            <option value="">{estateId ? 'Select a property…' : 'Choose an estate first'}</option>
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.identifier}
+                {property.name ? ` — ${property.name}` : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <p className="text-[11px] leading-relaxed text-(--color-ink-muted)">
+          Changing a completed resident’s email or name also updates the linked portal account.
+          Property changes apply to future billing; existing invoices keep their original property.
+        </p>
+      </form>
+    </Modal>
   );
 }
 
@@ -516,6 +906,12 @@ function ResidentDetailModal({
             <dd>{resident.email ?? '—'}</dd>
             <dt className="text-(--color-ink-muted)">Phone</dt>
             <dd>{resident.phone ?? '—'}</dd>
+            <dt className="text-(--color-ink-muted)">Record</dt>
+            <dd>
+              {resident.archivedAt
+                ? `Archived ${new Date(resident.archivedAt).toLocaleDateString()}`
+                : 'Active'}
+            </dd>
           </dl>
         </section>
 
@@ -570,11 +966,20 @@ function ResidentDetailModal({
                   ? 'Account deleted'
                   : 'Not created yet'}
             </dd>
+            <dt className="text-(--color-ink-muted)">Portal access</dt>
+            <dd>{portalAccessLabel(resident.accountStatus)}</dd>
           </dl>
         </section>
       </div>
     </Modal>
   );
+}
+
+function portalAccessLabel(status: ResidentOnboardingDto['accountStatus']): string {
+  if (status === 'ACTIVE') return 'Enabled';
+  if (status === 'DISABLED') return 'Disabled';
+  if (status === 'SUSPENDED') return 'Suspended';
+  return 'No portal account';
 }
 
 function label(value: string | null, options: readonly string[]): string {

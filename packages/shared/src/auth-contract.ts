@@ -164,6 +164,11 @@ export interface ResidentOnboardingDto {
   userId: string | null;
   /** When the account was created; null while still pending. */
   completedAt: string | null;
+  /** When the record was soft-archived. Archived records remain available
+   *  for history but their onboarding code no longer resolves. */
+  archivedAt: string | null;
+  /** Status of the linked portal account; null when no account exists. */
+  accountStatus: AccountStatus | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -226,6 +231,28 @@ export interface AdminMarkPaidResponse {
   /** Required resident fields still missing before an account can be created.
    *  Present only when payment was recorded but the account was not created. */
   missingFields?: string[];
+}
+
+/** Operator edits to the admin-owned resident fields. Any omitted field is
+ *  left unchanged; an empty string clears an optional contact field. */
+export interface AdminUpdateResidentInput {
+  firstName?: string;
+  email?: string | null;
+  phone?: string | null;
+  propertyId?: string;
+}
+
+/** Portal access is the linked resident account, not the onboarding draft.
+ *  Disabling it immediately blocks every authenticated resident route. */
+export interface AdminSetResidentPortalAccessInput {
+  enabled: boolean;
+  reason?: string | null;
+}
+
+/** Common mutation response for edit, archive, restore and access changes. */
+export interface ResidentMutationResponse {
+  ok: true;
+  resident: ResidentOnboardingDto;
 }
 
 export const AUDIT_EVENT_TYPES = [

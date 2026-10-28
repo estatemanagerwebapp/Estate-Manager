@@ -37,6 +37,9 @@ import type {
   OnboardingSaveResponse,
   AdminMarkPaidInput,
   AdminMarkPaidResponse,
+  AdminSetResidentPortalAccessInput,
+  AdminUpdateResidentInput,
+  ResidentMutationResponse,
   AuditEventDto,
   ResidentProfileView,
   ResidentProfileUpdateInput,
@@ -294,6 +297,36 @@ export const api = {
     }),
 
   listResidents: () => request<{ residents: ResidentOnboardingDto[] }>('/api/v1/onboard/residents'),
+
+  updateResident: (residentId: string, input: AdminUpdateResidentInput) =>
+    request<ResidentMutationResponse>(
+      `/api/v1/onboard/residents/${encodeURIComponent(residentId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      },
+    ),
+
+  archiveResident: (residentId: string) =>
+    request<ResidentMutationResponse>(
+      `/api/v1/onboard/residents/${encodeURIComponent(residentId)}/archive`,
+      { method: 'POST' },
+    ),
+
+  restoreResident: (residentId: string) =>
+    request<ResidentMutationResponse>(
+      `/api/v1/onboard/residents/${encodeURIComponent(residentId)}/restore`,
+      { method: 'POST' },
+    ),
+
+  setResidentPortalAccess: (residentId: string, input: AdminSetResidentPortalAccessInput) =>
+    request<ResidentMutationResponse>(
+      `/api/v1/onboard/residents/${encodeURIComponent(residentId)}/portal-access`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+    ),
 
   markResidentPaid: (residentId: string, input: AdminMarkPaidInput = {}) =>
     request<AdminMarkPaidResponse>(

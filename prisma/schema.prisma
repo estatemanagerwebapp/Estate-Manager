@@ -180,6 +180,11 @@ model ResidentOnboarding {
   userId      String?   @unique @map("user_id") @db.Uuid
   completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
 
+  /// Soft archive. Archived records remain in the register for history but
+  /// are hidden from the active list and their onboarding code no longer
+  /// resolves. Portal access is controlled separately.
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -190,6 +195,7 @@ model ResidentOnboarding {
   estateId     String?      @db.Uuid
 
   @@index([organizationId, status])
+  @@index([organizationId, archivedAt])
   @@index([propertyId])
   @@map("resident_onboardings")
 }
