@@ -54,13 +54,21 @@ export interface ResidentProfileUpdateResponse {
 
 export interface ResidentPropertyDto {
   identifier: string;
-  typeKey: string;
-  typeLabel: string;
+  kind: 'HOUSE' | 'LAND' | 'BOTH';
+  kindLabel: string;
+  houseType: string | null;
+  houseTypeLabel: string | null;
+  streetName: string;
+  houseNumber: string | null;
+  blockName: string | null;
+  floorNumber: string | null;
+  unitNumber: string | null;
+  plotNumber: string | null;
+  plotName: string | null;
   status: string;
   estate: { name: string; slug: string };
-  /** Formatted full address (label: value joined, in config order). */
+  /** Formatted full address assembled from the typed address fields. */
   fullAddress: string;
-  addressComponents: Record<string, string>;
 }
 
 export interface ResidentPropertiesResponse {

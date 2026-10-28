@@ -141,10 +141,11 @@ export class PrismaImportRepository {
 
   async findBatchByFingerprint(
     organizationId: string,
+    estateId: string,
     fingerprint: string,
   ): Promise<ImportBatchRecord | null> {
     const row = await this.prisma.importBatch.findFirst({
-      where: { organizationId, fingerprint },
+      where: { organizationId, estateId, fingerprint },
     });
     return row ? toBatchRecord(row) : null;
   }

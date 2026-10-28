@@ -73,9 +73,6 @@ export function OverviewPage() {
               <ul className="mt-3 flex flex-col gap-2">
                 <QuickLink to="/app/estates" label="Manage estates" />
                 {can['property.read'] && <QuickLink to="/app/properties" label="View properties" />}
-                {can['estate.read'] && (
-                  <QuickLink to="/app/property-options" label="Property options" />
-                )}
               </ul>
             </section>
           )}

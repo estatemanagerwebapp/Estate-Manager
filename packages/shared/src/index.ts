@@ -88,17 +88,20 @@ export type {
 export {
   ESTATE_STATUSES,
   PROPERTY_STATUSES,
+  PROPERTY_KINDS,
+  PROPERTY_KIND_LABELS,
   IMPORT_BATCH_STATUSES,
   PHASE2_AUDIT_EVENT_TYPES,
 } from './property-contract.js';
 export type {
-  AddressComponents,
   CreateEstateInput,
   CreatePropertyInput,
   EstateDetailResponse,
   EstateDto,
   EstateListResponse,
   EstateStatus,
+  HouseTypeDto,
+  HouseTypesResponse,
   ImportBatchDto,
   ImportBatchStatus,
   ImportCommitResponse,
@@ -108,14 +111,13 @@ export type {
   ImportTemplateInfo,
   PropertyDetailResponse,
   PropertyDto,
+  PropertyKind,
   PropertyListResponse,
-  PropertyOptionsView,
   PropertyStatus,
   Phase2AuditEventType,
   SetEstateStatusResponse,
   UpdateEstateInput,
   UpdatePropertyInput,
-  UpdatePropertyOptionsRequest,
 } from './property-contract.js';
 
 export {

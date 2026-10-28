@@ -199,7 +199,9 @@ async function main() {
       });
     });
 
-    console.log(`Archived v${active.version}; activated v${nextVersion} under the land/house model.`);
+    console.log(
+      `Archived v${active.version}; activated v${nextVersion} under the land/house model.`,
+    );
   } finally {
     await prisma.$disconnect();
   }

@@ -8,7 +8,6 @@ import {
   LogOut,
   Settings,
   Home,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
 import { useCan } from '../auth/useCan';
@@ -99,14 +98,6 @@ export function AppShell() {
               Settings
             </p>
             <div role="group" aria-labelledby="nav-settings" className="flex flex-col gap-1">
-              {can['property.read'] && (
-                <NavLink to="/app/property-options" className={navClasses}>
-                  <span className="text-(--color-primary)">
-                    <SlidersHorizontal aria-hidden size={16} />
-                  </span>
-                  Property options
-                </NavLink>
-              )}
               <NavLink to="/app/account" className={navClasses}>
                 <span className="text-(--color-primary)">
                   <KeyRound aria-hidden size={16} />
@@ -200,7 +191,6 @@ function sectionLabel(pathname: string): string {
   if (pathname.startsWith('/app/residents')) return 'Residents';
   if (pathname.startsWith('/app/users')) return 'Users';
   if (pathname.startsWith('/app/activity')) return 'Activity';
-  if (pathname.startsWith('/app/property-options')) return 'Settings';
   if (pathname.startsWith('/app/account')) return 'Settings';
   return 'Overview';
 }

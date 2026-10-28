@@ -1,35 +1,47 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { EstateDto, PropertyDto } from '@silverstone/shared';
+import {
+  PROPERTY_KINDS,
+  PROPERTY_KIND_LABELS,
+  type EstateDto,
+  type PropertyDto,
+  type PropertyKind,
+} from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
-import { usePropertyOptions } from '../../api/hooks';
+import { useHouseTypes } from '../../api/hooks';
 import { Button, Field, inputClass, selectClass } from '../../components/ui';
 import { Modal } from '../../components/dialog';
 
 /**
  * Register-property modal.
  *
- * The form is driven by the property-options view:
- *   - an estate picker (optional when the caller pre-selects one)
- *   - a top-level property-type radio: Land / House (the only two top-level
- *     types; `both` was dropped)
- *   - when House is chosen, a nested house-type picker (bungalow, terrace,
- *     duplex, apartment, flat) from `houseTypes` in the config
- *   - the address components applicable to the chosen top-level type **and**
- *     (for house) the chosen nested type, rendered dynamically from
- *     `addressComponents`
- *   - a required human-facing property name (distinct from the derived
- *     identifier)
+ * Explicit flow: choose the estate (unless fixed), choose House / Land / Both,
+ * then only the fields that apply:
+ *   - House: house type + street + either house number or block/floor/unit
+ *   - Land: street + plot number + plot name
+ *   - Both: house fields + land fields
  *
- * The API is authoritative: identifier derivation, collision checks, type-key
- * and address-component validation all happen server-side. The client mirrors
- * required / maxLength / pattern for fast inline feedback only.
+ * The API is authoritative. The client mirrors the same required-field rules
+ * for fast inline feedback only.
  */
 
-type TopLevelType = 'land' | 'house';
+const EMPTY_FIELDS = {
+  streetName: '',
+  houseNumber: '',
+  blockName: '',
+  floorNumber: '',
+  unitNumber: '',
+  plotNumber: '',
+  plotName: '',
+};
 
-const TOP_LEVEL_LABELS: Record<TopLevelType, string> = {
-  land: 'Land',
-  house: 'House',
+const MAX_LENGTH = {
+  streetName: 120,
+  houseNumber: 32,
+  blockName: 64,
+  floorNumber: 16,
+  unitNumber: 32,
+  plotNumber: 32,
+  plotName: 64,
 };
 
 export function PropertyRegisterModal({
@@ -47,47 +59,25 @@ export function PropertyRegisterModal({
   onClose: () => void;
   onCreated: (property: PropertyDto) => void;
 }) {
-  const { view } = usePropertyOptions(true);
+  const { view } = useHouseTypes(true);
   const [estateId, setEstateId] = useState(estate?.id ?? defaultEstateId ?? '');
-  const [topLevel, setTopLevel] = useState<TopLevelType>('land');
-  const [houseTypeKey, setHouseTypeKey] = useState<string | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [kind, setKind] = useState<PropertyKind | null>(null);
+  const [houseType, setHouseType] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [fields, setFields] = useState({ ...EMPTY_FIELDS });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const components = useMemo(() => view?.addressComponents ?? [], [view]);
-  const houseTypes = useMemo(() => view?.houseTypes ?? [], [view]);
   const availableEstates = useMemo(() => (estate ? [estate] : (estates ?? [])), [estate, estates]);
-
-  const knownAssetKeys = new Set((view?.assetTypes ?? []).map((type) => type.key));
-  const activeHouseTypes = useMemo(() => houseTypes.filter((type) => type.active), [houseTypes]);
-
-  // Resolved keys for the current selection.
-  const typeKey: string | null = topLevel === 'land' ? 'land' : 'house';
-  const resolvedHouseTypeKey = topLevel === 'house' ? houseTypeKey : null;
-
-  // House type selector is required for house properties; its options come
-  // from the configured house types.
-  const houseTypeLabel = activeHouseTypes.find((type) => type.key === houseTypeKey)?.label;
-
-  // The address components that apply to the chosen selection: required for
-  // the top-level type or the nested house type (or required for all), and not
-  // excluded from either. Rendered in configuration order.
-  const visibleComponents = useMemo(() => {
-    if (!typeKey) return [];
-    const houseType = resolvedHouseTypeKey ? `house.${resolvedHouseTypeKey}` : null;
-    return components.filter((component) => {
-      const notApplicable = component.notApplicableFor ?? [];
-      if (notApplicable.includes(typeKey)) return false;
-      if (houseType && notApplicable.includes(houseType)) return false;
-      const appliesToAll = (component.requiredForLabels ?? []).length === 0;
-      const explicitlyRequired =
-        (component.requiredForLabels ?? []).includes(TOP_LEVEL_LABELS[topLevel]) ||
-        (houseTypeLabel && (component.requiredForLabels ?? []).includes(houseTypeLabel));
-      return explicitlyRequired || appliesToAll;
-    });
-  }, [components, typeKey, topLevel, resolvedHouseTypeKey, houseTypeLabel]);
+  const activeHouseTypes = useMemo(
+    () => (view?.houseTypes ?? []).filter((type) => type.active),
+    [view],
+  );
+  const selectedHouseType = activeHouseTypes.find((type) => type.key === houseType) ?? null;
+  const requiresUnitFields = selectedHouseType?.requiresUnitFields ?? false;
+  const showsHouseFields = kind === 'HOUSE' || kind === 'BOTH';
+  const showsLandFields = kind === 'LAND' || kind === 'BOTH';
 
   useEffect(() => {
     setEstateId(
@@ -95,79 +85,103 @@ export function PropertyRegisterModal({
     );
   }, [availableEstates]);
 
-  // When switching away from house, clear the nested type; when entering house,
-  // pick the first active house type by default.
   useEffect(() => {
-    if (topLevel !== 'house') {
-      setHouseTypeKey(null);
-    } else if (!houseTypeKey && activeHouseTypes.length > 0) {
-      const first = activeHouseTypes[0];
-      if (first) setHouseTypeKey(first.key);
+    if (!showsHouseFields) {
+      setHouseType(null);
+      return;
     }
-  }, [topLevel, houseTypeKey, activeHouseTypes]);
+    setHouseType((current) => {
+      if (current && activeHouseTypes.some((type) => type.key === current)) return current;
+      return activeHouseTypes[0]?.key ?? null;
+    });
+  }, [showsHouseFields, activeHouseTypes]);
 
-  function isRequired(componentKey: string): boolean {
-    const component = components.find((item) => item.key === componentKey);
-    if (!component) return false;
-    const houseType = resolvedHouseTypeKey ? `house.${resolvedHouseTypeKey}` : null;
-    const notApplicable = component.notApplicableFor ?? [];
-    if (notApplicable.includes(typeKey ?? '')) return false;
-    if (houseType && notApplicable.includes(houseType)) return false;
-    const appliesToAll = (component.requiredForLabels ?? []).length === 0;
-    const explicitlyRequired =
-      (component.requiredForLabels ?? []).includes(TOP_LEVEL_LABELS[topLevel]) ||
-      (houseTypeLabel && (component.requiredForLabels ?? []).includes(houseTypeLabel));
-    return explicitlyRequired || appliesToAll;
+  function chooseKind(next: PropertyKind) {
+    setKind(next);
+    setFieldErrors({});
+    setError(null);
+    setFields((current) => ({
+      ...current,
+      ...(next === 'HOUSE' ? { plotNumber: '', plotName: '' } : {}),
+      ...(next === 'LAND'
+        ? { houseNumber: '', blockName: '', floorNumber: '', unitNumber: '' }
+        : {}),
+    }));
+    if (next === 'LAND') setHouseType(null);
+  }
+
+  function chooseHouseType(next: string) {
+    setHouseType(next);
+    const requiresUnits = activeHouseTypes.find((type) => type.key === next)?.requiresUnitFields;
+    setFields((current) => ({
+      ...current,
+      ...(requiresUnits ? { houseNumber: '' } : { blockName: '', floorNumber: '', unitNumber: '' }),
+    }));
+  }
+
+  function updateField(field: keyof typeof EMPTY_FIELDS, value: string) {
+    setFields((current) => ({ ...current, [field]: value }));
+  }
+
+  function localValidation(): Record<string, string> {
+    const errors: Record<string, string> = {};
+    if (!estateId) errors.estateId = 'Choose an estate.';
+    if (!kind) errors.kind = 'Choose a property type.';
+    if (showsHouseFields && !houseType) errors.houseType = 'Choose a house type.';
+    if (!fields.streetName.trim()) errors.streetName = 'Street name is required.';
+    if (fields.streetName.trim().length > MAX_LENGTH.streetName) {
+      errors.streetName = 'Use 120 characters or fewer.';
+    }
+
+    if (showsHouseFields) {
+      if (requiresUnitFields) {
+        if (!fields.blockName.trim()) errors.blockName = 'Block name is required.';
+        if (!fields.floorNumber.trim()) errors.floorNumber = 'Floor number is required.';
+        if (!fields.unitNumber.trim()) errors.unitNumber = 'Unit number is required.';
+      } else if (!fields.houseNumber.trim()) {
+        errors.houseNumber = 'House number is required.';
+      }
+    }
+
+    if (showsLandFields) {
+      if (!fields.plotNumber.trim()) errors.plotNumber = 'Plot number is required.';
+      if (!fields.plotName.trim()) errors.plotName = 'Plot name is required.';
+    }
+
+    for (const [field, max] of Object.entries(MAX_LENGTH) as Array<
+      [keyof typeof MAX_LENGTH, number]
+    >) {
+      if (fields[field].trim().length > max) errors[field] = `Use ${max} characters or fewer.`;
+    }
+    return errors;
   }
 
   async function handleSubmit(event?: FormEvent | React.MouseEvent) {
     event?.preventDefault();
-    if (!estateId) {
-      setError('Choose an estate to continue.');
+    const errors = localValidation();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setError('Fix the highlighted fields and try again.');
       return;
     }
-    if (topLevel === 'house' && !resolvedHouseTypeKey) {
-      setError('Choose a house type to continue.');
-      return;
-    }
+    if (!kind) return;
+
     setSubmitting(true);
     setError(null);
     setFieldErrors({});
-    const localErrors: Record<string, string> = {};
-    for (const component of visibleComponents) {
-      const value = (values[component.key] ?? '').trim();
-      if (isRequired(component.key) && !value) {
-        localErrors[component.key] = 'This field is required.';
-      } else if (value.length > component.maxLength) {
-        localErrors[component.key] = `Use ${component.maxLength} characters or fewer.`;
-      } else if (value && component.pattern) {
-        try {
-          if (!new RegExp(component.pattern).test(value)) {
-            localErrors[component.key] = 'Value does not match the required format.';
-          }
-        } catch {
-          localErrors[component.key] = 'This field has an invalid configured format.';
-        }
-      }
-    }
-    if (Object.keys(localErrors).length) {
-      setFieldErrors(localErrors);
-      setError('Fix the highlighted fields and try again.');
-      setSubmitting(false);
-      return;
-    }
     try {
-      const addressComponents: Record<string, string> = {};
-      for (const [key, rawValue] of Object.entries(values)) {
-        const trimmed = rawValue.trim();
-        if (trimmed) addressComponents[key] = trimmed;
-      }
       const result = await api.createProperty({
         estateId,
-        typeKey: typeKey ?? '',
-        houseTypeKey: resolvedHouseTypeKey,
-        addressComponents:
-          Object.keys(addressComponents).length > 0 ? addressComponents : undefined,
+        kind,
+        houseType: showsHouseFields ? houseType : null,
+        name: name.trim() || undefined,
+        streetName: fields.streetName.trim(),
+        houseNumber: showsHouseFields && !requiresUnitFields ? fields.houseNumber.trim() : null,
+        blockName: showsHouseFields && requiresUnitFields ? fields.blockName.trim() : null,
+        floorNumber: showsHouseFields && requiresUnitFields ? fields.floorNumber.trim() : null,
+        unitNumber: showsHouseFields && requiresUnitFields ? fields.unitNumber.trim() : null,
+        plotNumber: showsLandFields ? fields.plotNumber.trim() : null,
+        plotName: showsLandFields ? fields.plotName.trim() : null,
       });
       onCreated(result.property);
     } catch (err) {
@@ -176,10 +190,7 @@ export function PropertyRegisterModal({
           setError(`Identifier conflict: ${err.message}`);
         } else if (err.details && err.details.length > 0) {
           const next: Record<string, string> = {};
-          for (const detail of err.details) {
-            const key = detail.path.replace(/^addressComponents\./, '');
-            next[key || detail.path] = detail.message;
-          }
+          for (const detail of err.details) next[detail.path || 'form'] = detail.message;
           setFieldErrors(next);
           setError('Fix the highlighted fields and try again.');
         } else {
@@ -194,9 +205,6 @@ export function PropertyRegisterModal({
   }
 
   const selectedEstate = availableEstates.find((item) => item.id === estateId);
-  const missingTopLevel = (['land', 'house'] as TopLevelType[]).filter(
-    (option) => !knownAssetKeys.has(option),
-  );
 
   return (
     <Modal
@@ -208,7 +216,7 @@ export function PropertyRegisterModal({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleSubmit} disabled={submitting || !estateId}>
+          <Button type="button" onClick={handleSubmit} disabled={submitting || !estateId || !kind}>
             {submitting ? 'Registering…' : 'Register property'}
           </Button>
         </>
@@ -222,7 +230,7 @@ export function PropertyRegisterModal({
         )}
 
         {!estate && (
-          <Field label="Estate">
+          <Field label="Estate" error={fieldErrors.estateId}>
             <select
               value={estateId}
               onChange={(event) => setEstateId(event.target.value)}
@@ -241,41 +249,36 @@ export function PropertyRegisterModal({
           </Field>
         )}
 
-        <Field label="Property type">
+        <Field label="Property type" error={fieldErrors.kind}>
           <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Property type">
-            {(['land', 'house'] as TopLevelType[]).map((option) => {
-              const available = knownAssetKeys.has(option);
-              return (
-                <label
-                  key={option}
-                  className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-                    topLevel === option
-                      ? 'border-(--color-primary) bg-(--color-primary-soft)'
-                      : 'border-slate-200 bg-(--color-surface) hover:bg-slate-50'
-                  } ${available ? '' : 'cursor-not-allowed opacity-50'}`}
-                >
-                  <input
-                    type="radio"
-                    name="property-type"
-                    value={option}
-                    checked={topLevel === option}
-                    disabled={!available}
-                    onChange={() => setTopLevel(option)}
-                    className="accent-(--color-primary)"
-                  />
-                  <span>{TOP_LEVEL_LABELS[option]}</span>
-                  <span className="ml-auto text-[11px] text-(--color-ink-muted)">{option}</span>
-                </label>
-              );
-            })}
+            {PROPERTY_KINDS.map((option) => (
+              <label
+                key={option}
+                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                  kind === option
+                    ? 'border-(--color-primary) bg-(--color-primary-soft)'
+                    : 'border-slate-200 bg-(--color-surface) hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="property-kind"
+                  value={option}
+                  checked={kind === option}
+                  onChange={() => chooseKind(option)}
+                  className="accent-(--color-primary)"
+                />
+                <span>{PROPERTY_KIND_LABELS[option]}</span>
+              </label>
+            ))}
           </div>
         </Field>
 
-        {topLevel === 'house' && (
-          <Field label="House type">
+        {showsHouseFields && (
+          <Field label="House type" error={fieldErrors.houseType}>
             <select
-              value={houseTypeKey ?? ''}
-              onChange={(event) => setHouseTypeKey(event.target.value || null)}
+              value={houseType ?? ''}
+              onChange={(event) => chooseHouseType(event.target.value)}
               className={`${selectClass} w-full`}
               aria-label="House type"
               required
@@ -298,45 +301,95 @@ export function PropertyRegisterModal({
           </Field>
         )}
 
-        {visibleComponents.length === 0 && (
-          <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800">
-            No address fields are configured for this selection. The identifier is derived from the
-            estate slug — ask an administrator to configure address components if you need finer
-            identifiers.
-          </p>
-        )}
-
-        {visibleComponents.map((component) => {
-          const required = isRequired(component.key);
-          const value = values[component.key] ?? '';
-          return (
-            <Field
-              key={component.key}
-              label={`${component.label}${required ? ' (required)' : ''}`}
-              hint={
-                component.requiredForLabels.length > 0
-                  ? `Used for: ${component.requiredForLabels.join(', ')}`
-                  : undefined
-              }
-              error={fieldErrors[component.key]}
-            >
+        {kind && (
+          <>
+            <Field label="Street name (required)" error={fieldErrors.streetName}>
               <input
                 className={inputClass}
-                value={value}
-                onChange={(event) =>
-                  setValues((current) => ({ ...current, [component.key]: event.target.value }))
-                }
-                maxLength={component.maxLength}
-                placeholder={component.key}
+                value={fields.streetName}
+                onChange={(event) => updateField('streetName', event.target.value)}
+                maxLength={MAX_LENGTH.streetName}
+                placeholder="e.g. Court A"
               />
             </Field>
-          );
-        })}
 
-        {missingTopLevel.length > 0 && (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Some property types are not configured for this organization yet; they are disabled.
-          </p>
+            {showsHouseFields && requiresUnitFields && (
+              <>
+                <Field label="Block name (required)" error={fieldErrors.blockName}>
+                  <input
+                    className={inputClass}
+                    value={fields.blockName}
+                    onChange={(event) => updateField('blockName', event.target.value)}
+                    maxLength={MAX_LENGTH.blockName}
+                    placeholder="e.g. Block 03"
+                  />
+                </Field>
+                <Field label="Floor number (required)" error={fieldErrors.floorNumber}>
+                  <input
+                    className={inputClass}
+                    value={fields.floorNumber}
+                    onChange={(event) => updateField('floorNumber', event.target.value)}
+                    maxLength={MAX_LENGTH.floorNumber}
+                    placeholder="e.g. 03"
+                  />
+                </Field>
+                <Field label="Unit number (required)" error={fieldErrors.unitNumber}>
+                  <input
+                    className={inputClass}
+                    value={fields.unitNumber}
+                    onChange={(event) => updateField('unitNumber', event.target.value)}
+                    maxLength={MAX_LENGTH.unitNumber}
+                    placeholder="e.g. 01"
+                  />
+                </Field>
+              </>
+            )}
+
+            {showsHouseFields && !requiresUnitFields && (
+              <Field label="House number (required)" error={fieldErrors.houseNumber}>
+                <input
+                  className={inputClass}
+                  value={fields.houseNumber}
+                  onChange={(event) => updateField('houseNumber', event.target.value)}
+                  maxLength={MAX_LENGTH.houseNumber}
+                  placeholder="e.g. 12"
+                />
+              </Field>
+            )}
+
+            {showsLandFields && (
+              <>
+                <Field label="Plot number (required)" error={fieldErrors.plotNumber}>
+                  <input
+                    className={inputClass}
+                    value={fields.plotNumber}
+                    onChange={(event) => updateField('plotNumber', event.target.value)}
+                    maxLength={MAX_LENGTH.plotNumber}
+                    placeholder="e.g. 14"
+                  />
+                </Field>
+                <Field label="Plot name (required)" error={fieldErrors.plotName}>
+                  <input
+                    className={inputClass}
+                    value={fields.plotName}
+                    onChange={(event) => updateField('plotName', event.target.value)}
+                    maxLength={MAX_LENGTH.plotName}
+                    placeholder="e.g. North Plot"
+                  />
+                </Field>
+              </>
+            )}
+
+            <Field label="Property name (optional)" error={fieldErrors.name}>
+              <input
+                className={inputClass}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={120}
+                placeholder="e.g. Onyx Residence"
+              />
+            </Field>
+          </>
         )}
 
         {selectedEstate && !estate && (

@@ -4,14 +4,16 @@ import type {
   PropertyRecord,
 } from '../properties/property-repository.js';
 import type { PrismaEstateRepository, EstateRecord } from '../estates/estate-repository.js';
-import type { PropertyConfigSnapshot } from '../properties/property.service.js';
-import type { ResidentPropertyDto, ResidentPropertiesResponse } from '@silverstone/shared';
+import {
+  PROPERTY_KIND_LABELS,
+  type ResidentPropertyDto,
+  type ResidentPropertiesResponse,
+} from '@silverstone/shared';
 
 export interface ResidentPropertiesServiceOptions {
   drafts: PrismaResidentOnboardingRepository;
   properties: PrismaPropertyRepository;
   estates: PrismaEstateRepository;
-  loadConfig: () => Promise<PropertyConfigSnapshot>;
 }
 
 /**
@@ -19,13 +21,11 @@ export interface ResidentPropertiesServiceOptions {
  *
  * Self-scoped: the acting user's onboarding draft is the single source of
  * truth for which property is assigned. A resident today has exactly one
- * property; the response is list-shaped so a future multi-property model
- * is non-breaking.
+ * property; the response is list-shaped so a future multi-property model is
+ * non-breaking.
  *
- * The full address is formatted from the configured component labels
- * (`propertyOptions.addressComponents`, in config order) joined with the
- * stored values — the same display rule the operator property detail page
- * follows on the web.
+ * The full address is assembled from the typed property columns. There is no
+ * runtime address-component configuration.
  */
 export class ResidentPropertiesService {
   constructor(private readonly options: ResidentPropertiesServiceOptions) {}
@@ -33,8 +33,6 @@ export class ResidentPropertiesService {
   async list(organizationId: string, userId: string): Promise<ResidentPropertiesResponse> {
     const draft = await this.options.drafts.findByUser(userId);
     if (!draft) {
-      // No linked onboarding: an acting user that is not a resident with an
-      // assigned property. An empty list is the non-breaking answer.
       return { properties: [] };
     }
 
@@ -43,13 +41,12 @@ export class ResidentPropertiesService {
       return { properties: [] };
     }
 
-    const config = await this.options.loadConfig();
     const estate = property.estateId
       ? await this.options.estates.findById(organizationId, property.estateId)
       : null;
 
     return {
-      properties: [toResidentPropertyDto(property, estate, config)],
+      properties: [toResidentPropertyDto(property, estate)],
     };
   }
 }
@@ -57,23 +54,33 @@ export class ResidentPropertiesService {
 function toResidentPropertyDto(
   property: PropertyRecord,
   estate: EstateRecord | null,
-  config: PropertyConfigSnapshot,
 ): ResidentPropertyDto {
-  const typeLabel =
-    config.assetTypes.find((type) => type.key === property.typeKey)?.label ?? property.typeKey;
-  const components = config.propertyOptions.addressComponents;
-  const fullAddress = components
-    .map((component) => property.addressComponents[component.key])
-    .filter((value): value is string => value !== undefined && value !== '')
-    .join(', ');
-
   return {
     identifier: property.identifier,
-    typeKey: property.typeKey,
-    typeLabel,
+    kind: property.kind,
+    kindLabel: PROPERTY_KIND_LABELS[property.kind] ?? property.kind,
+    houseType: property.houseTypeKey,
+    houseTypeLabel: property.houseTypeKey,
+    streetName: property.streetName,
+    houseNumber: property.houseNumber,
+    blockName: property.blockName,
+    floorNumber: property.floorNumber,
+    unitNumber: property.unitNumber,
+    plotNumber: property.plotNumber,
+    plotName: property.plotName,
     status: property.status,
     estate: estate ? { name: estate.name, slug: estate.slug } : { name: '—', slug: '' },
-    fullAddress,
-    addressComponents: property.addressComponents,
+    fullAddress: formatAddress(property),
   };
+}
+
+function formatAddress(property: PropertyRecord): string {
+  const parts: string[] = [property.streetName];
+  if (property.houseNumber) parts.push(`House ${property.houseNumber}`);
+  if (property.blockName) parts.push(property.blockName);
+  if (property.floorNumber) parts.push(`Floor ${property.floorNumber}`);
+  if (property.unitNumber) parts.push(property.unitNumber);
+  if (property.plotNumber) parts.push(`Plot ${property.plotNumber}`);
+  if (property.plotName) parts.push(property.plotName);
+  return parts.filter(Boolean).join(', ');
 }

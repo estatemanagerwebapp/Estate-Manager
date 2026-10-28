@@ -1,7 +1,7 @@
 /**
- * Phase 2 integration tests: estate CRUD, property CRUD, property-options
- * optimistic concurrency, and the full import upload → preview → commit
- * flow against the disposable `silverstone_test` database.
+ * Phase 2 integration tests: estate CRUD, typed property CRUD, and the full
+ * import upload → preview → commit flow against the disposable
+ * `silverstone_test` database.
  *
  * Runs against the real Prisma repositories, real Express routes, and a
  * real PostgreSQL instance. No fakes other than the database.
@@ -25,16 +25,15 @@ import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { EstateService } from './modules/estates/estate.service.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
 import { PropertyService } from './modules/properties/property.service.js';
+import { PrismaHouseTypeRepository } from './modules/properties/house-type-repository.js';
 import { PrismaImportRepository } from './modules/imports/import-repository.js';
 import { ImportService } from './modules/imports/import.service.js';
 import {
   PrismaOrganizationConfigRepository,
   OrganizationConfigService,
 } from './modules/organization/config.service.js';
-import { PropertyOptionsService } from './modules/organization/property-options.service.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
 import { hashPassword } from './lib/password.js';
-import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 import type { ImportServiceContext } from './modules/imports/import.service.js';
 
 // These tests exercise real Supabase-backed requests; allow for pooler latency.
@@ -67,16 +66,6 @@ function ctx(): ImportServiceContext {
     organizationId,
     actorId: adminUserId || null,
     requestId: null,
-  };
-}
-
-async function loadConfigSnapshot(): Promise<PropertyConfigSnapshot> {
-  const resolved = await configServiceForTest.resolve();
-  return {
-    assetTypes: resolved.config.assetModel.types,
-    unitTypes: resolved.config.assetModel.unitTypes,
-    propertyOptions: resolved.config.propertyOptions,
-    configVersion: resolved.version,
   };
 }
 
@@ -128,10 +117,18 @@ beforeAll(async () => {
   const estateService = new EstateService(estates, audit);
 
   const properties = new PrismaPropertyRepository(prisma);
-  const propertyService = new PropertyService(properties, estates, audit);
+  const houseTypes = new PrismaHouseTypeRepository(prisma);
+  const propertyService = new PropertyService(properties, estates, houseTypes, audit);
 
   const importRepo = new PrismaImportRepository(prisma);
-  const importService = new ImportService(importRepo, estates, properties, audit, prisma);
+  const importService = new ImportService(
+    importRepo,
+    estates,
+    properties,
+    houseTypes,
+    audit,
+    prisma,
+  );
 
   const authService = new AuthService(
     users,
@@ -153,22 +150,6 @@ beforeAll(async () => {
     organizationSlug,
   );
   const configService = configServiceForTest;
-  const propertyOptionsService = new PropertyOptionsService(
-    configService,
-    configRepo,
-    audit,
-    async () => {
-      const resolved = await configService.resolve();
-      return {
-        assetTypes: resolved.config.assetModel.types,
-        unitTypes: resolved.config.assetModel.unitTypes,
-        propertyOptions: resolved.config.propertyOptions,
-        configVersion: resolved.version,
-      };
-    },
-    organizationSlug,
-  );
-
   app = createApp({
     checkDatabase: async () => {},
     rateLimitMax: 1000,
@@ -191,20 +172,13 @@ beforeAll(async () => {
       sessions,
       permissions,
       organizationId,
-      loadConfig: async () => loadConfigSnapshot(),
     },
     imports: {
       importService,
       sessions,
       permissions,
       organizationId,
-      loadConfig: async () => loadConfigSnapshot(),
-    },
-    propertyOptions: {
-      propertyOptionsService,
-      sessions,
-      permissions,
-      organizationId,
+      loadConfigVersion: async () => (await configService.resolve()).version,
     },
   });
 
@@ -317,8 +291,10 @@ describe('estate CRUD (integration)', () => {
     // Creating a property under an archived estate → 409
     const propRes = await authed().post('/api/v1/properties').send({
       estateId,
-      typeKey: 'land',
-      addressComponents: { street_name: 'Main St', plot_number: '1' },
+      kind: 'LAND',
+      streetName: 'Main St',
+      plotNumber: '1',
+      plotName: 'North plot',
     });
     expect(propRes.status).toBe(409);
   });
@@ -329,7 +305,7 @@ describe('estate CRUD (integration)', () => {
 });
 
 // =============================================================================
-// Property CRUD (integration) — new land / house model
+// Property CRUD (integration) — typed House / Land / Both model
 // =============================================================================
 
 describe('property CRUD (integration)', () => {
@@ -340,187 +316,230 @@ describe('property CRUD (integration)', () => {
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'land',
-        houseTypeKey: null,
-        addressComponents: { street_name: 'Main St', plot_number: '42' },
+        kind: 'LAND',
+        houseType: null,
+        streetName: 'Main St',
+        plotNumber: '42',
+        plotName: 'North plot',
       })
       .expect(201);
 
     const property = res.body.data.property;
     expect(property.identifier).toBe(`${estate.slug}-Main St-42`);
     expect(property.status).toBe('ACTIVE');
-    expect(property.typeKey).toBe('land');
-    expect(property.houseTypeKey).toBeNull();
+    expect(property.kind).toBe('LAND');
+    expect(property.kindLabel).toBe('Land');
+    expect(property.houseType).toBeNull();
+    expect(property.plotNumber).toBe('42');
+    expect(property.plotName).toBe('North plot');
   });
 
-  it('creates a house bungalow with a derived identifier', async () => {
+  it('creates a bungalow with a derived identifier', async () => {
     const estate = await createTestEstate();
 
     const res = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'house',
-        houseTypeKey: 'bungalow',
-        addressComponents: { street_name: 'Oak Ave', house_number: '17' },
+        kind: 'HOUSE',
+        houseType: 'bungalow',
+        streetName: 'Oak Ave',
+        houseNumber: '17',
       })
       .expect(201);
 
     const property = res.body.data.property;
     expect(property.identifier).toBe(`${estate.slug}-Oak Ave-17`);
-    expect(property.status).toBe('ACTIVE');
-    expect(property.typeKey).toBe('house');
-    expect(property.houseTypeKey).toBe('bungalow');
+    expect(property.kind).toBe('HOUSE');
+    expect(property.houseType).toBe('bungalow');
+    expect(property.houseTypeLabel).toBe('Bungalow');
+    expect(property.houseTypeRequiresUnitFields).toBe(false);
+    expect(property.houseNumber).toBe('17');
   });
 
-  it('creates a house apartment with a derived identifier', async () => {
+  it('creates an apartment with block, floor, and unit fields', async () => {
     const estate = await createTestEstate();
 
     const res = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'house',
-        houseTypeKey: 'apartment',
-        addressComponents: {
-          street_name: 'Main St',
-          block_name: 'Block A',
-          floor_number: '3',
-          unit_number: '12',
-        },
+        kind: 'HOUSE',
+        houseType: 'apartment',
+        streetName: 'Main St',
+        blockName: 'Block A',
+        floorNumber: '3',
+        unitNumber: '12',
       })
       .expect(201);
 
     const property = res.body.data.property;
     expect(property.identifier).toBe(`${estate.slug}-Main St-Block A-3-12`);
-    expect(property.status).toBe('ACTIVE');
-    expect(property.typeKey).toBe('house');
-    expect(property.houseTypeKey).toBe('apartment');
+    expect(property.kind).toBe('HOUSE');
+    expect(property.houseType).toBe('apartment');
+    expect(property.houseTypeRequiresUnitFields).toBe(true);
+    expect(property.blockName).toBe('Block A');
+    expect(property.floorNumber).toBe('3');
+    expect(property.unitNumber).toBe('12');
   });
 
-  it('rejects a house property without a house type key', async () => {
+  it('creates a both property with house and plot fields', async () => {
     const estate = await createTestEstate();
 
-    const res = await authed().post('/api/v1/properties').send({
-      estateId: estate.id,
-      typeKey: 'house',
-      houseTypeKey: null,
-      addressComponents: {},
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects a house type key on a land property', async () => {
-    const estate = await createTestEstate();
-
-    const res = await authed().post('/api/v1/properties').send({
-      estateId: estate.id,
-      typeKey: 'land',
-      houseTypeKey: 'bungalow',
-      addressComponents: { street_name: 'Main St', plot_number: '42' },
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects a missing required address component (land plot number)', async () => {
-    const estate = await createTestEstate();
-
-    const res = await authed().post('/api/v1/properties').send({
-      estateId: estate.id,
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: 'Main St' }, // plot_number missing
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.error.details[0].path).toBe('addressComponents.plot_number');
-  });
-
-  it('rejects a missing required address component (house bungalow house number)', async () => {
-    const estate = await createTestEstate();
-
-    const res = await authed().post('/api/v1/properties').send({
-      estateId: estate.id,
-      typeKey: 'house',
-      houseTypeKey: 'bungalow',
-      addressComponents: { street_name: 'Oak Ave' }, // house_number missing
-    });
-    expect(res.status).toBe(400);
-    expect(res.body.error.details[0].path).toBe('addressComponents.house_number');
-  });
-
-  it('rejects a component that is notApplicableFor the house type', async () => {
-    const estate = await createTestEstate();
-
-    // plot_number is notApplicableFor house types.
-    const res = await authed().post('/api/v1/properties').send({
-      estateId: estate.id,
-      typeKey: 'house',
-      houseTypeKey: 'bungalow',
-      addressComponents: {
-        street_name: 'Oak Ave',
-        house_number: '17',
-        plot_number: '42',
-      },
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects an unknown type key with 400', async () => {
-    const estate = await createTestEstate();
     const res = await authed()
       .post('/api/v1/properties')
-      .send({ estateId: estate.id, typeKey: 'apartment_block', addressComponents: {} });
+      .send({
+        estateId: estate.id,
+        kind: 'BOTH',
+        houseType: 'bungalow',
+        streetName: 'Oak Ave',
+        houseNumber: '17',
+        plotNumber: '42',
+        plotName: 'North plot',
+      })
+      .expect(201);
+
+    expect(res.body.data.property.identifier).toBe(`${estate.slug}-Oak Ave-17-42`);
+    expect(res.body.data.property.kindLabel).toBe('Both');
+  });
+
+  it('rejects a house property without a house type', async () => {
+    const estate = await createTestEstate();
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      kind: 'HOUSE',
+      streetName: 'Oak Ave',
+      houseNumber: '17',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a house type on a land property', async () => {
+    const estate = await createTestEstate();
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      kind: 'LAND',
+      houseType: 'bungalow',
+      streetName: 'Main St',
+      plotNumber: '42',
+      plotName: 'North plot',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a missing plot number with a field-level error', async () => {
+    const estate = await createTestEstate();
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      kind: 'LAND',
+      streetName: 'Main St',
+      plotName: 'North plot',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.details[0].path).toBe('plotNumber');
+  });
+
+  it('rejects a missing house number for a bungalow', async () => {
+    const estate = await createTestEstate();
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      kind: 'HOUSE',
+      houseType: 'bungalow',
+      streetName: 'Oak Ave',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.details[0].path).toBe('houseNumber');
+  });
+
+  it('rejects a plot number on a bungalow', async () => {
+    const estate = await createTestEstate();
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      kind: 'HOUSE',
+      houseType: 'bungalow',
+      streetName: 'Oak Ave',
+      houseNumber: '17',
+      plotNumber: '42',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an unknown house type with 400', async () => {
+    const estate = await createTestEstate();
+    const res = await authed().post('/api/v1/properties').send({
+      estateId: estate.id,
+      kind: 'HOUSE',
+      houseType: 'unknown_type',
+      streetName: 'Oak Ave',
+      houseNumber: '17',
+    });
     expect(res.status).toBe(400);
   });
 
   it('returns 409 when the identifier collides with an existing property', async () => {
     const estate = await createTestEstate();
-    const components = { street_name: 'Main St', plot_number: '42' };
+    const payload = {
+      estateId: estate.id,
+      kind: 'LAND',
+      streetName: 'Main St',
+      plotNumber: '42',
+      plotName: 'North plot',
+    };
 
-    // First create succeeds.
-    await authed()
-      .post('/api/v1/properties')
-      .send({ estateId: estate.id, typeKey: 'land', houseTypeKey: null, addressComponents: components })
-      .expect(201);
-
-    // Second create with the same identifier → 409.
-    const dup = await authed()
-      .post('/api/v1/properties')
-      .send({ estateId: estate.id, typeKey: 'land', houseTypeKey: null, addressComponents: components });
+    await authed().post('/api/v1/properties').send(payload).expect(201);
+    const dup = await authed().post('/api/v1/properties').send(payload);
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('CONFLICT');
   });
 
-  it('lists properties with filters', async () => {
+  it('lists properties with kind filters', async () => {
     const estate = await createTestEstate();
 
     await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'land',
-        houseTypeKey: null,
-        addressComponents: { street_name: 'Main St', plot_number: '42' },
+        kind: 'LAND',
+        streetName: 'Main St',
+        plotNumber: '42',
+        plotName: 'North plot',
       })
       .expect(201);
 
     const listed = await authed()
       .get('/api/v1/properties')
-      .query({ estateId: estate.id, typeKey: 'land' })
+      .query({ estateId: estate.id, kind: 'LAND' })
       .expect(200);
     expect(listed.body.data.total).toBeGreaterThanOrEqual(1);
+
+    const wrongKind = await authed()
+      .get('/api/v1/properties')
+      .query({ estateId: estate.id, kind: 'HOUSE' })
+      .expect(200);
+    expect(wrongKind.body.data.total).toBe(0);
+  });
+
+  it('returns the active house-type catalogue', async () => {
+    const res = await authed().get('/api/v1/properties/house-types').expect(200);
+    expect(res.body.data.houseTypes.map((type: { key: string }) => type.key)).toEqual([
+      'bungalow',
+      'terrace',
+      'duplex',
+      'apartment',
+      'flat',
+    ]);
   });
 
   it('archives a property and preserves the identifier', async () => {
     const estate = await createTestEstate();
-
     const createRes = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'land',
-        houseTypeKey: null,
-        addressComponents: { street_name: 'Main St', plot_number: '42' },
+        kind: 'LAND',
+        streetName: 'Main St',
+        plotNumber: '42',
+        plotName: 'North plot',
       })
       .expect(201);
     const propertyId = createRes.body.data.property.id;
@@ -532,161 +551,52 @@ describe('property CRUD (integration)', () => {
     const detail = await authed().get(`/api/v1/properties/${propertyId}`).expect(200);
     expect(detail.body.data.property.status).toBe('ARCHIVED');
     expect(detail.body.data.property.identifier).toBe(originalIdentifier);
-  }, 60_000);
+  });
 
-  it('PATCH property does not accept identifier in the body', async () => {
+  it('PATCH never re-derives the immutable identifier', async () => {
     const estate = await createTestEstate();
-
     const createRes = await authed()
       .post('/api/v1/properties')
       .send({
         estateId: estate.id,
-        typeKey: 'land',
-        houseTypeKey: null,
-        addressComponents: { street_name: 'Main St', plot_number: '42' },
+        kind: 'LAND',
+        streetName: 'Main St',
+        plotNumber: '42',
+        plotName: 'North plot',
       })
       .expect(201);
     const propertyId = createRes.body.data.property.id;
     const originalIdentifier = createRes.body.data.property.identifier;
 
-    // PATCH with addressComponents — identifier is immutable and stripped.
     const patched = await authed()
       .patch(`/api/v1/properties/${propertyId}`)
-      .send({ status: 'ARCHIVED', addressComponents: { street_name: 'Main St', plot_number: '99' } })
+      .send({ status: 'ARCHIVED', streetName: 'Changed St', identifier: 'HACK' })
       .expect(200);
     expect(patched.body.data.property.identifier).toBe(originalIdentifier);
+    expect(patched.body.data.property.streetName).toBe('Changed St');
     expect(patched.body.data.property.status).toBe('ARCHIVED');
   });
-});
 
-// =============================================================================
-// Property-options optimistic concurrency (integration)
-// =============================================================================
-
-describe('property-options optimistic concurrency (integration)', () => {
-  it('GET /property-options returns the active config version and house types', async () => {
-    const res = await authed().get('/api/v1/property-options').expect(200);
-    expect(typeof res.body.data.configVersion).toBe('number');
-    expect(Array.isArray(res.body.data.assetTypes)).toBe(true);
-    expect(Array.isArray(res.body.data.houseTypes)).toBe(true);
-    const keys = res.body.data.houseTypes.map((ht: { key: string }) => ht.key);
-    expect(keys).toEqual(['bungalow', 'terrace', 'duplex', 'apartment', 'flat']);
-  });
-
-  it('PUT /property-options with a stale baseVersion returns 409', async () => {
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      organizationSlug,
-    );
-    const resolved = await configService.resolve();
-
-    // Advance the version once — the version returned by resolve() is now stale.
-    await configRepo.createRecord({
-      organizationSlug,
-      config: resolved.config as never,
-    });
-
-    const res = await authed()
-      .put('/api/v1/property-options')
-      .send({
-        baseVersion: resolved.version, // stale
-        propertyOptions: {
-          addressComponents: [],
-          houseTypes: [
-            { key: 'bungalow', label: 'Bungalow', active: true },
-            { key: 'terrace', label: 'Terrace', active: true },
-            { key: 'duplex', label: 'Duplex', active: true },
-            { key: 'apartment', label: 'Apartment', active: true },
-            { key: 'flat', label: 'Flat', active: true },
-          ],
-          identifierTemplate: '{estate_slug}',
-          identifierMax: 120,
-        },
-      });
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('CONFLICT');
-  });
-
-  it('PUT /property-options with the correct baseVersion succeeds', async () => {
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      organizationSlug,
-    );
-    const resolved = await configService.resolve();
-
-    const res = await authed()
-      .put('/api/v1/property-options')
-      .send({
-        baseVersion: resolved.version,
-        propertyOptions: {
-          addressComponents: [
-            {
-              key: 'street_name',
-              label: 'Street name',
-              requiredFor: ['land', 'house'],
-              notApplicableFor: [],
-              maxLength: 120,
-            },
-            {
-              key: 'plot_number',
-              label: 'Plot number',
-              requiredFor: ['land'],
-              notApplicableFor: [],
-              maxLength: 32,
-            },
-          ],
-          houseTypes: [
-            { key: 'bungalow', label: 'Bungalow', active: true },
-            { key: 'terrace', label: 'Terrace', active: true },
-            { key: 'duplex', label: 'Duplex', active: true },
-            { key: 'apartment', label: 'Apartment', active: true },
-            { key: 'flat', label: 'Flat', active: true },
-          ],
-          identifierTemplate: '{estate_slug}',
-          identifierMax: 120,
-        },
-      })
+  it('rejects property creation under an archived estate', async () => {
+    const suffix = uniqueSuffix();
+    const createRes = await authed()
+      .post('/api/v1/estates')
+      .send({ name: `Archived Prop ${suffix}`, slug: `archprop${suffix}` })
+      .expect(201);
+    const estateId = createRes.body.data.estate.id;
+    await authed()
+      .post(`/api/v1/estates/${estateId}/status`)
+      .send({ status: 'ARCHIVED' })
       .expect(200);
-    expect(res.body.data.identifierTemplate).toBe('{estate_slug}');
-    expect(res.body.data.configVersion).toBe(resolved.version + 1);
-  });
 
-  it('rejects property-options that reference an unknown house type key', async () => {
-    const configRepo = new PrismaOrganizationConfigRepository(prisma);
-    const configService = new OrganizationConfigService(
-      configRepo,
-      loadBootstrapConfig,
-      organizationSlug,
-    );
-    const resolved = await configService.resolve();
-
-    const res = await authed()
-      .put('/api/v1/property-options')
-      .send({
-        baseVersion: resolved.version,
-        propertyOptions: {
-          addressComponents: [
-            {
-              key: 'street_name',
-              label: 'Street name',
-              requiredFor: ['land', 'house.unknown'],
-              notApplicableFor: [],
-              maxLength: 120,
-            },
-          ],
-          houseTypes: [
-            { key: 'bungalow', label: 'Bungalow', active: true },
-          ],
-          identifierTemplate: '{estate_slug}',
-          identifierMax: 120,
-        },
-      });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    const propRes = await authed().post('/api/v1/properties').send({
+      estateId,
+      kind: 'LAND',
+      streetName: 'Main St',
+      plotNumber: '1',
+      plotName: 'North plot',
+    });
+    expect(propRes.status).toBe(409);
   });
 });
 
@@ -695,16 +605,6 @@ describe('property-options optimistic concurrency (integration)', () => {
 // =============================================================================
 
 async function seedImportConfig(): Promise<{ estateId: string; estateSlug: string }> {
-  // Restore canonical defaults in the test-local organization after config tests.
-  const configRepo = new PrismaOrganizationConfigRepository(prisma);
-  const configService = new OrganizationConfigService(
-    configRepo,
-    loadBootstrapConfig,
-    organizationSlug,
-  );
-  await configService.resolve();
-  await configRepo.createRecord({ organizationSlug, config: loadBootstrapConfig() });
-
   const estate = await createTestEstate();
   return { estateId: estate.id, estateSlug: estate.slug };
 }
@@ -765,12 +665,14 @@ describe('import flow (integration)', () => {
     expect(sheet?.actualRowCount).toBe(1);
     expect(headerLabels(sheet)).toEqual([
       'type',
+      'house_type',
       'street_name',
-      'plot_number',
       'house_number',
       'block_name',
       'floor_number',
       'unit_number',
+      'plot_number',
+      'plot_name',
     ]);
   });
 
@@ -802,7 +704,7 @@ describe('import flow (integration)', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(bytes);
     const sheet = workbook.worksheets[0];
-    sheet?.addRow(['land', 'Main St', '42']);
+    sheet?.addRow(['land', '', 'Main St', '', '', '', '', '42', 'North plot']);
     const populated = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
 
     const preview = await uploadWorkbook(estateId, populated, 'properties-populated.xlsx');
@@ -823,31 +725,39 @@ describe('import flow (integration)', () => {
     expect(properties.body.data.properties).toHaveLength(1);
   });
 
-  it('requires API confirmation before a recognizable legacy sample row can commit', async () => {
+  it('imports an apartment row with block, floor, and unit fields', async () => {
     const { estateId } = await seedImportConfig();
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Properties');
-    sheet.addRow(['type', 'street_name', 'plot_number']);
-    // Keep the sample marker in a free-form field while satisfying plot_number's
-    // configured numeric pattern so confirmation can import a valid row.
-    sheet.addRow(['land', 'sample_street_name', '42']);
-    const instructions = workbook.addWorksheet('Instructions');
-    instructions.addRow(['Instructions']);
-    instructions.addRow([
-      'One property per row. The "type" column must be a configured asset type key. Address component values must satisfy the configured format. The identifier is derived from the configured template at import time.',
+    sheet.addRow([
+      'type',
+      'house_type',
+      'street_name',
+      'house_number',
+      'block_name',
+      'floor_number',
+      'unit_number',
+      'plot_number',
+      'plot_name',
     ]);
+    const suffix = uniqueSuffix().replace('_', '');
+    sheet.addRow(['house', 'apartment', `Court ${suffix}`, '', 'Block 03', '03', '01', '', '']);
     const bytes = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
-    const preview = await uploadWorkbook(estateId, bytes, 'legacy-sample.xlsx').expect(201);
-    const batchId = preview.body.data.batch.id as string;
-    expect(preview.body.data.batch.legacySampleRows).toBe(1);
+    const preview = await uploadWorkbook(estateId, bytes, 'apartment-import.xlsx').expect(201);
+    expect(preview.body.data.batch.counts.valid).toBe(1);
 
-    await authed().post(`/api/v1/imports/${batchId}/commit`).expect(409);
     const commit = await authed()
-      .post(`/api/v1/imports/${batchId}/commit`)
-      .send({ confirmLegacySampleRows: true })
+      .post(`/api/v1/imports/${preview.body.data.batch.id}/commit`)
       .expect(200);
     expect(commit.body.data.createdPropertyIds).toHaveLength(1);
+
+    const stored = await prisma.property.findFirstOrThrow({ where: { estateId } });
+    expect(stored.kind).toBe('HOUSE');
+    expect(stored.houseTypeKey).toBe('apartment');
+    expect(stored.blockName).toBe('Block 03');
+    expect(stored.floorNumber).toBe('03');
+    expect(stored.unitNumber).toBe('01');
   });
 
   it('enforces unique worksheet row numbers within each import batch', async () => {
@@ -855,9 +765,19 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Properties');
-    sheet.addRow(['type', 'street_name', 'plot_number']);
-    const suffix = uniqueSuffix().slice(0, 6);
-    sheet.addRow(['land', 'Main St', suffix]);
+    sheet.addRow([
+      'type',
+      'house_type',
+      'street_name',
+      'house_number',
+      'block_name',
+      'floor_number',
+      'unit_number',
+      'plot_number',
+      'plot_name',
+    ]);
+    const suffix = uniqueSuffix().replace('_', '');
+    sheet.addRow(['land', '', 'Main St', '', '', '', '', suffix, 'North plot']);
     const bytes = (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
     const preview = await uploadWorkbook(estateId, bytes, 'unique-row.xlsx').expect(201);
     const stored = await prisma.importRow.findFirstOrThrow({
@@ -913,11 +833,21 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'street_name', 'plot_number']);
-    const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['land', 'Main St', suffix]);   // row 2
-    ws.addRow(['land', 'Oak Ave', '17']);      // row 3
-    ws.addRow(['land', 'Main St', suffix]);    // row 4, duplicate of row 2
+    ws.addRow([
+      'type',
+      'house_type',
+      'street_name',
+      'house_number',
+      'block_name',
+      'floor_number',
+      'unit_number',
+      'plot_number',
+      'plot_name',
+    ]);
+    const suffix = uniqueSuffix().replace('_', '');
+    ws.addRow(['land', '', 'Main St', '', '', '', '', suffix, 'North plot']); // row 2
+    ws.addRow(['land', '', 'Oak Ave', '', '', '', '', '17', 'North plot']); // row 3
+    ws.addRow(['land', '', 'Main St', '', '', '', '', suffix, 'North plot']); // row 4, duplicate of row 2
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     const preview = await authed()
@@ -968,9 +898,19 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'street_name', 'plot_number']);
-    const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['land', 'Main St', suffix]);
+    ws.addRow([
+      'type',
+      'house_type',
+      'street_name',
+      'house_number',
+      'block_name',
+      'floor_number',
+      'unit_number',
+      'plot_number',
+      'plot_name',
+    ]);
+    const suffix = uniqueSuffix().replace('_', '');
+    ws.addRow(['land', '', 'Main St', '', '', '', '', suffix, 'North plot']);
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     const first = await authed()
@@ -995,9 +935,19 @@ describe('import flow (integration)', () => {
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'street_name', 'plot_number']);
-    const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['land', 'Main St', suffix]);
+    ws.addRow([
+      'type',
+      'house_type',
+      'street_name',
+      'house_number',
+      'block_name',
+      'floor_number',
+      'unit_number',
+      'plot_number',
+      'plot_name',
+    ]);
+    const suffix = uniqueSuffix().replace('_', '');
+    ws.addRow(['land', '', 'Main St', '', '', '', '', suffix, 'North plot']);
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     // Upload + preview.
@@ -1023,11 +973,10 @@ describe('import flow (integration)', () => {
         estateId,
         organizationId,
         identifier,
-        typeKey: 'land',
-        houseTypeKey: null,
-        unitTypeKey: null,
-        parentPropertyId: null,
-        addressComponents: { street_name: 'Main St', plot_number: suffix },
+        kind: 'LAND',
+        streetName: 'Main St',
+        plotNumber: suffix,
+        plotName: 'North plot',
         status: 'ACTIVE',
       },
     });
@@ -1043,23 +992,22 @@ describe('import flow (integration)', () => {
     expect(propCount).toBe(1);
   });
 
-  it('config drift: commit after a config version bump is refused', async () => {
+  it('does not block a commit when the organization config version advances', async () => {
     const { estateId } = await seedImportConfig();
     const ExcelJS = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Properties');
-    ws.addRow(['type', 'street_name', 'plot_number']);
-    const suffix = uniqueSuffix().slice(0, 6);
-    ws.addRow(['land', 'Main St', suffix]);
+    ws.addRow(['type', 'house_type', 'street_name', 'plot_number', 'plot_name']);
+    const suffix = uniqueSuffix().replace('_', '');
+    ws.addRow(['land', '', 'Main St', suffix, 'North plot']);
     const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
 
     const preview = await authed()
       .post(`/api/v1/estates/${estateId}/imports`)
-      .attach('file', buffer, 'drift-test.xlsx')
+      .attach('file', buffer, 'config-bump-test.xlsx')
       .expect(201);
     const batchId = preview.body.data.batch.id;
 
-    // Bump the config version.
     const configRepo = new PrismaOrganizationConfigRepository(prisma);
     const configService = new OrganizationConfigService(
       configRepo,
@@ -1072,10 +1020,9 @@ describe('import flow (integration)', () => {
       config: resolved.config as never,
     });
 
-    // Commit — the batch was pinned to the old version, so it should be
-    // refused on config drift.
-    const commit = await authed().post(`/api/v1/imports/${batchId}/commit`);
-    expect(commit.status).toBe(409);
+    // Property shape/identifier rules are code-owned, so the commit succeeds.
+    const commit = await authed().post(`/api/v1/imports/${batchId}/commit`).expect(200);
+    expect(commit.body.data.createdPropertyIds).toHaveLength(1);
   });
 
   it('all-or-nothing rollback: zero partial property rows after forced commit failure', async () => {

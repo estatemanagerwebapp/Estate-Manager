@@ -24,8 +24,7 @@ import type {
   UpdatePropertyInput,
   PropertyListResponse,
   PropertyDetailResponse,
-  PropertyOptionsView,
-  UpdatePropertyOptionsRequest,
+  HouseTypesResponse,
   ImportPreviewResponse,
   ImportCommitResponse,
   ImportBatchDto,
@@ -206,7 +205,8 @@ export interface EstateFilter {
 /** Query filters for the property list (paginated on the server). */
 export interface PropertyFilter {
   estateId?: string;
-  typeKey?: string;
+  /** `HOUSE`, `LAND`, or `BOTH`. */
+  kind?: string;
   /** `ACTIVE` or `ARCHIVED`. */
   status?: string;
   identifierContains?: string;
@@ -389,7 +389,7 @@ export const api = {
   listProperties: (filter: PropertyFilter = {}) => {
     const params = new URLSearchParams();
     if (filter.estateId) params.set('estateId', filter.estateId);
-    if (filter.typeKey) params.set('typeKey', filter.typeKey);
+    if (filter.kind) params.set('kind', filter.kind);
     if (filter.status) params.set('status', filter.status);
     if (filter.identifierContains) params.set('identifierContains', filter.identifierContains);
     if (filter.page) params.set('page', String(filter.page));
@@ -465,14 +465,8 @@ export const api = {
       })(),
     ),
 
-  // --- Phase 2: property options (config) ------------------------------------
-  getPropertyOptions: () => request<PropertyOptionsView>('/api/v1/property-options'),
-
-  updatePropertyOptions: (body: UpdatePropertyOptionsRequest) =>
-    request<PropertyOptionsView>('/api/v1/property-options', {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    }),
+  /** Active house-type catalogue for the property form. */
+  getHouseTypes: () => request<HouseTypesResponse>('/api/v1/properties/house-types'),
 
   // --- Phase 2: imports -------------------------------------------------------
   /**

@@ -1,6 +1,6 @@
 /**
- * The operator sidebar keeps configuration screens under Settings rather than
- * mixed into the day-to-day estate navigation.
+ * The operator sidebar keeps account settings under Settings. Property shape
+ * is code-owned now, so the removed Property options screen must not return.
  */
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -43,7 +43,7 @@ vi.mock('../auth/useCan', () => ({
 import { AppShell } from './AppShell';
 
 describe('AppShell navigation', () => {
-  it('files Property options under Settings', () => {
+  it('does not expose a Property options screen under Settings', () => {
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
@@ -58,7 +58,7 @@ describe('AppShell navigation', () => {
     );
 
     const settings = screen.getByRole('group', { name: 'Settings' });
-    expect(within(settings).getByRole('link', { name: /property options/i })).toBeTruthy();
+    expect(within(settings).queryByRole('link', { name: /property options/i })).toBeNull();
     expect(within(settings).getByRole('link', { name: /account & password/i })).toBeTruthy();
   });
 });

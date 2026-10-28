@@ -9,9 +9,19 @@ import type {
 } from './import-repository.js';
 import { DuplicateImportRowError } from './import-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
-import { parseWorkbook, type ParsedImportRow } from './excel-parser.js';
+import {
+  buildTemplate,
+  IMPORT_COLUMNS,
+  parseWorkbook,
+  type ParsedImportRow,
+} from './excel-parser.js';
 import { deriveIdentifier } from '../../lib/property-identifier.js';
-import type { PropertyConfigSnapshot } from '../properties/property.service.js';
+import type {
+  HouseTypeRecord,
+  PrismaHouseTypeRepository,
+} from '../properties/house-type-repository.js';
+import { normalizeAddressFields } from '../properties/property-rules.js';
+import type { PropertyKind } from '@silverstone/shared';
 import type {
   ImportBatchDto,
   ImportRowDto,
@@ -53,6 +63,7 @@ export class ImportService {
     private readonly imports: PrismaImportRepository,
     private readonly estates: PrismaEstateRepository,
     private readonly properties: PrismaPropertyRepository,
+    private readonly houseTypes: PrismaHouseTypeRepository,
     private readonly audit: PrismaAuditRepository,
     private readonly prisma: PrismaClient,
   ) {}
@@ -63,7 +74,7 @@ export class ImportService {
    */
   async preview(
     context: ImportServiceContext,
-    config: PropertyConfigSnapshot,
+    configVersion: number,
     input: {
       estateId: string;
       filename: string;
@@ -72,28 +83,13 @@ export class ImportService {
     },
   ): Promise<ImportPreviewResponse> {
     const estate = await this.requireEstate(context.organizationId, input.estateId);
-
+    const houseTypes = await this.houseTypes.listActive();
     const existingIdentifiers = await this.properties.identifiersByEstate(estate.id);
 
     const result = await parseWorkbook(input.filePath, {
-      assetTypes: config.assetTypes.map((type) => ({
-        key: type.key,
-        label: type.label,
-        active: type.active,
-        detailKind: type.detailKind,
-      })),
-      propertyOptions: config.propertyOptions,
+      houseTypes,
       estateSlug: estate.slug,
-      estateId: estate.id,
       existingIdentifiers,
-      renderIdentifier: ({ estateSlug, typeKey, addressComponents }) =>
-        deriveIdentifier({
-          estateSlug,
-          typeKey,
-          houseTypeKey: null,
-          addressComponents,
-          propertyOptions: config.propertyOptions,
-        }),
       maxRows: IMPORT_MAX_ROWS,
     });
 
@@ -111,12 +107,13 @@ export class ImportService {
     // same workbook cannot be imported twice.
     const existingBatch = await this.imports.findBatchByFingerprint(
       context.organizationId,
+      estate.id,
       result.fingerprint,
     );
     if (existingBatch) {
       if (existingBatch.status === 'PREVIEWED') {
         const existingRows = await this.imports.rowsForBatch(existingBatch.id);
-        return this.toPreviewResponse(estate, existingBatch, existingRows, config.configVersion);
+        return this.toPreviewResponse(estate, existingBatch, existingRows);
       }
       throw new AppError(
         409,
@@ -134,7 +131,7 @@ export class ImportService {
         organizationId: context.organizationId,
         filename: input.filename,
         fingerprint: result.fingerprint,
-        configVersion: config.configVersion,
+        configVersion,
         counts,
         uploadedById: context.actorId ?? '',
       });
@@ -157,28 +154,27 @@ export class ImportService {
     }
 
     const rowInputs = result.rows.map((row) => {
-      // Embed the derived identifier so the commit path can skip rows whose
-      // identifier now collides with a live property.
-      const identifier =
+      // Embed the normalized property payload and derived identifier so the
+      // commit path does not need to re-interpret spreadsheet headers.
+      const payload =
         row.status === 'VALID' || row.status === 'COLLISION'
-          ? (deriveIdentifier({
-              estateSlug: estate.slug,
-              typeKey: row.raw['type'] ?? '',
-              houseTypeKey: null,
-              addressComponents: row.raw,
-              propertyOptions: config.propertyOptions,
-            }).identifier ?? '')
-          : '';
+          ? propertyFromRaw(row.raw, houseTypes, estate.slug)
+          : null;
       return {
         batchId: batch.id,
         rowNumber: row.rowNumber,
         status: row.status,
         errors: row.errors,
         data: {
-          type: row.raw['type'] ?? '',
-          __identifier: identifier,
-          ...(row.legacySampleCandidate ? { __legacySampleCandidate: true } : {}),
           ...row.raw,
+          ...(payload
+            ? {
+                __kind: payload.kind,
+                __house_type_key: payload.houseTypeKey,
+                __identifier: payload.identifier,
+                __fields: payload.fields,
+              }
+            : { __identifier: '' }),
         },
       };
     });
@@ -213,27 +209,21 @@ export class ImportService {
       },
     });
 
-    return this.toPreviewResponse(estate, batch, batchRows, config.configVersion);
+    return this.toPreviewResponse(estate, batch, batchRows);
   }
 
   private toPreviewResponse(
     estate: EstateRecord,
     batch: ImportBatchRecord,
     batchRows: ImportRowRecord[],
-    activeConfigVersion: number,
   ): ImportPreviewResponse {
-    // Config drift: if the active config version is ahead of the version pinned
-    // at upload time, the batch must be re-validated.
-    const configDrift = batch.configVersion < activeConfigVersion;
-    const guidance = configDrift
-      ? 'The organization configuration has changed since this file was uploaded. Re-upload the file to re-validate against the current configuration.'
-      : undefined;
-
+    // The property shape is no longer driven by the versioned organization
+    // configuration, so config drift cannot invalidate a batch's property data.
     return {
-      batch: toBatchDto(batch, estate, batchRows, configDrift),
+      batch: toBatchDto(batch, estate, batchRows, false),
       rows: batchRows.map((row) => toRowDto(row)),
-      configDrift,
-      guidance,
+      configDrift: false,
+      guidance: undefined,
     };
   }
 
@@ -241,12 +231,7 @@ export class ImportService {
    * Commit a previewed batch: all valid rows become property records in a
    * single transaction. Rolls back atomically on any failure.
    */
-  async commit(
-    context: ImportServiceContext,
-    batchId: string,
-    activeConfigVersion: number,
-    confirmLegacySampleRows = false,
-  ): Promise<ImportCommitResponse> {
+  async commit(context: ImportServiceContext, batchId: string): Promise<ImportCommitResponse> {
     const batch = await this.imports.findById(batchId, context.organizationId);
     if (!batch) {
       throw new AppError(404, 'NOT_FOUND', 'Import batch not found');
@@ -268,33 +253,12 @@ export class ImportService {
         'This batch is in a terminal failed state and cannot be committed',
       );
     }
-    // Config drift: the batch was validated against an older configuration, so
-    // committing it now would write identifiers/labels the current rules do not
-    // allow. Refuse and force a re-upload (the preview flagged this already).
-    if (batch.configVersion < activeConfigVersion) {
-      throw new AppError(
-        409,
-        'CONFLICT',
-        `The organization configuration changed since this file was uploaded (batch config v${batch.configVersion}, active v${activeConfigVersion}). Re-upload the file to re-validate it before committing.`,
-      );
-    }
-
     const estate = await this.estates.findById(context.organizationId, batch.estateId);
     if (!estate) {
       throw new AppError(404, 'NOT_FOUND', 'Estate not found');
     }
 
     const batchRows = await this.imports.rowsForBatch(batchId);
-    const legacySampleRows = batchRows.filter(
-      (row) => row.data['__legacySampleCandidate'] === true,
-    );
-    if (legacySampleRows.length > 0 && !confirmLegacySampleRows) {
-      throw new AppError(
-        409,
-        'CONFLICT',
-        `This legacy template contains ${legacySampleRows.length} sample-like row(s) at worksheet row(s) ${legacySampleRows.map((row) => row.rowNumber).join(', ')}. Review them and explicitly confirm before committing.`,
-      );
-    }
     const validRows = batchRows.filter((row) => row.status === 'VALID');
     const collisionRows = batchRows.filter((row) => row.status === 'COLLISION');
 
@@ -343,20 +307,32 @@ export class ImportService {
           const chunk = toCreate.slice(i, i + chunkSize);
           for (const row of chunk) {
             const identifier = identifierFromRow(row);
-            const rowData = { ...row.data };
-            delete rowData['__identifier'];
-            const typeKey = row.data['type'] as string;
-            const unitTypeKey = (rowData['unit_type_key'] as string) || null;
+            const kind = row.data['__kind'] as PropertyKind;
+            const houseTypeKey = (row.data['__house_type_key'] as string | null) ?? null;
+            const rawFields = (row.data['__fields'] ?? {}) as Record<string, unknown>;
+            const fields = normalizeAddressFields({
+              streetName: asText(rawFields['streetName']),
+              houseNumber: asText(rawFields['houseNumber']),
+              blockName: asText(rawFields['blockName']),
+              floorNumber: asText(rawFields['floorNumber']),
+              unitNumber: asText(rawFields['unitNumber']),
+              plotNumber: asText(rawFields['plotNumber']),
+              plotName: asText(rawFields['plotName']),
+            });
 
             const propertyId = await this.properties.createInTxSkipDuplicates(tx, {
               estateId: estate.id,
               organizationId: context.organizationId,
               identifier,
-              typeKey,
-              houseTypeKey: null,
-              unitTypeKey,
-              parentPropertyId: null,
-              addressComponents: rowData as Record<string, string>,
+              kind,
+              houseTypeKey,
+              streetName: fields.streetName ?? '',
+              houseNumber: fields.houseNumber ?? null,
+              blockName: fields.blockName ?? null,
+              floorNumber: fields.floorNumber ?? null,
+              unitNumber: fields.unitNumber ?? null,
+              plotNumber: fields.plotNumber ?? null,
+              plotName: fields.plotName ?? null,
               name: null,
             });
 
@@ -500,27 +476,44 @@ export class ImportService {
     return { batches: dtos, total: dtos.length };
   }
 
+  /** Active house types, used by the template route to describe allowed values. */
+  async activeHouseTypes(): Promise<HouseTypeRecord[]> {
+    return this.houseTypes.listActive();
+  }
+
   /**
-   * Generates a template workbook for the estate + active configuration.
+   * Template metadata for the estate. The actual workbook is built by the
+   * route from the same static column list and house-type table.
    */
   async template(
     context: ImportServiceContext,
-    config: PropertyConfigSnapshot,
+    configVersion: number,
     estateId: string,
   ): Promise<ImportTemplateInfo> {
     const estate = await this.requireEstate(context.organizationId, estateId);
-    const columns = ['type', ...config.propertyOptions.addressComponents.map((c) => c.key)];
     return {
       estateId: estate.id,
       estateName: estate.name,
-      configVersion: config.configVersion,
-      columns,
+      configVersion,
+      columns: [...IMPORT_COLUMNS],
       instructions:
-        'One property per row. The "type" column must be a configured asset type key. ' +
-        'Address component values must satisfy the configured format. ' +
-        'The identifier is derived from the configured template at import time. ' +
+        'One property per row. The "type" column must be house, land, or both. ' +
+        'House and both rows require "house_type"; land rows leave it blank. ' +
+        'House rows use either house_number or block_name + floor_number + unit_number, ' +
+        'depending on the selected house type. Land and both rows require plot_number and plot_name. ' +
         'The Properties worksheet contains headers only — add your own rows starting at row 2.',
     };
+  }
+
+  /** Build the header-only .xlsx template for an estate. */
+  async templateWorkbook(
+    context: ImportServiceContext,
+    estateId: string,
+    instructions: string,
+  ): Promise<{ buffer: Promise<Buffer>; columns: string[] }> {
+    const estate = await this.requireEstate(context.organizationId, estateId);
+    const houseTypes = await this.houseTypes.listActive();
+    return buildTemplate(estate, houseTypes, instructions);
   }
 
   private async requireEstate(organizationId: string, estateId: string): Promise<EstateRecord> {
@@ -533,6 +526,68 @@ export class ImportService {
 }
 
 // --- Helpers ------------------------------------------------------------------
+
+function propertyFromRaw(
+  raw: Record<string, string>,
+  houseTypes: ReadonlyArray<HouseTypeRecord>,
+  estateSlug: string,
+): {
+  identifier: string;
+  kind: PropertyKind;
+  houseTypeKey: string | null;
+  fields: ReturnType<typeof normalizeAddressFields>;
+} | null {
+  const typeValue = (raw.type ?? '').trim().toLowerCase();
+  const kind: PropertyKind | null =
+    typeValue === 'house'
+      ? 'HOUSE'
+      : typeValue === 'land'
+        ? 'LAND'
+        : typeValue === 'both'
+          ? 'BOTH'
+          : null;
+  if (!kind) return null;
+
+  const houseType =
+    kind === 'LAND'
+      ? null
+      : (houseTypes.find((type) => type.key === (raw.house_type ?? '').trim()) ?? null);
+  if ((kind === 'HOUSE' || kind === 'BOTH') && !houseType) return null;
+
+  const fields = normalizeAddressFields({
+    streetName: raw.street_name,
+    houseNumber: raw.house_number,
+    blockName: raw.block_name,
+    floorNumber: raw.floor_number,
+    unitNumber: raw.unit_number,
+    plotNumber: raw.plot_number,
+    plotName: raw.plot_name,
+  });
+  const derived = deriveIdentifier({
+    estateSlug,
+    kind,
+    houseType: houseType
+      ? { key: houseType.key, requiresUnitFields: houseType.requiresUnitFields }
+      : null,
+    streetName: fields.streetName ?? '',
+    houseNumber: fields.houseNumber,
+    blockName: fields.blockName,
+    floorNumber: fields.floorNumber,
+    unitNumber: fields.unitNumber,
+    plotNumber: fields.plotNumber,
+  });
+  if (!derived.identifier) return null;
+  return {
+    identifier: derived.identifier,
+    kind,
+    houseTypeKey: houseType?.key ?? null,
+    fields,
+  };
+}
+
+function asText(value: unknown): string | null {
+  return value === undefined || value === null ? null : String(value);
+}
 
 function aggregateCounts(rows: ParsedImportRow[]): Record<string, number> {
   const counts: Record<string, number> = {

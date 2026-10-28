@@ -2,10 +2,14 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Plus, ChevronLeft, ChevronRight, LoaderCircle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { EstateDto, PropertyListResponse } from '@silverstone/shared';
+import {
+  PROPERTY_KINDS,
+  PROPERTY_KIND_LABELS,
+  type EstateDto,
+  type PropertyListResponse,
+} from '@silverstone/shared';
 import { api } from '../../api/client';
 import { useApiQuery } from '../../api/query';
-import { usePropertyOptions, registerableAssetTypes } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { Button, Badge, statusTone, EmptyState, selectClass } from '../../components/ui';
@@ -13,13 +17,11 @@ import { PropertyRegisterModal } from '../properties/PropertyRegisterModal';
 
 /**
  * Estate-scoped properties list. Lives inside the estate detail "Properties"
- * tab. It fetches the property-options view once (for the type picker and
- * the register form's dynamic address components) and the property list on
- * filter/page change.
+ * tab. The register form and the list read the same typed property model.
  *
- * What it does NOT do: re-derive identifiers, re-validate type keys, or
- * decide import validity. The API is the source of truth; the UI just
- * renders what comes back.
+ * What it does NOT do: re-derive identifiers, re-validate address fields, or
+ * decide import validity. The API is the source of truth; the UI just renders
+ * what comes back.
  */
 export function PropertiesTab({
   estate,
@@ -31,9 +33,8 @@ export function PropertiesTab({
   const can = useCan();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { view: optionsView } = usePropertyOptions(true);
 
-  const [typeKey, setTypeKey] = useState('');
+  const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
   const [identifierSearch, setIdentifierSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -43,13 +44,13 @@ export function PropertiesTab({
   const filter = useMemo(
     () => ({
       estateId: estate.id,
-      typeKey: typeKey || undefined,
+      kind: kind || undefined,
       status: status || undefined,
       identifierContains: identifierSearch.trim() || undefined,
       page,
       pageSize,
     }),
-    [estate.id, typeKey, status, identifierSearch, page, pageSize],
+    [estate.id, kind, status, identifierSearch, page, pageSize],
   );
 
   const {
@@ -63,25 +64,24 @@ export function PropertiesTab({
     'Could not load properties.',
   );
 
-  const types = registerableAssetTypes(optionsView);
   const estateActive = estate.status === 'ACTIVE';
 
   return (
     <div className="px-5 py-4">
       <div className="flex flex-wrap items-center gap-3">
         <select
-          value={typeKey}
+          value={kind}
           onChange={(event) => {
-            setTypeKey(event.target.value);
+            setKind(event.target.value);
             setPage(1);
           }}
           aria-label="Filter by type"
           className={selectClass}
         >
           <option value="">All types</option>
-          {types.map((type) => (
-            <option key={type.key} value={type.key}>
-              {type.label}
+          {PROPERTY_KINDS.map((option) => (
+            <option key={option} value={option}>
+              {PROPERTY_KIND_LABELS[option]}
             </option>
           ))}
         </select>
@@ -184,7 +184,8 @@ export function PropertiesTab({
                       </Link>
                     </td>
                     <td className="px-4 py-2.5 text-xs text-(--color-ink-muted)">
-                      {property.typeLabel || property.typeKey}
+                      {property.kindLabel}
+                      {property.houseTypeLabel ? ` · ${property.houseTypeLabel}` : ''}
                     </td>
                     <td className="px-4 py-2.5">
                       <Badge tone={statusTone(property.status)}>{property.status}</Badge>

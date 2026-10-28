@@ -37,7 +37,6 @@ import { EstateCreatePage } from './pages/estates/EstateCreatePage';
 import { EstateDetailPage } from './pages/estates/EstateDetailPage';
 import { PropertiesListPage } from './pages/properties/PropertiesListPage';
 import { PropertyDetailPage } from './pages/properties/PropertyDetailPage';
-import { PropertyOptionsPage } from './pages/properties/PropertyOptionsPage';
 import './index.css';
 
 const container = document.getElementById('root');
@@ -161,14 +160,6 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="property.read">
                       <PropertyDetailPage />
-                    </RequirePermission>
-                  }
-                />
-                <Route
-                  path="/app/property-options"
-                  element={
-                    <RequirePermission permission="property.read">
-                      <PropertyOptionsPage />
                     </RequirePermission>
                   }
                 />

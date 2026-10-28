@@ -44,7 +44,9 @@ const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const orgIndex = args.indexOf('--org');
 const organizationSlug =
-  (orgIndex >= 0 ? args[orgIndex + 1] : undefined) ?? process.env.ORGANIZATION_SLUG ?? 'silverstone';
+  (orgIndex >= 0 ? args[orgIndex + 1] : undefined) ??
+  process.env.ORGANIZATION_SLUG ??
+  'silverstone';
 
 // --- The new address component field set (mirrors config/organization.default.json) ---
 
@@ -242,13 +244,22 @@ async function main(): Promise<void> {
     const migrated = transformPayload(payload);
 
     // Report what changed before touching the database.
-    const oldTypes = (payload.assetModel as { types?: AssetType[] })?.types?.map((t) => t.key) ?? [];
-    console.log(`assetModel.types: [${oldTypes.join(', ')}] → [${migrated.assetModel.types.map((t) => `${t.key}${t.active ? '' : ' (inactive)'}`).join(', ')}]`);
-    console.log(`propertyOptions.houseTypes: ${migrated.propertyOptions.houseTypes.map((h) => h.key).join(', ')}`);
-    console.log(`propertyOptions.addressComponents: ${migrated.propertyOptions.addressComponents.map((c) => c.key).join(', ')}`);
+    const oldTypes =
+      (payload.assetModel as { types?: AssetType[] })?.types?.map((t) => t.key) ?? [];
+    console.log(
+      `assetModel.types: [${oldTypes.join(', ')}] → [${migrated.assetModel.types.map((t) => `${t.key}${t.active ? '' : ' (inactive)'}`).join(', ')}]`,
+    );
+    console.log(
+      `propertyOptions.houseTypes: ${migrated.propertyOptions.houseTypes.map((h) => h.key).join(', ')}`,
+    );
+    console.log(
+      `propertyOptions.addressComponents: ${migrated.propertyOptions.addressComponents.map((c) => c.key).join(', ')}`,
+    );
 
     if (dryRun) {
-      console.log('Dry run only — document validated against the current schema, no write performed.');
+      console.log(
+        'Dry run only — document validated against the current schema, no write performed.',
+      );
       return;
     }
 
@@ -270,14 +281,18 @@ async function main(): Promise<void> {
           version: nextVersion,
           status: 'ACTIVE',
           schemaVersion: migrated.schemaVersion,
-          payload: migrated as unknown as Parameters<typeof tx.organizationConfig.create>[0]['data']['payload'],
+          payload: migrated as unknown as Parameters<
+            typeof tx.organizationConfig.create
+          >[0]['data']['payload'],
           createdBy: 'migrate-config-house-types',
           activatedAt: new Date(),
         },
       });
     });
 
-    console.log(`Archived v${active.version}; activated v${nextVersion} under the land/house model.`);
+    console.log(
+      `Archived v${active.version}; activated v${nextVersion} under the land/house model.`,
+    );
   } finally {
     await prisma.$disconnect();
   }

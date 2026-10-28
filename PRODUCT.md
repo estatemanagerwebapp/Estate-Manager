@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Existing codebase: React + Vite + Tailwind web console (`apps/web`), Express + TypeScript API (`apps/api`), shared packages (`packages/`). Deploy target: Vercel multi-service (api on /api/*, web on /*).
+Existing codebase: React + Vite + Tailwind web console (`apps/web`), Express + TypeScript API (`apps/api`), shared packages (`packages/`). Deploy target: Vercel multi-service (api on /api/_, web on /_).
 
 ## Users
 

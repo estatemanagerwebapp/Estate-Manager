@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { api, ApiRequestError, type EstateFilter } from '../../api/client';
 import { useApiQuery } from '../../api/query';
-import { usePropertyOptions } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { useConfirm } from '../../components/dialog';
@@ -30,7 +29,12 @@ import {
   CardHeader,
   Skeleton,
 } from '../../components/ui';
-import type { EstateDto, PropertyDto } from '@silverstone/shared';
+import {
+  PROPERTY_KINDS,
+  PROPERTY_KIND_LABELS,
+  type EstateDto,
+  type PropertyDto,
+} from '@silverstone/shared';
 import { PropertyRegisterModal } from './PropertyRegisterModal';
 
 /**
@@ -44,12 +48,11 @@ import { PropertyRegisterModal } from './PropertyRegisterModal';
  */
 export function PropertiesListPage() {
   const can = useCan();
-  const { view } = usePropertyOptions(true);
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
 
   const [estateId, setEstateId] = useState('');
-  const [typeKey, setTypeKey] = useState('');
+  const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
   const [identifierSearch, setIdentifierSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -71,13 +74,13 @@ export function PropertiesListPage() {
   const filter = useMemo(
     () => ({
       estateId: estateId || undefined,
-      typeKey: typeKey || undefined,
+      kind: kind || undefined,
       status: status || undefined,
       identifierContains: identifierSearch.trim() || undefined,
       page,
       pageSize,
     }),
-    [estateId, typeKey, status, identifierSearch, page, pageSize],
+    [estateId, kind, status, identifierSearch, page, pageSize],
   );
 
   const {
@@ -91,7 +94,6 @@ export function PropertiesListPage() {
     'Could not load properties.',
   );
 
-  const types = (view?.assetTypes ?? []).filter((type) => type.active);
   const estateName = new Map(estates.map((estate) => [estate.id, estate.name]));
 
   async function reloadAfterMutation() {
@@ -140,7 +142,7 @@ export function PropertiesListPage() {
   async function deleteProperty(property: PropertyDto) {
     const ok = await confirm({
       title: 'Permanently delete this property?',
-      body: `The identifier ${property.identifier} will be released for re-registration within this estate. This cannot be undone. Properties with child units cannot be deleted.`,
+      body: `The identifier ${property.identifier} will be released for re-registration within this estate. This cannot be undone.`,
       danger: true,
     });
     if (!ok) return;
@@ -198,18 +200,18 @@ export function PropertiesListPage() {
             ))}
           </select>
           <select
-            value={typeKey}
+            value={kind}
             onChange={(event) => {
-              setTypeKey(event.target.value);
+              setKind(event.target.value);
               setPage(1);
             }}
             aria-label="Filter by type"
             className={selectClass}
           >
             <option value="">All types</option>
-            {types.map((type) => (
-              <option key={type.key} value={type.key}>
-                {type.label}
+            {PROPERTY_KINDS.map((option) => (
+              <option key={option} value={option}>
+                {PROPERTY_KIND_LABELS[option]}
               </option>
             ))}
           </select>
@@ -408,8 +410,8 @@ function PropertyCard({
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-(--color-ink-muted)">
         <span className="inline-flex items-center gap-1">
           <Tag aria-hidden size={12} />
-          {property.typeLabel || property.typeKey}
-          {property.houseTypeKey && property.houseTypeLabel ? (
+          {property.kindLabel}
+          {property.houseTypeLabel ? (
             <span className="ml-1 text-[10px] text-(--color-ink-muted)">
               ({property.houseTypeLabel})
             </span>

@@ -152,7 +152,7 @@ export class OrganizationConfigService {
   /**
    * Resolves the active config, reusing the last result for a short window.
    * Pass `bypassCache` on write paths that must compare against the committed
-   * version (for example the property-options optimistic-concurrency check).
+   * version for callers that need optimistic concurrency or provenance.
    */
   async resolve(options: { bypassCache?: boolean } = {}): Promise<ResolvedOrganizationConfig> {
     const cached = this.cachedConfig;

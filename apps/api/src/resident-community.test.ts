@@ -99,11 +99,11 @@ beforeAll(async () => {
   const property = await properties.create({
     organizationId,
     estateId: estate.id,
-    typeKey: 'house',
+    kind: 'LAND',
     identifier: `COMM-${uniqueSuffix()}`,
-    unitTypeKey: null,
-    parentPropertyId: null,
-    addressComponents: { plot: '15', street: 'Community Road', city: 'Lagos' },
+    streetName: 'Test Street',
+    plotNumber: '1',
+    plotName: 'Test plot',
     name: null,
   });
   propertyId = property.id;

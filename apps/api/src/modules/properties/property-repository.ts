@@ -1,22 +1,29 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, PropertyKind } from '@prisma/client';
 
 /**
  * Data access for the property registry. Prisma types stop at this
  * boundary; callers receive plain domain shapes (ADR-0001).
+ *
+ * The row is explicit: `kind` plus typed address columns. There is no JSON
+ * address shape and no parent/child property hierarchy in this model.
  */
 
 export type CreatePropertyInput = {
   estateId: string;
   organizationId: string;
   identifier: string;
-  typeKey: string;
-  /** For house properties: the nested house type key. Null for land. */
+  kind: PropertyKind;
+  /** For HOUSE/BOTH: the house-type catalogue key. Null for LAND. */
   houseTypeKey: string | null;
-  unitTypeKey: string | null;
-  parentPropertyId: string | null;
-  addressComponents: Record<string, string>;
+  streetName: string;
+  houseNumber: string | null;
+  blockName: string | null;
+  floorNumber: string | null;
+  unitNumber: string | null;
+  plotNumber: string | null;
+  plotName: string | null;
   /** Human-facing property name; null when not supplied (import path). */
   name: string | null;
 };
@@ -24,13 +31,19 @@ export type CreatePropertyInput = {
 export type UpdatePropertyInput = {
   status?: string;
   name?: string | null;
-  addressComponents?: Record<string, string>;
+  streetName?: string;
+  houseNumber?: string | null;
+  blockName?: string | null;
+  floorNumber?: string | null;
+  unitNumber?: string | null;
+  plotNumber?: string | null;
+  plotName?: string | null;
 };
 
 export interface PropertyQuery {
   organizationId: string;
   estateId?: string;
-  typeKey?: string;
+  kind?: string;
   status?: string;
   /** Case-insensitive search over the identifier. */
   identifierContains?: string;
@@ -43,30 +56,22 @@ export interface PropertyRecord {
   estateId: string;
   organizationId: string;
   identifier: string;
-  typeKey: string;
-  /**
-   * For a house property: the configured nested house type key
-   * (e.g. `bungalow`, `terrace`, `duplex`, `apartment`, `flat`).
-   * Null for land properties.
-   */
+  kind: PropertyKind;
+  /** House-type catalogue key; null for LAND. */
   houseTypeKey: string | null;
-  unitTypeKey: string | null;
-  parentPropertyId: string | null;
-  /** Parent property projection, when the property is a unit under a parent. */
-  parentProperty: { id: string; identifier: string } | null;
-  addressComponents: Record<string, string>;
+  streetName: string;
+  houseNumber: string | null;
+  blockName: string | null;
+  floorNumber: string | null;
+  unitNumber: string | null;
+  plotNumber: string | null;
+  plotName: string | null;
   /** Human-facing property name; null for legacy/import-created records. */
   name: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
 }
-
-type PrismaPropertyRow = Prisma.PropertyGetPayload<{
-  include: {
-    parentProperty: { select: { id: true; identifier: true } };
-  };
-}>;
 
 export class PrismaPropertyRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -77,14 +82,17 @@ export class PrismaPropertyRepository {
         estateId: input.estateId,
         organizationId: input.organizationId,
         identifier: input.identifier,
-        typeKey: input.typeKey,
+        kind: input.kind,
         houseTypeKey: input.houseTypeKey,
-        unitTypeKey: input.unitTypeKey,
-        parentPropertyId: input.parentPropertyId,
-        addressComponents: input.addressComponents as Prisma.InputJsonValue,
+        streetName: input.streetName,
+        houseNumber: input.houseNumber,
+        blockName: input.blockName,
+        floorNumber: input.floorNumber,
+        unitNumber: input.unitNumber,
+        plotNumber: input.plotNumber,
+        plotName: input.plotName,
         name: input.name,
       },
-      include: { parentProperty: { select: { id: true, identifier: true } } },
     });
     return toRecord(row);
   }
@@ -109,32 +117,41 @@ export class PrismaPropertyRepository {
     input: CreatePropertyInput,
   ): Promise<string | null> {
     const propertyId = randomUUID();
-    const addressComponentsJson = JSON.stringify(input.addressComponents);
     const sql = Prisma.sql`
       INSERT INTO properties (
         id,
         estate_id,
         organization_id,
         identifier,
-        type_key,
+        kind,
         house_type_key,
-        unit_type_key,
-        parent_property_id,
-        address_components,
+        street_name,
+        house_number,
+        block_name,
+        floor_number,
+        unit_number,
+        plot_number,
+        plot_name,
+        name,
         status,
         created_at,
         updated_at
       )
       VALUES (
-        ${Prisma.sql`${propertyId}::uuid`},
-        ${Prisma.sql`${input.estateId}::uuid`},
-        ${Prisma.sql`${input.organizationId}::uuid`},
+        ${propertyId}::uuid,
+        ${input.estateId}::uuid,
+        ${input.organizationId}::uuid,
         ${input.identifier},
-        ${input.typeKey},
-        ${input.houseTypeKey ?? Prisma.sql`NULL::varchar`},
-        ${input.unitTypeKey ?? Prisma.sql`NULL::text`},
-        ${input.parentPropertyId ?? Prisma.sql`NULL::uuid`},
-        ${Prisma.sql`${addressComponentsJson}::jsonb`},
+        ${input.kind}::"PropertyKind",
+        ${input.houseTypeKey},
+        ${input.streetName},
+        ${input.houseNumber},
+        ${input.blockName},
+        ${input.floorNumber},
+        ${input.unitNumber},
+        ${input.plotNumber},
+        ${input.plotName},
+        ${input.name},
         'ACTIVE',
         now(),
         now()
@@ -148,7 +165,6 @@ export class PrismaPropertyRepository {
   async findById(organizationId: string, propertyId: string): Promise<PropertyRecord | null> {
     const row = await this.prisma.property.findFirst({
       where: { id: propertyId, organizationId },
-      include: { parentProperty: { select: { id: true, identifier: true } } },
     });
     return row ? toRecord(row) : null;
   }
@@ -164,12 +180,11 @@ export class PrismaPropertyRepository {
   ): Promise<PropertyRecord | null> {
     const row = await this.prisma.property.findFirst({
       where: { estateId, identifier },
-      include: { parentProperty: { select: { id: true, identifier: true } } },
     });
     return row ? toRecord(row) : null;
   }
 
-  /** Bulk fetch of existing identifiers for a set of estate ids, for import preview. */
+  /** Fetch the set of existing identifiers in an estate, for import preview. */
   async identifiersByEstate(estateId: string): Promise<Set<string>> {
     const rows = await this.prisma.property.findMany({
       where: { estateId },
@@ -182,7 +197,7 @@ export class PrismaPropertyRepository {
     const where: Prisma.PropertyWhereInput = {
       organizationId: query.organizationId,
       ...(query.estateId ? { estateId: query.estateId } : {}),
-      ...(query.typeKey ? { typeKey: query.typeKey } : {}),
+      ...(query.kind ? { kind: query.kind as PropertyKind } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.identifierContains
         ? { identifier: { contains: query.identifierContains, mode: 'insensitive' } }
@@ -195,7 +210,6 @@ export class PrismaPropertyRepository {
         orderBy: [{ createdAt: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        include: { parentProperty: { select: { id: true, identifier: true } } },
       }),
     ]);
     return { items: rows.map(toRecord), total };
@@ -207,53 +221,30 @@ export class PrismaPropertyRepository {
       data: {
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.addressComponents !== undefined
-          ? { addressComponents: input.addressComponents as Prisma.InputJsonValue }
-          : {}),
+        ...(input.streetName !== undefined ? { streetName: input.streetName } : {}),
+        ...(input.houseNumber !== undefined ? { houseNumber: input.houseNumber } : {}),
+        ...(input.blockName !== undefined ? { blockName: input.blockName } : {}),
+        ...(input.floorNumber !== undefined ? { floorNumber: input.floorNumber } : {}),
+        ...(input.unitNumber !== undefined ? { unitNumber: input.unitNumber } : {}),
+        ...(input.plotNumber !== undefined ? { plotNumber: input.plotNumber } : {}),
+        ...(input.plotName !== undefined ? { plotName: input.plotName } : {}),
       },
-      include: { parentProperty: { select: { id: true, identifier: true } } },
     });
     return toRecord(row);
   }
 
-  /**
-   * Check whether a property already has children. Used to enforce the depth-1
-   * hierarchy rule: a property that has children cannot itself become a
-   * child (unit-in-unit is not supported).
-   */
-  async hasChildren(propertyId: string): Promise<boolean> {
-    const count = await this.prisma.property.count({
-      where: { parentPropertyId: propertyId },
-    });
-    return count > 0;
-  }
-
-  /**
-   * Physically delete a property. Refuses when the property still has child
-   * properties — the caller must archive or re-parent them first. The
-   * self-referential FK (parentPropertyId → id, ON DELETE SET NULL) means
-   * children of a deleted property become orphaned, so this guard keeps the
-   * registry consistent.
-   */
-  async deleteIfNoChildren(propertyId: string): Promise<boolean> {
-    const hasChildren = await this.hasChildren(propertyId);
-    if (hasChildren) return false;
+  /** Physically delete a property. */
+  async delete(propertyId: string): Promise<void> {
     await this.prisma.property.delete({ where: { id: propertyId } });
-    return true;
   }
 
-  /**
-   * Mark a property archived. Archiving is a status change, not a delete:
-   * the record is preserved for historical reference and its children (if any)
-   * remain reachable.
-   */
+  /** Mark a property archived. Archiving is a status change, not a delete. */
   async setArchived(propertyId: string): Promise<PropertyRecord | null> {
     const row = await this.prisma.property.update({
       where: { id: propertyId },
       data: { status: 'ARCHIVED' },
-      include: { parentProperty: { select: { id: true, identifier: true } } },
     });
-    return row ? toRecord(row) : null;
+    return toRecord(row);
   }
 
   /** Update row statuses + property refs for the import commit. */
@@ -294,30 +285,42 @@ export class PrismaPropertyRepository {
   }
 }
 
-function toRecord(row: PrismaPropertyRow & { addressComponents: unknown }): PropertyRecord {
-  const components = (row.addressComponents ?? {}) as Record<string, unknown>;
-  const addressComponents: Record<string, string> = {};
-  for (const [key, value] of Object.entries(components)) {
-    addressComponents[key] = value === null || value === undefined ? '' : String(value);
-  }
+function toRecord(row: {
+  id: string;
+  estateId: string;
+  organizationId: string;
+  identifier: string;
+  kind: PropertyKind;
+  houseTypeKey: string | null;
+  streetName: string;
+  houseNumber: string | null;
+  blockName: string | null;
+  floorNumber: string | null;
+  unitNumber: string | null;
+  plotNumber: string | null;
+  plotName: string | null;
+  name: string | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): PropertyRecord {
   return {
     id: row.id,
     estateId: row.estateId,
     organizationId: row.organizationId,
     identifier: row.identifier,
-    typeKey: row.typeKey,
+    kind: row.kind,
     houseTypeKey: row.houseTypeKey,
-    unitTypeKey: row.unitTypeKey,
-    parentPropertyId: row.parentPropertyId,
-    parentProperty: row.parentProperty
-      ? { id: row.parentProperty.id, identifier: row.parentProperty.identifier }
-      : null,
-    addressComponents,
+    streetName: row.streetName,
+    houseNumber: row.houseNumber,
+    blockName: row.blockName,
+    floorNumber: row.floorNumber,
+    unitNumber: row.unitNumber,
+    plotNumber: row.plotNumber,
+    plotName: row.plotName,
     name: row.name ?? null,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
-
-export type { PrismaPropertyRow };

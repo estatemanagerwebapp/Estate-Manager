@@ -16,10 +16,7 @@ import {
  *
  * Self-scoped: the API resolves the acting resident's property from their
  * onboarding draft. The page renders the single assigned property with the
- * full formatted address (the server joins the configured component values
- * in config order), plus the raw address components with their labels from
- * `usePropertyOptions` — the same display rule as the operator property
- * detail page.
+ * typed kind and the server-formatted address.
  */
 export function ResidentPropertiesPage() {
   const {
@@ -83,7 +80,7 @@ export function ResidentPropertiesPage() {
             <CardBody>
               <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Fact label="Type">
-                  <span className="font-medium">{property.typeLabel}</span>
+                  <span className="font-medium">{property.kindLabel}</span>
                 </Fact>
                 <Fact label="Estate">
                   <Badge tone="neutral">{property.estate.name}</Badge>

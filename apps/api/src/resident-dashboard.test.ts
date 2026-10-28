@@ -49,7 +49,6 @@ import { ResidentDashboardService } from './modules/resident/dashboard.service.j
 import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
-import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 
 let prisma: PrismaClient;
 let app: Express;
@@ -115,11 +114,11 @@ beforeAll(async () => {
   const property = await properties.create({
     organizationId,
     estateId: estate.id,
-    typeKey: 'house',
+    kind: 'LAND',
     identifier: `DASH-${uniqueSuffix()}`,
-    unitTypeKey: null,
-    parentPropertyId: null,
-    addressComponents: { plot: '31', street: 'Dashboard Road', city: 'Lagos' },
+    streetName: 'Test Street',
+    plotNumber: '1',
+    plotName: 'Test plot',
     name: null,
   });
   propertyId = property.id;
@@ -149,39 +148,6 @@ beforeAll(async () => {
   const userService = new UserService(users, sessions, audit, permissions);
 
   const drafts = new PrismaResidentOnboardingRepository(prisma);
-
-  const loadConfigForTest = async (): Promise<PropertyConfigSnapshot> => ({
-    assetTypes: [{ key: 'house', label: 'House', detailKind: 'PROPERTY', active: true }],
-    unitTypes: [],
-    propertyOptions: {
-      addressComponents: [
-        {
-          key: 'plot',
-          label: 'Plot Number',
-          requiredFor: [],
-          notApplicableFor: [],
-          maxLength: 64,
-        },
-        {
-          key: 'street',
-          label: 'Street',
-          requiredFor: [],
-          notApplicableFor: [],
-          maxLength: 120,
-        },
-        {
-          key: 'city',
-          label: 'City',
-          requiredFor: [],
-          notApplicableFor: [],
-          maxLength: 80,
-        },
-      ],
-      identifierTemplate: '{estate_slug}-{{plot}}',
-      identifierMax: 64,
-    },
-    configVersion: 1,
-  });
 
   const residentFinanceService = new ResidentFinanceService({
     finance: new PrismaFinanceRepository(prisma),
@@ -234,7 +200,6 @@ beforeAll(async () => {
     drafts,
     properties,
     estates,
-    loadConfig: loadConfigForTest,
   });
 
   const loadEstateId = async (orgId: string, userId: string): Promise<string | null> => {
@@ -526,11 +491,11 @@ describe('resident dashboard home (S11)', () => {
       data: {
         organizationId,
         estateId,
-        typeKey: 'house',
+        kind: 'LAND',
         identifier: `DASH-OTHER-${uniqueSuffix()}`,
-        unitTypeKey: null,
-        parentPropertyId: null,
-        addressComponents: { plot: '32', street: 'Dashboard Road', city: 'Lagos' },
+        streetName: 'Test Street',
+        plotNumber: '1',
+        plotName: 'Test plot',
         name: null,
       },
     });

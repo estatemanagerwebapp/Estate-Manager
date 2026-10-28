@@ -1,21 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Home,
-  Archive,
-  Pencil,
-  RotateCcw,
-  MapPin,
-  Tag,
-  Link as LinkIcon,
-  Trash2,
-} from 'lucide-react';
+import { ArrowLeft, Home, Archive, Pencil, RotateCcw, MapPin, Tag, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { PropertyDto, PropertyStatus } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useApiQuery } from '../../api/query';
-import { usePropertyOptions } from '../../api/hooks';
 import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { useConfirm } from '../../components/dialog';
@@ -35,11 +24,11 @@ import {
 
 /**
  * Property detail. Renders the registry record as a readable document:
- * identifier (immutable code), type, estate, structured
- * address, lifecycle dates and the parent property (when set).
+ * identifier (immutable code), kind, house type, typed address fields,
+ * lifecycle dates and the estate.
  *
- * The identifier is immutable — the UI never offers to edit it. Name,
- * status and address components are editable, matching the API's PATCH
+ * The identifier is immutable — the UI never offers to edit it. Status, name
+ * and the typed address fields are editable, matching the API's PATCH
  * contract (`UpdatePropertyInput`).
  */
 export function PropertyDetailPage() {
@@ -47,7 +36,6 @@ export function PropertyDetailPage() {
   const can = useCan();
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
-  const { view } = usePropertyOptions(true);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -136,7 +124,7 @@ export function PropertyDetailPage() {
     if (!property) return;
     const ok = await confirm({
       title: 'Permanently delete this property?',
-      body: `The identifier ${property.identifier} will be released for re-registration within this estate. This action cannot be undone. Properties with child units cannot be deleted.`,
+      body: `The identifier ${property.identifier} will be released for re-registration within this estate. This action cannot be undone.`,
       danger: true,
     });
     if (!ok) return;
@@ -219,7 +207,8 @@ export function PropertyDetailPage() {
               </code>
               <span className="inline-flex items-center gap-1">
                 <Tag aria-hidden size={11} />
-                {property.typeLabel || property.typeKey}
+                {property.kindLabel}
+                {property.houseTypeLabel ? ` · ${property.houseTypeLabel}` : ''}
               </span>
               {estate && (
                 <span className="inline-flex items-center gap-1">
@@ -288,58 +277,39 @@ export function PropertyDetailPage() {
         <CardBody>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm sm:grid-cols-3">
             <Fact label="Name">
-              true ? (<span className="font-medium">{property.identifier}</span>) : (
-              <span className="text-(--color-ink-muted)">Not set</span>)
+              {property.name ? (
+                <span className="font-medium">{property.name}</span>
+              ) : (
+                <span className="text-(--color-ink-muted)">Not set</span>
+              )}
             </Fact>
             <Fact label="Identifier">
               <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">
                 {property.identifier}
               </code>
             </Fact>
-            <Fact label="Type">{property.typeLabel || property.typeKey}</Fact>
-            {property.houseTypeKey && (
-              <Fact label="House type">{property.houseTypeLabel || property.houseTypeKey}</Fact>
-            )}
+            <Fact label="Type">{property.kindLabel}</Fact>
+            {property.houseTypeLabel && <Fact label="House type">{property.houseTypeLabel}</Fact>}
             <Fact label="Status">
               <Badge tone={statusTone(property.status)}>{isArchived ? 'Archived' : 'Active'}</Badge>
             </Fact>
             <Fact label="Created">{new Date(property.createdAt).toLocaleDateString()}</Fact>
             <Fact label="Updated">{new Date(property.updatedAt).toLocaleDateString()}</Fact>
-            {property.parentProperty && (
-              <Fact label="Parent property">
-                <Link
-                  to={`/app/properties/${property.parentProperty.id}`}
-                  className="inline-flex items-center gap-1 font-medium text-(--color-primary) hover:opacity-80"
-                >
-                  <LinkIcon aria-hidden size={12} />
-                  {property.parentProperty.identifier}
-                </Link>
-              </Fact>
-            )}
           </dl>
 
           <div className="mt-6 border-t border-slate-100 pt-5">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-(--color-ink-muted)">
-              Address components
+              Address
             </h3>
-            {view && view.addressComponents.length > 0 ? (
-              <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {view.addressComponents.map((component) => (
-                  <div key={component.key}>
-                    <dt className="text-xs text-(--color-ink-muted)">{component.label}</dt>
-                    <dd className="mt-0.5 text-sm">
-                      {property.addressComponents[component.key] || (
-                        <span className="text-(--color-ink-muted)">—</span>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="mt-3 text-xs text-(--color-ink-muted)">
-                No address components are configured for this organization.
-              </p>
-            )}
+            <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Fact label="Street name">{property.streetName || '—'}</Fact>
+              {property.houseNumber && <Fact label="House number">{property.houseNumber}</Fact>}
+              {property.blockName && <Fact label="Block name">{property.blockName}</Fact>}
+              {property.floorNumber && <Fact label="Floor number">{property.floorNumber}</Fact>}
+              {property.unitNumber && <Fact label="Unit number">{property.unitNumber}</Fact>}
+              {property.plotNumber && <Fact label="Plot number">{property.plotNumber}</Fact>}
+              {property.plotName && <Fact label="Plot name">{property.plotName}</Fact>}
+            </dl>
           </div>
         </CardBody>
       </Card>
@@ -380,31 +350,80 @@ function PropertyEditForm({
   onCancel: () => void;
 }) {
   const toast = useToast();
-  const { view } = usePropertyOptions(true);
-  const componentLabels = useMemo(
-    () => new Map((view?.addressComponents ?? []).map((c) => [c.key, c.label])),
-    [view],
-  );
   const [status, setStatus] = useState<PropertyStatus>(property.status);
-  const [components, setComponents] = useState<Record<string, string>>(() => ({
-    ...property.addressComponents,
-  }));
+  const [name, setName] = useState(property.name ?? '');
+  const [fields, setFields] = useState({
+    streetName: property.streetName,
+    houseNumber: property.houseNumber ?? '',
+    blockName: property.blockName ?? '',
+    floorNumber: property.floorNumber ?? '',
+    unitNumber: property.unitNumber ?? '',
+    plotNumber: property.plotNumber ?? '',
+    plotName: property.plotName ?? '',
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const showsHouseFields = property.kind !== 'LAND';
+  const usesUnitFields = property.houseTypeRequiresUnitFields;
+  const showsLandFields = property.kind !== 'HOUSE';
+
+  function updateField(field: keyof typeof fields, value: string) {
+    setFields((current) => ({ ...current, [field]: value }));
+  }
 
   async function handleSubmit() {
+    const localErrors: Record<string, string> = {};
+    if (!fields.streetName.trim()) localErrors.streetName = 'Street name is required.';
+    if (showsHouseFields) {
+      if (usesUnitFields) {
+        if (!fields.blockName.trim()) localErrors.blockName = 'Block name is required.';
+        if (!fields.floorNumber.trim()) localErrors.floorNumber = 'Floor number is required.';
+        if (!fields.unitNumber.trim()) localErrors.unitNumber = 'Unit number is required.';
+      } else if (!fields.houseNumber.trim()) {
+        localErrors.houseNumber = 'House number is required.';
+      }
+    }
+    if (showsLandFields) {
+      if (!fields.plotNumber.trim()) localErrors.plotNumber = 'Plot number is required.';
+      if (!fields.plotName.trim()) localErrors.plotName = 'Plot name is required.';
+    }
+    if (Object.keys(localErrors).length > 0) {
+      setFieldErrors(localErrors);
+      setError('Fix the highlighted fields and try again.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
+    setFieldErrors({});
     try {
       const result = await api.updateProperty(property.id, {
         status,
-        addressComponents: components,
+        name: name.trim() || null,
+        streetName: fields.streetName.trim(),
+        houseNumber: showsHouseFields && !usesUnitFields ? fields.houseNumber.trim() : null,
+        blockName: showsHouseFields && usesUnitFields ? fields.blockName.trim() : null,
+        floorNumber: showsHouseFields && usesUnitFields ? fields.floorNumber.trim() : null,
+        unitNumber: showsHouseFields && usesUnitFields ? fields.unitNumber.trim() : null,
+        plotNumber: showsLandFields ? fields.plotNumber.trim() : null,
+        plotName: showsLandFields ? fields.plotName.trim() : null,
       });
       toast.success('Property updated.');
       onSaved(result.property);
       onCancel();
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not save the property.');
+      if (err instanceof ApiRequestError) {
+        if (err.details && err.details.length > 0) {
+          const next: Record<string, string> = {};
+          for (const detail of err.details) next[detail.path || 'form'] = detail.message;
+          setFieldErrors(next);
+        }
+        setError(err.message);
+      } else {
+        setError('Could not save the property.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -413,10 +432,10 @@ function PropertyEditForm({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs font-medium text-(--color-ink-muted)">
-        Edit the status and address components. The identifier is immutable.
+        Edit the status, name and typed address fields. The identifier is immutable.
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Property type">
+        <Field label="Status">
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as PropertyStatus)}
@@ -426,23 +445,87 @@ function PropertyEditForm({
             <option value="ARCHIVED">Archived</option>
           </select>
         </Field>
+        <Field label="Property name" error={fieldErrors.name}>
+          <input
+            className={inputClass}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={120}
+          />
+        </Field>
       </div>
 
-      {Object.keys(components).length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {Object.keys(components).map((key) => (
-            <Field key={key} label={componentLabels.get(key) ?? key}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Street name (required)" error={fieldErrors.streetName}>
+          <input
+            className={inputClass}
+            value={fields.streetName}
+            onChange={(event) => updateField('streetName', event.target.value)}
+            maxLength={120}
+          />
+        </Field>
+
+        {showsHouseFields && usesUnitFields && (
+          <>
+            <Field label="Block name (required)" error={fieldErrors.blockName}>
               <input
                 className={inputClass}
-                value={components[key] ?? ''}
-                onChange={(event) =>
-                  setComponents((current) => ({ ...current, [key]: event.target.value }))
-                }
+                value={fields.blockName}
+                onChange={(event) => updateField('blockName', event.target.value)}
+                maxLength={64}
               />
             </Field>
-          ))}
-        </div>
-      )}
+            <Field label="Floor number (required)" error={fieldErrors.floorNumber}>
+              <input
+                className={inputClass}
+                value={fields.floorNumber}
+                onChange={(event) => updateField('floorNumber', event.target.value)}
+                maxLength={16}
+              />
+            </Field>
+            <Field label="Unit number (required)" error={fieldErrors.unitNumber}>
+              <input
+                className={inputClass}
+                value={fields.unitNumber}
+                onChange={(event) => updateField('unitNumber', event.target.value)}
+                maxLength={32}
+              />
+            </Field>
+          </>
+        )}
+
+        {showsHouseFields && !usesUnitFields && (
+          <Field label="House number (required)" error={fieldErrors.houseNumber}>
+            <input
+              className={inputClass}
+              value={fields.houseNumber}
+              onChange={(event) => updateField('houseNumber', event.target.value)}
+              maxLength={32}
+            />
+          </Field>
+        )}
+
+        {showsLandFields && (
+          <>
+            <Field label="Plot number (required)" error={fieldErrors.plotNumber}>
+              <input
+                className={inputClass}
+                value={fields.plotNumber}
+                onChange={(event) => updateField('plotNumber', event.target.value)}
+                maxLength={32}
+              />
+            </Field>
+            <Field label="Plot name (required)" error={fieldErrors.plotName}>
+              <input
+                className={inputClass}
+                value={fields.plotName}
+                onChange={(event) => updateField('plotName', event.target.value)}
+                maxLength={64}
+              />
+            </Field>
+          </>
+        )}
+      </div>
 
       {error && (
         <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">

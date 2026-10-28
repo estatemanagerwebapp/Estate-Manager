@@ -5,10 +5,10 @@
  * / imports modules in `apps/api` are the ones that produce them.
  *
  * Identifier philosophy: a property's `identifier` is a canonical,
- * human-facing registration code derived at create time from configured
- * address components via a central template. It is NOT a substitute for the
- * stable database UUID (`id`) used in relationships, and it is never
- * re-derived or silently rewritten after creation.
+ * human-facing registration code derived at create time from the typed
+ * kind/house-type/address fields by one central formatter. It is NOT a
+ * substitute for the stable database UUID (`id`) used in relationships, and it
+ * is never re-derived or silently rewritten after creation.
  */
 
 // --- Estates -----------------------------------------------------------------
@@ -65,83 +65,88 @@ export interface SetEstateStatusResponse {
 export const PROPERTY_STATUSES = ['ACTIVE', 'ARCHIVED'] as const;
 export type PropertyStatus = (typeof PROPERTY_STATUSES)[number];
 
+export const PROPERTY_KINDS = ['HOUSE', 'LAND', 'BOTH'] as const;
+export type PropertyKind = (typeof PROPERTY_KINDS)[number];
+
+export const PROPERTY_KIND_LABELS: Record<PropertyKind, string> = {
+  HOUSE: 'House',
+  LAND: 'Land',
+  BOTH: 'Both',
+};
+
 /**
- * Structured address components. Keys are defined by the organization
- * configuration (`propertyOptions.addressComponents`), not hardcoded.
- * Values are strings; leading zeros are preserved (values are never coerced
- * to numbers).
+ * A row from the organization's real house-type catalogue. `requiresUnitFields`
+ * is the address-shape switch: apartment/flat use block + floor + unit, while
+ * bungalow/terrace/duplex use a house number.
  */
-export type AddressComponents = Record<string, string>;
+export interface HouseTypeDto {
+  key: string;
+  label: string;
+  requiresUnitFields: boolean;
+  active: boolean;
+}
+
+export interface HouseTypesResponse {
+  houseTypes: HouseTypeDto[];
+}
 
 export interface PropertyDto {
   id: string;
   estateId: string;
   /**
-   * Stable registration identifier, derived at create time from the
-   * configured identifier template. Immutable after creation.
+   * Stable registration identifier, derived at create time from the typed
+   * address fields. Immutable after creation.
    */
   identifier: string;
-  /**
-   * Human-facing name the organization gives this property. Distinct from
-   * the derived identifier; null for legacy/import-created records.
-   */
+  /** Human-facing name; null for legacy/import-created records. */
   name: string | null;
-  /**
-   * Config asset type key (e.g. `house`, `land`).
-   * Validated against the organization configuration at write time.
-   */
-  typeKey: string;
-  /** Human-facing label, when the configured type has one. */
-  typeLabel: string;
-  /**
-   * When `typeKey` is `house`, the configured nested house type
-   * (e.g. `bungalow`, `terrace`, `duplex`, `apartment`, `flat`).
-   * Null for land properties and for legacy rows created before this field.
-   */
-  houseTypeKey: string | null;
-  /** Human-facing label for the configured nested house type. */
+  kind: PropertyKind;
+  kindLabel: string;
+  /** House type key for HOUSE/BOTH; null for LAND. */
+  houseType: string | null;
   houseTypeLabel: string | null;
+  /** True when the house type uses block/floor/unit instead of a house number. */
+  houseTypeRequiresUnitFields: boolean;
+  streetName: string;
+  houseNumber: string | null;
+  blockName: string | null;
+  floorNumber: string | null;
+  unitNumber: string | null;
+  plotNumber: string | null;
+  plotName: string | null;
   status: PropertyStatus;
-  /** Parent property id for unit-in-building relationships; null when top-level. */
-  parentPropertyId: string | null;
-  parentProperty: {
-    id: string;
-    identifier: string;
-  } | null;
-  /**
-   * When this property is a unit (child of an apartment block etc.), the
-   * configured unit type key from the parent's permitted unit types.
-   */
-  unitTypeKey: string | null;
-  /**
-   * When this property's asset type requires units (e.g. apartment block),
-   * the configured default unit type key for new units under it.
-   */
-  defaultUnitTypeKey: string | null;
-  /** Raw structured address components as configured. */
-  addressComponents: AddressComponents;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreatePropertyInput {
   estateId: string;
-  typeKey: string;
-  /** For house properties: the nested house type key (bungalow, terrace, …). */
-  houseTypeKey?: string | null;
-  parentPropertyId?: string;
+  kind: PropertyKind;
+  /** Required for HOUSE and BOTH; must be an active house-type key. */
+  houseType?: string | null;
   /** Human-facing property name. Optional; import-created rows leave it null. */
   name?: string;
-  /** Address component values keyed by configured component key. */
-  addressComponents?: AddressComponents;
+  streetName: string;
+  houseNumber?: string | null;
+  blockName?: string | null;
+  floorNumber?: string | null;
+  unitNumber?: string | null;
+  plotNumber?: string | null;
+  plotName?: string | null;
 }
 
 export interface UpdatePropertyInput {
   status?: PropertyStatus;
   /** Human-facing property name; optional — left undefined means unchanged. */
   name?: string | null;
-  /** Address components may be updated; the identifier is NOT. */
-  addressComponents?: AddressComponents;
+  /** Address fields may be updated; the identifier is NOT re-derived. */
+  streetName?: string;
+  houseNumber?: string | null;
+  blockName?: string | null;
+  floorNumber?: string | null;
+  unitNumber?: string | null;
+  plotNumber?: string | null;
+  plotName?: string | null;
 }
 
 export interface PropertyListResponse {
@@ -153,37 +158,6 @@ export interface PropertyListResponse {
 
 export interface PropertyDetailResponse {
   property: PropertyDto;
-}
-
-// --- Property options (read-only config view) ----------------------------------
-
-export interface PropertyOptionsView {
-  /** Configuration version the options were resolved from. */
-  configVersion: number;
-  /** Whether a valid, complete identifier can currently be derived. */
-  identifierConfigured: boolean;
-  addressComponents: Array<{
-    key: string;
-    label: string;
-    /** Human-readable list of which asset types require this. */
-    requiredForLabels: string[];
-    /** Asset type keys where this component does not apply (overrides required). */
-    notApplicableFor: string[];
-    /** Optional regex the component value must match when supplied. */
-    pattern: string | null;
-    /** Maximum character length for the component value. */
-    maxLength: number;
-  }>;
-  /** The identifier template string, e.g. `{estate_slug}-{block}-{unit}`. */
-  identifierTemplate: string;
-  /** Maximum character length for the derived identifier. */
-  identifierMax: number;
-  /** Available asset type options (code + label + active). */
-  assetTypes: Array<{ key: string; label: string; active: boolean; detailKind: string }>;
-  /** Available unit type options. */
-  unitTypes: Array<{ key: string; label: string; bedrooms: number; active: boolean }>;
-  /** Available nested house type options (code + label + active). */
-  houseTypes: Array<{ key: string; label: string; active: boolean }>;
 }
 
 // --- Import batches ------------------------------------------------------------
@@ -292,29 +266,3 @@ export const PHASE2_AUDIT_EVENT_TYPES = [
 ] as const;
 
 export type Phase2AuditEventType = (typeof PHASE2_AUDIT_EVENT_TYPES)[number];
-
-// --- Property options update request -------------------------------------------
-
-/**
- * Request body for updating the property-options block of the organization
- * configuration. The caller must supply `baseVersion` for optimistic
- * concurrency; a stale version is refused with 409.
- */
-export interface UpdatePropertyOptionsRequest {
-  /** The config version the caller is building on. */
-  baseVersion: number;
-  /** The new property-options block. */
-  propertyOptions: {
-    addressComponents: Array<{
-      key: string;
-      label: string;
-      requiredFor: string[];
-      notApplicableFor: string[];
-      pattern?: string | null;
-      maxLength: number;
-    }>;
-      houseTypes: Array<{ key: string; label: string; active: boolean }>;
-      identifierTemplate: string;
-    identifierMax: number;
-  };
-}

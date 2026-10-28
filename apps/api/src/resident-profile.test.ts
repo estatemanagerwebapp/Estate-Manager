@@ -33,7 +33,6 @@ import { ResidentPropertiesService } from './modules/resident/properties.service
 import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
-import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 
 let prisma: PrismaClient;
 let app: Express;
@@ -93,56 +92,17 @@ beforeAll(async () => {
   const property = await properties.create({
     organizationId,
     estateId: estate.id,
-    typeKey: 'house',
+    kind: 'LAND',
     identifier: `PF-${uniqueSuffix()}`,
-    unitTypeKey: null,
-    parentPropertyId: null,
-    addressComponents: { plot: '12', street: 'Bishop Road', city: 'Lagos' },
+    streetName: 'Test Street',
+    plotNumber: '1',
+    plotName: 'Test plot',
     name: null,
   });
   propertyId = property.id;
 
   // Fake property config snapshot (asset types + address component labels),
   // matching the bootstrap shape the services consume.
-  const loadConfigForTest = async (): Promise<PropertyConfigSnapshot> => ({
-    assetTypes: [
-      {
-        key: 'house',
-        label: 'House',
-        detailKind: 'PROPERTY',
-        active: true,
-      },
-    ],
-    unitTypes: [],
-    propertyOptions: {
-      addressComponents: [
-        {
-          key: 'plot',
-          label: 'Plot Number',
-          requiredFor: [],
-          notApplicableFor: [],
-          maxLength: 64,
-        },
-        {
-          key: 'street',
-          label: 'Street',
-          requiredFor: [],
-          notApplicableFor: [],
-          maxLength: 120,
-        },
-        {
-          key: 'city',
-          label: 'City',
-          requiredFor: [],
-          notApplicableFor: [],
-          maxLength: 80,
-        },
-      ],
-      identifierTemplate: '{estate_slug}-{{plot}}',
-      identifierMax: 64,
-    },
-    configVersion: 1,
-  });
 
   const authService = new AuthService(
     users,
@@ -222,7 +182,6 @@ beforeAll(async () => {
         drafts,
         properties,
         estates,
-        loadConfig: loadConfigForTest,
       }),
     },
   });
@@ -404,19 +363,16 @@ describe('resident properties (S2)', () => {
 
     const property = properties[0];
     expect(property.identifier).toMatch(/^PF-/);
-    expect(property.typeKey).toBe('house');
-    expect(property.typeLabel).toBe('House');
+    expect(property.kind).toBe('LAND');
+    expect(property.kindLabel).toBe('Land');
     expect(property.status).toBe('ACTIVE');
     expect(property.estate.name).toBe('Profile Estate');
 
-    // The full address joins the component values in config order
-    // (plot → street → city), matching the stored components.
-    expect(property.fullAddress).toBe('12, Bishop Road, Lagos');
-    expect(property.addressComponents).toEqual({
-      plot: '12',
-      street: 'Bishop Road',
-      city: 'Lagos',
-    });
+    // The full address is assembled from the typed property columns.
+    expect(property.fullAddress).toBe('Test Street, Plot 1, Test plot');
+    expect(property.streetName).toBe('Test Street');
+    expect(property.plotNumber).toBe('1');
+    expect(property.plotName).toBe('Test plot');
   });
 
   it('returns an empty list for a user without an onboarding draft', async () => {

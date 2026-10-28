@@ -13,7 +13,6 @@ import { AppError } from '../../lib/errors.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { ImportService, ImportServiceContext } from './import.service.js';
-import type { PropertyConfigSnapshot } from '../properties/property.service.js';
 
 const IMPORT_READ = 'estate.read';
 const IMPORT_MANAGE = 'property.manage';
@@ -26,12 +25,13 @@ export interface ImportRouteOptions {
   sessions: PrismaSessionRepository;
   permissions: PermissionResolver;
   organizationId: string;
-  loadConfig: () => Promise<PropertyConfigSnapshot>;
+  /** Active organization-config version, stored as batch provenance. */
+  loadConfigVersion: () => Promise<number>;
 }
 
 /** Shared request helpers for the estate-scoped and batch-scoped import routers. */
 function importHelpers(options: ImportRouteOptions) {
-  const { importService, sessions, permissions, organizationId, loadConfig } = options;
+  const { importService, sessions, permissions, organizationId, loadConfigVersion } = options;
 
   const verifySession = (sessionId: string) => sessions.verify(sessionId);
   const authGuard = requireAuth(verifySession);
@@ -92,7 +92,7 @@ function importHelpers(options: ImportRouteOptions) {
     makeContext,
     param,
     asyncWrap,
-    loadConfig,
+    loadConfigVersion,
   };
 }
 
@@ -144,13 +144,13 @@ export function createImportEstateRouter(options: ImportRouteOptions): Router {
       }
 
       const context = h.makeContext(req, res);
-      const config = await h.loadConfig();
+      const configVersion = await h.loadConfigVersion();
 
       // Write the in-memory buffer to a temp file so exceljs can stream it.
       const tmpPath = `/tmp/silverstone-import-${Date.now()}-${file.originalname}`;
       await fs.writeFile(tmpPath, file.buffer);
       try {
-        const response = await h.importService.preview(context, config, {
+        const response = await h.importService.preview(context, configVersion, {
           estateId,
           filename: body.data.filename ?? file.originalname,
           filePath: tmpPath,
@@ -181,19 +181,11 @@ export function createImportEstateRouter(options: ImportRouteOptions): Router {
     h.readPermission,
     h.asyncWrap(async (req, res) => {
       const context = h.makeContext(req, res);
-      const config = await h.loadConfig();
-      const info = await h.importService.template(context, config, h.param(req, 'estateId'));
-
-      const { buildTemplate } = await import('./excel-parser.js');
-      const { buffer: templateBuffer } = buildTemplate(
-        { id: info.estateId, slug: '', name: info.estateName },
-        config.assetTypes.map((type) => ({
-          key: type.key,
-          label: type.label,
-          active: type.active,
-          detailKind: type.detailKind,
-        })),
-        config.propertyOptions,
+      const configVersion = await h.loadConfigVersion();
+      const info = await h.importService.template(context, configVersion, h.param(req, 'estateId'));
+      const { buffer: templateBuffer } = await h.importService.templateWorkbook(
+        context,
+        info.estateId,
         info.instructions,
       );
 
@@ -242,6 +234,8 @@ export function createImportBatchRouter(options: ImportRouteOptions): Router {
     h.authGuard,
     h.managePermission,
     h.asyncWrap(async (req, res) => {
+      // `confirmLegacySampleRows` is accepted for wire compatibility and
+      // ignored: new imports no longer carry legacy sample rows.
       const body = z
         .object({ confirmLegacySampleRows: z.boolean().optional() })
         .safeParse(req.body ?? {});
@@ -249,13 +243,7 @@ export function createImportBatchRouter(options: ImportRouteOptions): Router {
         throw new AppError(400, 'VALIDATION_ERROR', 'Invalid import commit request');
       }
       const context = h.makeContext(req, res);
-      const config = await h.loadConfig();
-      const response = await h.importService.commit(
-        context,
-        h.param(req, 'batchId'),
-        config.configVersion,
-        body.data.confirmLegacySampleRows ?? false,
-      );
+      const response = await h.importService.commit(context, h.param(req, 'batchId'));
       res.status(200).json({ data: response });
     }),
   );

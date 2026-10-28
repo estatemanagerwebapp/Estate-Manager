@@ -113,7 +113,7 @@ export function ResidentDashboardPage() {
                 <p className="text-xs text-(--color-ink-muted)">{primaryProperty.estate.name}</p>
                 <p className="text-xs text-(--color-ink-muted)">{primaryProperty.fullAddress}</p>
                 <Badge tone={primaryProperty.status === 'ACTIVE' ? 'success' : 'warning'}>
-                  {primaryProperty.typeLabel}
+                  {primaryProperty.kindLabel}
                 </Badge>
               </div>
             )}

@@ -10,9 +10,7 @@ import { useAuth } from '../auth/AuthContext';
  */
 export function signedInDestination(user: UserDto): string {
   if (user.role === 'RESIDENT') {
-    return user.mustChangePassword
-      ? '/resident/app/change-password'
-      : '/resident/app/dashboard';
+    return user.mustChangePassword ? '/resident/app/change-password' : '/resident/app/dashboard';
   }
   return '/app';
 }

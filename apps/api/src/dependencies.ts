@@ -52,11 +52,10 @@ import { UserService } from './modules/auth/user.service.js';
 import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { EstateService } from './modules/estates/estate.service.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
+import { PrismaHouseTypeRepository } from './modules/properties/house-type-repository.js';
 import { PropertyService } from './modules/properties/property.service.js';
 import { PrismaImportRepository } from './modules/imports/import-repository.js';
 import { ImportService } from './modules/imports/import.service.js';
-import { PropertyOptionsService } from './modules/organization/property-options.service.js';
-import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
 
 export interface AppDependencies {
   checkDatabase: () => Promise<void>;
@@ -87,8 +86,6 @@ export interface AppDependencies {
   propertyService: PropertyService;
   /** Phase 2 — bulk import. */
   importService: ImportService;
-  /** Phase 2 — property options (read + update with optimistic concurrency). */
-  propertyOptionsService: PropertyOptionsService;
   /** Phase 2 — resident onboarding (persistent code, payment-gated). */
   residentOnboardingService: ResidentOnboardingService;
   /** Phase 3 (S3) — resident finance (invoices, payments, transactions). */
@@ -113,8 +110,8 @@ export interface AppDependencies {
     organizationId: string,
     propertyId: string,
   ) => Promise<PropertyDetail | null>;
-  /** Loads the resolved configuration (asset types + property options + version). */
-  loadConfig: () => Promise<PropertyConfigSnapshot>;
+  /** Active configuration version, stored as import-batch provenance. */
+  loadConfigVersion: () => Promise<number>;
 }
 
 export async function createAppDependencies(): Promise<AppDependencies> {
@@ -158,33 +155,23 @@ export async function createAppDependencies(): Promise<AppDependencies> {
   const estateService = new EstateService(estates, audit);
 
   const properties = new PrismaPropertyRepository(prisma);
-  const propertyService = new PropertyService(properties, estates, audit);
+  const houseTypes = new PrismaHouseTypeRepository(prisma);
+  const propertyService = new PropertyService(properties, estates, houseTypes, audit);
 
   const importRepo = new PrismaImportRepository(prisma);
-  const importService = new ImportService(importRepo, estates, properties, audit, prisma);
-
-  /**
-   * Loads the resolved organization configuration (asset types + property
-   * options + active version) at request time. The property and import
-   * services depend on it for type-key validation and identifier derivation.
-   */
-  const loadConfig = async (): Promise<PropertyConfigSnapshot> => {
-    const resolved = await configService.resolve();
-    return {
-      assetTypes: resolved.config.assetModel.types,
-      unitTypes: resolved.config.assetModel.unitTypes,
-      propertyOptions: resolved.config.propertyOptions,
-      configVersion: resolved.version,
-    };
-  };
-
-  const propertyOptionsService = new PropertyOptionsService(
-    configService,
-    repository,
+  const importService = new ImportService(
+    importRepo,
+    estates,
+    properties,
+    houseTypes,
     audit,
-    loadConfig,
-    env.ORGANIZATION_SLUG,
+    prisma,
   );
+
+  const loadConfigVersion = async (): Promise<number> => {
+    const resolved = await configService.resolve();
+    return resolved.version;
+  };
 
   // Phase 2 — resident onboarding (persistent code, payment-gated).
   const residentDrafts = new PrismaResidentOnboardingRepository(prisma);
@@ -349,7 +336,6 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     estateService,
     propertyService,
     importService,
-    propertyOptionsService,
     residentOnboardingService,
     residentFinanceService,
     residentCodesService,
@@ -361,7 +347,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,
-    loadConfig,
+    loadConfigVersion,
   };
 }
 

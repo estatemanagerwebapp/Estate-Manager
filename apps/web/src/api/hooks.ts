@@ -1,51 +1,24 @@
-import type { PropertyOptionsView, AuditEventDto } from '@silverstone/shared';
+import type { HouseTypesResponse, AuditEventDto } from '@silverstone/shared';
 import { api, ApiRequestError } from './client';
 import { useApiQuery } from './query';
 
 /**
- * Shared hooks that fetch the organisation's property-options view.
- *
- * The options view carries the `configVersion` that the property-options
- * screen relies on for optimistic-concurrency checks, plus the address
- * components and type catalogues the register forms render.
+ * Loads the active house-type catalogue. This is a real domain table, so the
+ * form and the import template read the same source.
  */
-
-/**
- * Loads the property-options view. The request goes through the shared API
- * client so it inherits the envelope unwrapping, the structured
- * `ApiRequestError` shape and the global 401 → clear-session handling.
- */
-export function usePropertyOptions(enabled: boolean) {
+export function useHouseTypes(enabled: boolean) {
   const { data, loading, error } = useApiQuery(
-    ['property-options'],
-    () => api.getPropertyOptions(),
-    'Could not load property options.',
+    ['house-types'],
+    () => api.getHouseTypes(),
+    'Could not load house types.',
     enabled,
   );
 
   return {
-    view: data as PropertyOptionsView | null,
+    view: data as HouseTypesResponse | null,
     loading,
     error,
   };
-}
-
-/**
- * The asset types that can be assigned to a new top-level property.
- *
- * The API's `assertConfiguredTypeKey` accepts any *active* asset type —
- * including `LAND_PARCEL` kinds — so the client mirrors exactly that rule
- * and does not narrow the list by `detailKind`. The unit-type catalogue is
- * a separate list and is not registerable as a top-level property.
- */
-export function registerableAssetTypes(view: PropertyOptionsView | null): Array<{
-  key: string;
-  label: string;
-}> {
-  if (!view) return [];
-  return view.assetTypes
-    .filter((type) => type.active)
-    .map((type) => ({ key: type.key, label: type.label }));
 }
 
 /**

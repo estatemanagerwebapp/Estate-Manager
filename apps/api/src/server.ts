@@ -59,7 +59,6 @@ async function buildApp(): Promise<HttpHandler> {
     drafts: deps.residentOnboarding,
     properties: deps.properties,
     estates: deps.estates,
-    loadConfig: deps.loadConfig,
   });
   const residentDashboardService = new ResidentDashboardService({
     profile: residentProfileService,
@@ -91,20 +90,13 @@ async function buildApp(): Promise<HttpHandler> {
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,
       organizationId: deps.organizationId,
-      loadConfig: deps.loadConfig,
     },
     imports: {
       importService: deps.importService,
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,
       organizationId: deps.organizationId,
-      loadConfig: deps.loadConfig,
-    },
-    propertyOptions: {
-      propertyOptionsService: deps.propertyOptionsService,
-      sessions: deps.auth.sessions,
-      permissions: deps.auth.permissions,
-      organizationId: deps.organizationId,
+      loadConfigVersion: deps.loadConfigVersion,
     },
     onboarding: {
       residentOnboarding: deps.residentOnboardingService,
@@ -189,8 +181,7 @@ function classifyDatabaseError(error: unknown): string | undefined {
       message?: unknown;
       cause?: unknown;
     };
-    const rawCode =
-      typeof candidate.errorCode === 'string' ? candidate.errorCode : candidate.code;
+    const rawCode = typeof candidate.errorCode === 'string' ? candidate.errorCode : candidate.code;
 
     if (typeof rawCode === 'string') {
       if (/^P\d{4}$/.test(rawCode)) {
@@ -200,10 +191,14 @@ function classifyDatabaseError(error: unknown): string | undefined {
     }
 
     const message = typeof candidate.message === 'string' ? candidate.message : '';
-    if (/Authentication failed|password authentication failed|credentials.*not valid/i.test(message)) {
+    if (
+      /Authentication failed|password authentication failed|credentials.*not valid/i.test(message)
+    ) {
       return 'the database rejected the credentials';
     }
-    if (/too many clients|max clients|pool_size|connection pool.*(exhausted|timed out)/i.test(message)) {
+    if (
+      /too many clients|max clients|pool_size|connection pool.*(exhausted|timed out)/i.test(message)
+    ) {
       return 'the database connection pool is exhausted';
     }
     if (/Timed out|timeout/i.test(message)) return 'the database connection timed out';

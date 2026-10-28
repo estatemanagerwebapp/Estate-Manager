@@ -155,8 +155,10 @@ async function seedData(): Promise<void> {
       estateId: estate.id,
       organizationId,
       identifier: 'BLK-A-1',
-      typeKey: 'house',
-      addressComponents: {},
+      kind: 'LAND',
+      streetName: 'Test Street',
+      plotNumber: '1',
+      plotName: 'Test plot',
     },
   });
   await prisma.property.create({
@@ -164,8 +166,10 @@ async function seedData(): Promise<void> {
       estateId: estate.id,
       organizationId,
       identifier: 'BLK-A-2',
-      typeKey: 'house',
-      addressComponents: {},
+      kind: 'LAND',
+      streetName: 'Test Street',
+      plotNumber: '1',
+      plotName: 'Test plot',
       status: 'ARCHIVED',
     },
   });

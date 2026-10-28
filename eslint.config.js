@@ -50,7 +50,7 @@ export default tseslint.config(
     files: [
       '**/*.config.{ts,js,mjs}',
       'eslint.config.js',
-      'prisma/**/*.ts',
+      'prisma/**/*.{ts,mjs}',
       'scripts/**/*.ts',
       '**/scripts/**/*.mjs',
       'apps/api/src/e2e/**/*.ts',

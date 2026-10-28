@@ -36,7 +36,6 @@ async function main(): Promise<void> {
     drafts: deps.residentOnboarding,
     properties: deps.properties,
     estates: deps.estates,
-    loadConfig: deps.loadConfig,
   });
   const residentDashboardService = new ResidentDashboardService({
     profile: residentProfileService,
@@ -72,20 +71,13 @@ async function main(): Promise<void> {
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,
       organizationId: deps.organizationId,
-      loadConfig: deps.loadConfig,
     },
     imports: {
       importService: deps.importService,
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,
       organizationId: deps.organizationId,
-      loadConfig: deps.loadConfig,
-    },
-    propertyOptions: {
-      propertyOptionsService: deps.propertyOptionsService,
-      sessions: deps.auth.sessions,
-      permissions: deps.auth.permissions,
-      organizationId: deps.organizationId,
+      loadConfigVersion: deps.loadConfigVersion,
     },
     onboarding: {
       residentOnboarding: deps.residentOnboardingService,

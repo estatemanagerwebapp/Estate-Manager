@@ -602,13 +602,14 @@ model AuditEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2 — Estate management, property registry and bulk import.
+// Estate management, property registry and bulk import.
 //
-// The property registry is the concrete realization of the approved asset
-// architecture: configuration-driven asset types (`assetModel.types`) with
-// stable identity. A property's `identifier` is a human-facing registration
-// code derived at create time from configured address components; it is NOT a
-// substitute for the stable UUID `id` used by relationships.
+// The property registry is intentionally explicit: a property is a House, a
+// Land parcel, or Both, and the shape of each kind lives in typed columns. It
+// is NOT driven by a runtime JSON configuration. A property's `identifier` is
+// a human-facing registration code derived at create time from the typed
+// address fields; it is NOT a substitute for the stable UUID `id` used by
+// relationships.
 // ---------------------------------------------------------------------------
 
 /// A managed community or development. The natural duplicate-detection key
@@ -639,41 +640,74 @@ model Estate {
   @@map("estates")
 }
 
-/// A registered physical property (asset): building, unit, or land parcel.
-/// `typeKey` references a configured asset type; `parentPropertyId` models
-/// unit-in-building relationships with depth-1 (no unit-in-unit).
+/// The organization's house-type catalogue. This is a real domain table, not a
+/// JSON settings block: each row supplies a stable key, a display label and the
+/// address shape the type requires. `requiresUnitFields` distinguishes
+/// apartment/flat (block + floor + unit) from bungalow/terrace/duplex (house
+/// number). New organizations insert their own rows; the property module reads
+/// this table directly.
+model HouseType {
+  key                String   @id @db.VarChar(48)
+  label              String   @db.VarChar(80)
+  requiresUnitFields Boolean  @default(false) @map("requires_unit_fields")
+  active             Boolean  @default(true)
+  sortOrder          Int      @default(0) @map("sort_order")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  properties Property[]
+
+  @@map("house_types")
+}
+
+enum PropertyKind {
+  HOUSE
+  LAND
+  BOTH
+}
+
+/// A registered physical property: a house, a land parcel, or a mixed
+/// house-on-land record. The kind is explicit and the address fields are typed
+/// columns; there is no runtime JSON address shape. `identifier` is derived once
+/// at create time and is immutable.
 model Property {
-  id                String   @id @default(uuid()) @db.Uuid
-  estateId          String   @map("estate_id") @db.Uuid
-  organizationId    String   @map("organization_id") @db.Uuid
-  /// Canonical registration identifier, derived at create time from the
-  /// configured identifier template + address components. Immutable.
-  identifier        String   @db.VarChar(200)
-  /// Config asset type key, validated against the organization configuration
-  /// at write time. Plain string so the database can evolve independently.
-  typeKey           String   @map("type_key") @db.VarChar(48)
-  /// For a unit property: the configured unit type key from the parent's
-  /// permitted unit types. Null for top-level properties.
-  unitTypeKey       String?  @map("unit_type_key") @db.VarChar(48)
-  /// For a house property: the configured nested house type (bungalow,
-  /// terrace, duplex, apartment, flat). Null for land properties.
-  houseTypeKey      String?  @map("house_type_key") @db.VarChar(48)
-  /// Parent property for unit-in-building relationships. Depth 1: a
-  /// property that has a parent cannot itself have children.
-  parentPropertyId  String?  @map("parent_property_id") @db.Uuid
-  /// Structured address component values, keyed by configured component key.
-  /// Leading zeros are preserved (string values, never coerced to numbers).
-  addressComponents Json     @default("{}") @map("address_components")
-  /// Human-facing name the organization gives this property. Distinct from
-  /// the derived `identifier`; null for legacy/import-created records.
-  name              String?  @db.VarChar(120)
-  status            String   @default("ACTIVE") @db.VarChar(20)
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String       @id @default(uuid()) @db.Uuid
+  estateId       String       @map("estate_id") @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  /// Canonical registration identifier, derived at create time from the typed
+  /// address fields. Immutable.
+  identifier     String       @db.VarChar(200)
+  /// House, land, or a mixed house-on-land record.
+  kind           PropertyKind
+  /// Required for HOUSE and BOTH; null for LAND. References the house-type
+  /// catalogue row that defines the address shape.
+  houseTypeKey   String?      @map("house_type_key") @db.VarChar(48)
+
+  // --- Shared / house fields -------------------------------------------------
+  /// Street name. Required for every property kind.
+  streetName     String       @map("street_name") @db.VarChar(120)
+  /// Used by bungalow / terrace / duplex (house types without unit fields).
+  houseNumber    String?      @map("house_number") @db.VarChar(32)
+  /// Used by apartment / flat (house types with unit fields).
+  blockName      String?      @map("block_name") @db.VarChar(64)
+  floorNumber    String?      @map("floor_number") @db.VarChar(16)
+  unitNumber     String?      @map("unit_number") @db.VarChar(32)
+
+  // --- Land fields -----------------------------------------------------------
+  /// Plot number/identifier. Required for LAND and BOTH.
+  plotNumber     String?      @map("plot_number") @db.VarChar(32)
+  /// Human-facing plot name. Required for LAND and BOTH.
+  plotName       String?      @map("plot_name") @db.VarChar(64)
+
+  /// Human-facing name the organization gives this property. Distinct from the
+  /// derived `identifier`; null for legacy/import-created records.
+  name           String?      @db.VarChar(120)
+  status         String       @default("ACTIVE") @db.VarChar(20)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   estate              Estate               @relation(fields: [estateId], references: [id], onDelete: Cascade)
-  parentProperty      Property?            @relation("propertyHierarchy", fields: [parentPropertyId], references: [id], onDelete: SetNull)
-  childProperties     Property[]           @relation("propertyHierarchy")
+  houseType           HouseType?           @relation(fields: [houseTypeKey], references: [key], onDelete: Restrict)
   residentOnboardings ResidentOnboarding[]
   invoices            Invoice[]
   accessCodes         AccessCode[]
@@ -686,8 +720,8 @@ model Property {
   /// duplicate is ever written even under a race.
   @@unique([estateId, identifier])
   @@index([organizationId, status])
-  @@index([estateId, typeKey])
-  @@index([parentPropertyId])
+  @@index([estateId, kind])
+  @@index([houseTypeKey])
   @@map("properties")
 }
 
@@ -698,20 +732,22 @@ model Property {
 /// `COMMIT_FAILED` (transaction aborted; re-validate then retry).
 /// `FAILED` marks a batch whose parsing itself blew up mid-write.
 ///
-/// The `fingerprint` (SHA-256 of the raw file bytes) is the idempotency key:
-/// re-uploading the same file re-uses the open batch instead of creating a
-/// duplicate, and a committed fingerprint is rejected with the existing batch id.
+/// The `fingerprint` (SHA-256 of the raw file bytes) is the idempotency key
+/// within one estate: re-uploading the same file re-uses the open batch
+/// instead of creating a duplicate, and a committed fingerprint is rejected
+/// with the existing batch id. The same workbook can be uploaded to a second
+/// estate without colliding with the first estate's batch.
 model ImportBatch {
   id             String      @id @default(uuid()) @db.Uuid
   estateId       String      @map("estate_id") @db.Uuid
   organizationId String      @map("organization_id") @db.Uuid
   filename       String      @db.VarChar(255)
   /// SHA-256 hex of the uploaded file contents.
-  fingerprint    String      @unique @db.VarChar(64)
+  fingerprint    String      @db.VarChar(64)
   status         String      @default("PREVIEWED") @db.VarChar(20)
-  /// The organization configuration version pinned at upload time. The
-  /// commit endpoint refuses to commit when the active config has advanced
-  /// past this version (config drift), forcing a re-validation.
+  /// Provenance only. Property shape and identifier rules are code-owned, so
+  /// the commit path does not block when the organization config version
+  /// advances between preview and commit.
   configVersion  Int         @map("config_version")
   /// Aggregated counts, updated at parse and at commit.
   counts         Json        @default("{}") @map("counts")
@@ -722,6 +758,7 @@ model ImportBatch {
 
   estate Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
 
+  @@unique([estateId, fingerprint])
   @@index([estateId, status])
   @@map("import_batches")
 }

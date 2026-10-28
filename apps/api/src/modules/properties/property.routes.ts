@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
-import type { PropertyService, PropertyConfigSnapshot } from './property.service.js';
+import type { PropertyService } from './property.service.js';
+import { PROPERTY_KINDS } from '@silverstone/shared';
 
 const PROPERTY_READ = 'property.read';
 const PROPERTY_MANAGE = 'property.manage';
@@ -14,23 +15,19 @@ export interface PropertyRouteOptions {
   sessions: PrismaSessionRepository;
   permissions: PermissionResolver;
   organizationId: string;
-  /**
-   * Loads the resolved organization configuration (asset types + property
-   * options) at request time, pinned to the active version. The service
-   * depends on it for type-key validation and identifier derivation.
-   */
-  loadConfig: () => Promise<PropertyConfigSnapshot>;
 }
 
 /**
  * Property registry surface. All routes are cookie-authenticated and gated by
- * `property.read` / `property.manage`. Type keys and address components are
- * always validated against the *resolved* organization configuration, never
- * against a client-supplied list.
+ * `property.read` / `property.manage`.
+ *
+ * The API is the authority for the address shape: the request carries typed
+ * fields, and the service validates them against the property kind and the
+ * selected house-type row. There is no runtime type/address configuration.
  */
 export function createPropertyRouter(options: PropertyRouteOptions): Router {
   const router = Router();
-  const { propertyService, sessions, permissions, organizationId, loadConfig } = options;
+  const { propertyService, sessions, permissions, organizationId } = options;
 
   const verifySession = (sessionId: string) => sessions.verify(sessionId);
   const authGuard = requireAuth(verifySession);
@@ -70,6 +67,27 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       })();
     };
 
+  const addressFields = {
+    streetName: z.string().trim().max(120).optional(),
+    houseNumber: z.string().trim().max(32).optional().nullable(),
+    blockName: z.string().trim().max(64).optional().nullable(),
+    floorNumber: z.string().trim().max(16).optional().nullable(),
+    unitNumber: z.string().trim().max(32).optional().nullable(),
+    plotNumber: z.string().trim().max(32).optional().nullable(),
+    plotName: z.string().trim().max(64).optional().nullable(),
+  };
+
+  // --- GET /properties/house-types ---------------------------------------------
+  router.get(
+    '/house-types',
+    authGuard,
+    readPermission,
+    asyncWrap(async (_req, res) => {
+      const response = await propertyService.listHouseTypes();
+      res.status(200).json({ data: response });
+    }),
+  );
+
   // --- GET /properties ---------------------------------------------------------
   router.get(
     '/',
@@ -79,7 +97,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const query = z
         .object({
           estateId: z.string().trim().max(64).optional(),
-          typeKey: z.string().trim().max(48).optional(),
+          kind: z.enum(PROPERTY_KINDS).optional(),
           status: z.string().trim().max(20).optional(),
           identifierContains: z.string().trim().max(200).optional(),
           page: z.coerce.number().int().min(1).optional(),
@@ -91,8 +109,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
         return;
       }
       const context = makeContext(req, res);
-      const config = await loadConfig();
-      const response = await propertyService.list(context, config, query.data);
+      const response = await propertyService.list(context, query.data);
       res.status(200).json({ data: response });
     }),
   );
@@ -106,11 +123,10 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const body = z
         .object({
           estateId: z.string().trim().min(1),
-          typeKey: z.string().trim().min(1).max(48),
-          houseTypeKey: z.string().trim().min(1).max(48).optional().nullable(),
-          parentPropertyId: z.string().trim().min(1).optional(),
-          name: z.string().trim().min(1).max(120).optional(),
-          addressComponents: z.record(z.string(), z.string()).optional(),
+          kind: z.enum(PROPERTY_KINDS),
+          houseType: z.string().trim().min(1).max(48).optional().nullable(),
+          name: z.string().trim().max(120).optional().nullable(),
+          ...addressFields,
         })
         .safeParse(req.body ?? {});
       if (!body.success) {
@@ -118,16 +134,19 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
         return;
       }
       const context = makeContext(req, res);
-      const config = await loadConfig();
-      const input = {
+      const property = await propertyService.create(context, {
         estateId: body.data.estateId,
-        typeKey: body.data.typeKey,
-        houseTypeKey: body.data.houseTypeKey ?? null,
-        parentPropertyId: body.data.parentPropertyId,
-        name: body.data.name,
-        addressComponents: body.data.addressComponents as Record<string, string> | undefined,
-      };
-      const property = await propertyService.create(context, config, input);
+        kind: body.data.kind,
+        houseType: body.data.houseType ?? null,
+        name: body.data.name ?? undefined,
+        streetName: body.data.streetName ?? '',
+        houseNumber: body.data.houseNumber ?? null,
+        blockName: body.data.blockName ?? null,
+        floorNumber: body.data.floorNumber ?? null,
+        unitNumber: body.data.unitNumber ?? null,
+        plotNumber: body.data.plotNumber ?? null,
+        plotName: body.data.plotName ?? null,
+      });
       res.status(201).json({ data: { property } });
     }),
   );
@@ -139,8 +158,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
     readPermission,
     asyncWrap(async (req, res) => {
       const context = makeContext(req, res);
-      const config = await loadConfig();
-      const response = await propertyService.detail(context, config, param(req, 'propertyId'));
+      const response = await propertyService.detail(context, param(req, 'propertyId'));
       res.status(200).json({ data: response });
     }),
   );
@@ -154,8 +172,8 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
       const body = z
         .object({
           status: z.enum(['ACTIVE', 'ARCHIVED']).optional(),
-          name: z.string().trim().min(1).max(120).optional().nullable(),
-          addressComponents: z.record(z.string(), z.string()).optional(),
+          name: z.string().trim().max(120).optional().nullable(),
+          ...addressFields,
         })
         .safeParse(req.body ?? {});
       if (!body.success) {
@@ -163,18 +181,17 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
         return;
       }
       const context = makeContext(req, res);
-      const config = await loadConfig();
-      const update = {
+      const property = await propertyService.update(context, param(req, 'propertyId'), {
         status: body.data.status,
         name: body.data.name,
-        addressComponents: body.data.addressComponents as Record<string, string> | undefined,
-      };
-      const property = await propertyService.update(
-        context,
-        config,
-        param(req, 'propertyId'),
-        update,
-      );
+        streetName: body.data.streetName,
+        houseNumber: body.data.houseNumber,
+        blockName: body.data.blockName,
+        floorNumber: body.data.floorNumber,
+        unitNumber: body.data.unitNumber,
+        plotNumber: body.data.plotNumber,
+        plotName: body.data.plotName,
+      });
       res.status(200).json({ data: { property } });
     }),
   );
@@ -186,8 +203,7 @@ export function createPropertyRouter(options: PropertyRouteOptions): Router {
     managePermission,
     asyncWrap(async (req, res) => {
       const context = makeContext(req, res);
-      const config = await loadConfig();
-      const property = await propertyService.archive(context, config, param(req, 'propertyId'));
+      const property = await propertyService.archive(context, param(req, 'propertyId'));
       res.status(200).json({ data: { property } });
     }),
   );

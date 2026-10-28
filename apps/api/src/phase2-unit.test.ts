@@ -1,418 +1,227 @@
 /**
- * Phase 2 unit tests: identifier derivation, hierarchy rules, estate service
- * rules, and property service rules. No database — pure functions and
- * repository fakes only.
+ * Phase 2 unit tests: identifier derivation, typed property rules, estate
+ * service rules, and import workbook parsing. No database.
  */
 import { describe, expect, it } from 'vitest';
-import { deriveIdentifier, identifierConfigured } from './lib/property-identifier.js';
-import { validateHierarchy, type HierarchyContext } from './modules/properties/property-rules.js';
-import type { PropertyOptions, AssetType } from '@silverstone/config-schema';
-import { validateAddressComponents } from './modules/properties/property.service.js';
-import type { PropertyConfigSnapshot } from './modules/properties/property.service.js';
+import { deriveIdentifier } from './lib/property-identifier.js';
+import {
+  normalizeAddressFields,
+  validatePropertyFields,
+} from './modules/properties/property-rules.js';
+import type { HouseTypeRecord } from './modules/properties/house-type-repository.js';
+import { slugify } from './modules/estates/estate.service.js';
+import { parseWorkbook, buildTemplate } from './modules/imports/excel-parser.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-// --- Helper factories -----------------------------------------------------------
+// --- Helpers -------------------------------------------------------------------
 
-function makeOptions(overrides?: Partial<PropertyOptions>): PropertyOptions {
-  return {
-    addressComponents: [
-      {
-        key: 'street_name',
-        label: 'Street name',
-        requiredFor: ['land', 'house'],
-        notApplicableFor: [],
-        maxLength: 120,
-        pattern: null,
-      },
-      {
-        key: 'plot_number',
-        label: 'Plot number',
-        requiredFor: ['land'],
-        notApplicableFor: [
-          'house.bungalow',
-          'house.terrace',
-          'house.duplex',
-          'house.apartment',
-          'house.flat',
-        ],
-        maxLength: 32,
-        pattern: null,
-      },
-      {
-        key: 'house_number',
-        label: 'House number',
-        requiredFor: ['house.bungalow', 'house.terrace', 'house.duplex'],
-        notApplicableFor: ['house.apartment', 'house.flat', 'land'],
-        maxLength: 32,
-        pattern: null,
-      },
-      {
-        key: 'block_name',
-        label: 'Block name',
-        requiredFor: ['house.apartment', 'house.flat'],
-        notApplicableFor: ['house.bungalow', 'house.terrace', 'house.duplex', 'land'],
-        maxLength: 64,
-        pattern: null,
-      },
-      {
-        key: 'floor_number',
-        label: 'Floor number',
-        requiredFor: ['house.apartment', 'house.flat'],
-        notApplicableFor: ['house.bungalow', 'house.terrace', 'house.duplex', 'land'],
-        maxLength: 16,
-        pattern: null,
-      },
-      {
-        key: 'unit_number',
-        label: 'Unit number',
-        requiredFor: ['house.apartment', 'house.flat'],
-        notApplicableFor: ['house.bungalow', 'house.terrace', 'house.duplex', 'land'],
-        maxLength: 32,
-        pattern: null,
-      },
-    ],
-    identifierTemplate: '{estate_slug}',
-    identifierMax: 120,
-    ...overrides,
-  } as unknown as PropertyOptions;
+const houseTypes: HouseTypeRecord[] = [
+  { key: 'bungalow', label: 'Bungalow', requiresUnitFields: false, active: true, sortOrder: 1 },
+  { key: 'apartment', label: 'Apartment', requiresUnitFields: true, active: true, sortOrder: 4 },
+];
+
+const bungalow = houseTypes[0]!;
+const apartment = houseTypes[1]!;
+
+function derive(
+  kind: 'HOUSE' | 'LAND' | 'BOTH',
+  fields: Record<string, string | null>,
+  houseType: HouseTypeRecord | null = bungalow,
+) {
+  return deriveIdentifier({
+    estateSlug: 'silverstone',
+    kind,
+    houseType,
+    streetName: fields.street_name ?? '',
+    houseNumber: fields.house_number,
+    blockName: fields.block_name,
+    floorNumber: fields.floor_number,
+    unitNumber: fields.unit_number,
+    plotNumber: fields.plot_number,
+  });
 }
 
-const apartmentBlockType: AssetType = {
-  key: 'apartment_block',
-  label: 'Apartment block',
-  detailKind: 'PROPERTY',
-  requiresUnits: true,
-  unitTypeKeys: ['studio', 'one_bedroom', 'two_bedroom'],
-  defaultUnitTypeKey: 'two_bedroom',
-  active: true,
-} as unknown as AssetType;
-
-const houseType: AssetType = {
-  key: 'house',
-  label: 'House',
-  detailKind: 'PROPERTY',
-  requiresUnits: false,
-  unitTypeKeys: [],
-  defaultUnitTypeKey: null,
-  active: true,
-} as unknown as AssetType;
-
-function hierarchyCtx(overrides: Partial<HierarchyContext> = {}): HierarchyContext {
-  return {
-    parentPropertyId: 'parent-1',
-    propertyId: 'child-1',
-    unitTypeKey: 'two_bedroom',
-    estateId: 'estate-1',
-    assetTypes: [apartmentBlockType, houseType],
-    propertyOptions: makeOptions() as PropertyOptions,
-    parentHasChildren: false,
-    parentIdentifier: 'EST-001-01',
-    parentTypeKey: 'apartment_block',
-    ...overrides,
-  };
+async function writeTestWorkbook(rows: string[][]): Promise<string> {
+  const ExcelJS = await import('exceljs');
+  const dir = await mkdtemp(join(tmpdir(), 'import-test-'));
+  const file = join(dir, 'test.xlsx');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Properties');
+  for (const row of rows) ws.addRow(row);
+  await wb.xlsx.writeFile(file);
+  setTimeout(() => rm(dir, { recursive: true, force: true }).catch(() => {}), 0);
+  return file;
 }
 
-// --- Identifier derivation ------------------------------------------------------
+// --- Identifier derivation -----------------------------------------------------
 
 describe('deriveIdentifier', () => {
-  it('renders a complete land identifier when all required components are present', () => {
-    const result = deriveIdentifier({
-      estateSlug: 'silverstone',
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: 'Main St', plot_number: '42' },
-      propertyOptions: makeOptions(),
-    });
+  it('renders a land identifier from street and plot number', () => {
+    const result = derive('LAND', { street_name: 'Main St', plot_number: '42' }, null);
     expect(result.incomplete).toBe(false);
     expect(result.identifier).toBe('silverstone-Main St-42');
-    expect(result.reasons).toHaveLength(0);
   });
 
-  it('renders a complete house identifier for bungalow/terrace/duplex', () => {
-    for (const houseType of ['bungalow', 'terrace', 'duplex']) {
-      const result = deriveIdentifier({
-        estateSlug: 'silverstone',
-        typeKey: 'house',
-        houseTypeKey: houseType,
-        addressComponents: { street_name: 'Oak Ave', house_number: '17' },
-        propertyOptions: makeOptions(),
-      });
-      expect(result.incomplete).toBe(false);
-      expect(result.identifier).toBe(`silverstone-Oak Ave-17`);
-      expect(result.reasons).toHaveLength(0);
-    }
+  it('renders a house identifier with a house number', () => {
+    const result = derive('HOUSE', { street_name: 'Oak Ave', house_number: '17' });
+    expect(result.incomplete).toBe(false);
+    expect(result.identifier).toBe('silverstone-Oak Ave-17');
   });
 
-  it('renders a complete house identifier for apartment/flat', () => {
-    for (const houseType of ['apartment', 'flat']) {
-      const result = deriveIdentifier({
-        estateSlug: 'silverstone',
-        typeKey: 'house',
-        houseTypeKey: houseType,
-        addressComponents: {
-          street_name: 'Main St',
-          block_name: 'Block A',
-          floor_number: '3',
-          unit_number: '12',
-        },
-        propertyOptions: makeOptions(),
-      });
-      expect(result.incomplete).toBe(false);
-      expect(result.identifier).toBe(`silverstone-Main St-Block A-3-12`);
-      expect(result.reasons).toHaveLength(0);
-    }
+  it('renders a unit-house identifier with block, floor, and unit', () => {
+    const result = derive(
+      'HOUSE',
+      {
+        street_name: 'Main St',
+        block_name: 'Block A',
+        floor_number: '3',
+        unit_number: '12',
+      },
+      apartment,
+    );
+    expect(result.incomplete).toBe(false);
+    expect(result.identifier).toBe('silverstone-Main St-Block A-3-12');
   });
 
-  it('reports incomplete when a required component is missing', () => {
-    const result = deriveIdentifier({
-      estateSlug: 'silverstone',
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: 'Main St' }, // plot missing
-      propertyOptions: makeOptions(),
+  it('appends plot number for a both property', () => {
+    const result = derive('BOTH', {
+      street_name: 'Oak Ave',
+      house_number: '17',
+      plot_number: '42',
     });
+    expect(result.incomplete).toBe(false);
+    expect(result.identifier).toBe('silverstone-Oak Ave-17-42');
+  });
+
+  it('reports a missing required field', () => {
+    const result = derive('LAND', { street_name: 'Main St' }, null);
     expect(result.incomplete).toBe(true);
     expect(result.identifier).toBeNull();
-    expect(result.reasons.some((r) => r.includes('Plot number'))).toBe(true);
-  });
-
-  it('reports incomplete when a required component is an empty string', () => {
-    const result = deriveIdentifier({
-      estateSlug: 'silverstone',
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: '', plot_number: '42' },
-      propertyOptions: makeOptions(),
-    });
-    expect(result.incomplete).toBe(true);
-    expect(result.identifier).toBeNull();
+    expect(result.reasons.some((reason) => reason.includes('Plot number'))).toBe(true);
   });
 
   it('rejects an empty estate slug', () => {
     const result = deriveIdentifier({
-      estateSlug: '',
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: 'Main St', plot_number: '42' },
-      propertyOptions: makeOptions({ identifierTemplate: '{estate_slug}' }),
+      estateSlug: '   ',
+      kind: 'LAND',
+      houseType: null,
+      streetName: 'Main St',
+      plotNumber: '42',
     });
     expect(result.incomplete).toBe(true);
-    expect(result.identifier).toBeNull();
-    expect(result.reasons.some((r) => r.includes('empty'))).toBe(true);
+    expect(result.reasons.some((reason) => reason.includes('empty'))).toBe(true);
   });
 
-  it('rejects an identifier that exceeds the configured maximum', () => {
+  it('rejects an identifier over the database maximum', () => {
     const result = deriveIdentifier({
-      estateSlug: 'a'.repeat(120),
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: 'b'.repeat(60), plot_number: '42' },
-      propertyOptions: makeOptions({ identifierTemplate: '{estate_slug}', identifierMax: 8 }),
+      estateSlug: 'a'.repeat(150),
+      kind: 'LAND',
+      houseType: null,
+      streetName: 'b'.repeat(100),
+      plotNumber: '42',
     });
     expect(result.incomplete).toBe(true);
-    expect(result.identifier).toBeNull();
-    expect(result.reasons.some((r) => r.includes('characters'))).toBe(true);
+    expect(result.reasons.some((reason) => reason.includes('characters'))).toBe(true);
   });
 
-  it('preserves leading zeros in component values', () => {
-    const result = deriveIdentifier({
-      estateSlug: 'est',
-      typeKey: 'land',
-      houseTypeKey: null,
-      addressComponents: { street_name: 'Main St', plot_number: '007' },
-      propertyOptions: makeOptions(),
-    });
-    expect(result.identifier).toBe('est-Main St-007');
+  it('preserves leading zeros', () => {
+    const result = derive('LAND', { street_name: 'Main St', plot_number: '007' }, null);
+    expect(result.identifier).toBe('silverstone-Main St-007');
   });
 
-  it('does not require a component that is notApplicableFor the asset type', () => {
-    // plot_number is required for land but notApplicableFor house types, so a
-    // house bungalow with no plot number still derives its identifier fine.
-    const result = deriveIdentifier({
-      estateSlug: 'est',
-      typeKey: 'house',
-      houseTypeKey: 'bungalow',
-      addressComponents: { street_name: 'Oak Ave', house_number: '17' },
-      propertyOptions: makeOptions(),
-    });
-    expect(result.incomplete).toBe(false);
-    expect(result.identifier).toBe('est-Oak Ave-17');
-  });
-
-  it('does not accept a house property without a house type key', () => {
-    const result = deriveIdentifier({
-      estateSlug: 'est',
-      typeKey: 'house',
-      houseTypeKey: null,
-      addressComponents: {},
-      propertyOptions: makeOptions(),
-    });
+  it('requires a house type for house and both properties', () => {
+    const result = derive('HOUSE', { street_name: 'Main St', house_number: '1' }, null);
     expect(result.incomplete).toBe(true);
-    expect(result.reasons.some((r) => r.includes('No identifier formula'))).toBe(true);
-  });
-
-  it('identifies a configured identifier when addressComponents is non-empty', () => {
-    expect(identifierConfigured(makeOptions())).toBe(true);
-  });
-
-  it('does not identify a configured identifier when addressComponents is empty', () => {
-    expect(identifierConfigured(makeOptions({ addressComponents: [] }) as PropertyOptions)).toBe(
-      false,
-    );
+    expect(result.reasons.some((reason) => reason.includes('house type'))).toBe(true);
   });
 });
 
-describe('configured property field validation', () => {
-  const config = {
-    assetTypes: [],
-    unitTypes: [],
-    configVersion: 1,
-    propertyOptions: {
-      addressComponents: [
-        {
-          key: 'house_number',
-          label: 'House number',
-          requiredFor: ['house.bungalow', 'house.terrace', 'house.duplex'],
-          notApplicableFor: ['house.apartment', 'house.flat', 'land'],
-          maxLength: 8,
-          pattern: '\\d+[A-Za-z]?',
-        },
-        {
-          key: 'block_name',
-          label: 'Block name',
-          requiredFor: ['house.apartment', 'house.flat'],
-          notApplicableFor: ['house.bungalow', 'house.terrace', 'house.duplex', 'land'],
-          maxLength: 4,
-          pattern: null,
-        },
-      ],
-      identifierTemplate: '{estate_slug}',
-      identifierMax: 120,
-    },
-  } as unknown as PropertyConfigSnapshot;
+// --- Typed property rules -------------------------------------------------------
 
-  it('accepts valid values and an omitted field made not applicable', () => {
-    expect(() =>
-      validateAddressComponents(config, 'house', 'apartment', { block_name: '0-9' }),
-    ).not.toThrow();
-  });
+describe('validatePropertyFields', () => {
+  const base = normalizeAddressFields({ streetName: 'Main St' });
 
-  it('rejects a missing required field and a value that fails its configured pattern', () => {
-    expect(() => validateAddressComponents(config, 'house', 'bungalow', {})).toThrow(
-      /House number.*required/,
-    );
-    expect(() =>
-      validateAddressComponents(config, 'house', 'bungalow', { house_number: 'bad' }),
-    ).toThrow(/required format/);
-  });
-
-  it('rejects a supplied value for a component not applicable to the house type', () => {
-    expect(() =>
-      validateAddressComponents(config, 'house', 'apartment', { house_number: '0-9', block_name: 'N' }),
-    ).toThrow(/not applicable/);
-    expect(() =>
-      validateAddressComponents(config, 'house', 'apartment', {
-        block_name: 'NORTH',
-      }),
-    ).toThrow(/4 characters/);
-  });
-
-  it('requires house_number for bungalow but not for apartment', () => {
-    expect(() =>
-      validateAddressComponents(config, 'house', 'bungalow', {}),
-    ).toThrow(/House number.*required/);
-    // house_number is notApplicableFor apartment; apartment requires block_name instead.
-    expect(() =>
-      validateAddressComponents(config, 'house', 'apartment', { block_name: 'N' }),
-    ).not.toThrow();
-  });
-});
-
-// --- Hierarchy rules -------------------------------------------------------------
-
-describe('validateHierarchy', () => {
-  it('accepts a valid child unit under an apartment block with no existing children', () => {
-    const result = validateHierarchy(hierarchyCtx());
-    expect(result.valid).toBe(true);
-    expect(result.reasons).toHaveLength(0);
-  });
-
-  it('rejects a child without a unit type key', () => {
-    const result = validateHierarchy(hierarchyCtx({ unitTypeKey: null }));
-    expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('unit type'))).toBe(true);
-  });
-
-  it("rejects a unit type not in the parent's permitted set", () => {
-    const result = validateHierarchy(hierarchyCtx({ unitTypeKey: 'penthouse' }));
-    // penthouse is not in apartment_block's unitTypeKeys above
-    expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('not permitted'))).toBe(true);
-  });
-
-  it('rejects a top-level property that carries a unit type key', () => {
-    const result = validateHierarchy(
-      hierarchyCtx({
-        parentPropertyId: null,
-        unitTypeKey: 'two_bedroom',
-      }),
-    );
-    expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('top-level'))).toBe(true);
-  });
-
-  it('accepts a top-level property with no unit type key', () => {
-    const result = validateHierarchy(
-      hierarchyCtx({
-        parentPropertyId: null,
-        unitTypeKey: null,
-      }),
-    );
+  it('accepts a bungalow with a house number', () => {
+    const result = validatePropertyFields({
+      kind: 'HOUSE',
+      houseType: bungalow,
+      ...base,
+      houseNumber: '17',
+    });
     expect(result.valid).toBe(true);
   });
 
-  it('rejects a child when the parent already has children (depth-1 guard)', () => {
-    const result = validateHierarchy(hierarchyCtx({ parentHasChildren: true }));
+  it('requires block, floor, and unit for an apartment', () => {
+    const result = validatePropertyFields({ kind: 'HOUSE', houseType: apartment, ...base });
     expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('already has children'))).toBe(true);
+    expect(result.fieldErrors.blockName).toMatch(/required/i);
+    expect(result.fieldErrors.floorNumber).toMatch(/required/i);
+    expect(result.fieldErrors.unitNumber).toMatch(/required/i);
   });
 
-  it('rejects a self-referencing parent', () => {
-    const result = validateHierarchy(
-      hierarchyCtx({ parentPropertyId: 'child-1', propertyId: 'child-1' }),
-    );
+  it('rejects a house number on an apartment', () => {
+    const result = validatePropertyFields({
+      kind: 'HOUSE',
+      houseType: apartment,
+      ...base,
+      houseNumber: '17',
+      blockName: 'Block A',
+      floorNumber: '3',
+      unitNumber: '12',
+    });
     expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('its own parent'))).toBe(true);
+    expect(result.fieldErrors.houseNumber).toMatch(/does not apply/i);
   });
 
-  it('rejects a child under a non-unit-supporting asset type', () => {
-    const result = validateHierarchy(
-      hierarchyCtx({
-        parentTypeKey: 'house',
-        parentIdentifier: 'EST-002',
-      }),
-    );
+  it('requires street, plot number, and plot name for land', () => {
+    const result = validatePropertyFields({ kind: 'LAND', houseType: null, ...base });
     expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('does not support units'))).toBe(true);
+    expect(result.fieldErrors.plotNumber).toMatch(/required/i);
+    expect(result.fieldErrors.plotName).toMatch(/required/i);
   });
 
-  it("rejects a child when the parent's asset type is not configured", () => {
-    const result = validateHierarchy(
-      hierarchyCtx({
-        parentTypeKey: 'unknown_type',
-        parentIdentifier: 'EST-099',
-      }),
-    );
+  it('rejects house fields on land', () => {
+    const result = validatePropertyFields({
+      kind: 'LAND',
+      houseType: null,
+      ...base,
+      houseNumber: '17',
+      plotNumber: '42',
+      plotName: 'North plot',
+    });
     expect(result.valid).toBe(false);
-    expect(result.reasons.some((r) => r.includes('not configured'))).toBe(true);
+    expect(result.fieldErrors.houseNumber).toMatch(/does not apply/i);
+  });
+
+  it('requires both house and land fields for both', () => {
+    const result = validatePropertyFields({
+      kind: 'BOTH',
+      houseType: bungalow,
+      ...base,
+      houseNumber: '17',
+      plotNumber: '42',
+      plotName: 'North plot',
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it('enforces field maximum lengths', () => {
+    const result = validatePropertyFields({
+      kind: 'HOUSE',
+      houseType: bungalow,
+      ...normalizeAddressFields({ streetName: 'x'.repeat(121), houseNumber: '1' }),
+    });
+    expect(result.valid).toBe(false);
+    expect(result.fieldErrors.streetName).toMatch(/120 characters/);
   });
 });
 
-// --- Estate service rules ---------------------------------------------------------
-
-import { slugify } from './modules/estates/estate.service.js';
+// --- Estate service rules ------------------------------------------------------
 
 describe('estate service: slugify', () => {
-  it('converts mixed-case names to lowercase hyphenated slug', () => {
+  it('converts mixed-case names to lowercase hyphenated slugs', () => {
     expect(slugify('Silver Stone Garden')).toBe('silver-stone-garden');
   });
 
@@ -422,8 +231,7 @@ describe('estate service: slugify', () => {
   });
 
   it('caps at 63 characters', () => {
-    const longName = 'a'.repeat(100);
-    expect(slugify(longName)).toHaveLength(63);
+    expect(slugify('a'.repeat(100))).toHaveLength(63);
   });
 
   it('falls back to "estate" when the name has no valid characters', () => {
@@ -431,216 +239,146 @@ describe('estate service: slugify', () => {
   });
 });
 
-// --- Property repository: createInTxSkipDuplicates contract ---------------------
+// --- Import workbook parsing ---------------------------------------------------
 
-// These are integration-level tests; unit tests here focus on the pure logic.
-// The repository method is exercised in the integration test suite.
-
-// --- Import row validation logic (excel-parser) ---------------------------------
-
-import { parseWorkbook, buildTemplate } from './modules/imports/excel-parser.js';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-interface TestContext {
-  propertyOptions: {
-    addressComponents: Array<{
-      key: string;
-      label: string;
-      requiredFor: string[];
-      notApplicableFor: string[];
-      pattern?: string | null;
-      maxLength: number;
-    }>;
-    identifierTemplate: string;
-    identifierMax: number;
-  };
-}
-
-function makeTestContext(overrides?: Partial<TestContext>): TestContext {
-  const options = makeOptions();
-  return {
-    propertyOptions: {
-      addressComponents:
-        options.addressComponents as unknown as TestContext['propertyOptions']['addressComponents'],
-      identifierTemplate: options.identifierTemplate,
-      identifierMax: options.identifierMax,
-    },
-    ...overrides,
-  };
-}
-
-async function writeTestWorkbook(rows: string[][]): Promise<string> {
-  const ExcelJS = await import('exceljs');
-  const dir = await mkdtemp(join(tmpdir(), 'import-test-'));
-  const file = join(dir, 'test.xlsx');
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Properties');
-  for (const row of rows) {
-    ws.addRow(row);
-  }
-  await wb.xlsx.writeFile(file);
-  // cleanup asynchronously
-  setTimeout(() => rm(dir, { recursive: true, force: true }).catch(() => {}), 0);
-  return file;
-}
-
-describe('excel-parser: parseWorkbook row limit', () => {
+describe('excel-parser: parseWorkbook', () => {
   it('returns rowLimitExceeded=true when data rows exceed maxRows', async () => {
     const file = await writeTestWorkbook([
-      ['type', 'street_name', 'plot_number'],
+      ['type', 'house_type', 'street_name', 'plot_number', 'plot_name'],
       ...Array.from({ length: 5001 }, (_, i) => [
         'land',
+        '',
         'Main St',
         String(i + 1).padStart(3, '0'),
+        'North',
       ]),
     ]);
 
     const result = await parseWorkbook(file, {
-      assetTypes: [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      ...makeTestContext(),
+      houseTypes,
       estateSlug: 'est',
-      estateId: 'est-1',
       existingIdentifiers: new Set(),
-      renderIdentifier: () => ({ identifier: 'x', incomplete: false, reasons: [] }),
       maxRows: 5000,
     });
     expect(result.rowLimitExceeded).toBe(true);
     expect(result.dataRowTotal).toBe(5001);
   });
 
-  it('returns rowLimitExceeded=false when data rows are within the limit', async () => {
+  it('does not exceed the limit for in-range data', async () => {
     const file = await writeTestWorkbook([
-      ['type', 'street_name', 'plot_number'],
-      ['land', 'Oak Ave', '17'],
-      ['land', 'Pine Rd', '42'],
+      ['type', 'house_type', 'street_name', 'plot_number', 'plot_name'],
+      ['land', '', 'Oak Ave', '17', 'North'],
+      ['land', '', 'Pine Rd', '42', 'South'],
     ]);
-
     const result = await parseWorkbook(file, {
-      assetTypes: [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      ...makeTestContext(),
+      houseTypes,
       estateSlug: 'est',
-      estateId: 'est-1',
       existingIdentifiers: new Set(),
-      renderIdentifier: () => ({ identifier: 'x', incomplete: false, reasons: [] }),
       maxRows: 5000,
     });
     expect(result.rowLimitExceeded).toBe(false);
     expect(result.dataRowTotal).toBe(2);
+    expect(result.rows.every((row) => row.status === 'VALID')).toBe(true);
   });
 
   it('detects in-file duplicates', async () => {
     const file = await writeTestWorkbook([
-      ['type', 'street_name', 'plot_number'],
-      ['land', 'Oak Ave', '17'],
-      ['land', 'Oak Ave', '17'], // duplicate
+      ['type', 'house_type', 'street_name', 'plot_number', 'plot_name'],
+      ['land', '', 'Oak Ave', '17', 'North'],
+      ['land', '', 'Oak Ave', '17', 'North'],
     ]);
-
     const result = await parseWorkbook(file, {
-      assetTypes: [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      ...makeTestContext(),
+      houseTypes,
       estateSlug: 'est',
-      estateId: 'est-1',
       existingIdentifiers: new Set(),
-      renderIdentifier: () => ({ identifier: 'est-001-01', incomplete: false, reasons: [] }),
       maxRows: 5000,
     });
     expect(result.rows[0]?.status).toBe('VALID');
     expect(result.rows[1]?.status).toBe('DUPLICATE_IN_FILE');
   });
 
-  it('detects collision with an existing identifier', async () => {
+  it('detects a collision with an existing identifier', async () => {
     const file = await writeTestWorkbook([
-      ['type', 'street_name', 'plot_number'],
-      ['land', 'Oak Ave', '17'],
+      ['type', 'house_type', 'street_name', 'plot_number', 'plot_name'],
+      ['land', '', 'Oak Ave', '17', 'North'],
     ]);
-
     const result = await parseWorkbook(file, {
-      assetTypes: [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      ...makeTestContext(),
+      houseTypes,
       estateSlug: 'est',
-      estateId: 'est-1',
-      existingIdentifiers: new Set(['est-001-01']),
-      renderIdentifier: () => ({ identifier: 'est-001-01', incomplete: false, reasons: [] }),
+      existingIdentifiers: new Set(['est-Oak Ave-17']),
       maxRows: 5000,
     });
     expect(result.rows[0]?.status).toBe('COLLISION');
   });
 
-  it('reports physical worksheet row numbers and skips blank rows without renumbering', async () => {
+  it('requires house_type for house rows and rejects it for land', async () => {
     const file = await writeTestWorkbook([
-      ['type', 'street_name', 'plot_number'],
-      ['land', 'Oak Ave', '17'],
-      [], // a physically blank worksheet row
-      ['land', 'Pine Rd', '42'],
+      ['type', 'house_type', 'street_name', 'house_number'],
+      ['house', '', 'Oak Ave', '17'],
+      ['house', 'bungalow', 'Oak Ave', '17'],
+      ['land', 'bungalow', 'Oak Ave', ''],
     ]);
-
     const result = await parseWorkbook(file, {
-      assetTypes: [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      ...makeTestContext(),
+      houseTypes,
       estateSlug: 'est',
-      estateId: 'est-1',
       existingIdentifiers: new Set(),
-      renderIdentifier: () => ({ identifier: 'x', incomplete: false, reasons: [] }),
       maxRows: 5000,
     });
+    expect(result.rows[0]?.status).toBe('ERROR');
+    expect(result.rows[1]?.status).toBe('VALID');
+    expect(result.rows[2]?.status).toBe('ERROR');
+  });
 
-    // Row 1 is the header, the blank row 3 is skipped, and the row after it
-    // keeps its own physical number: rows are never renumbered.
+  it('reports physical worksheet row numbers and skips blank rows', async () => {
+    const file = await writeTestWorkbook([
+      ['type', 'house_type', 'street_name', 'plot_number', 'plot_name'],
+      ['land', '', 'Oak Ave', '17', 'North'],
+      [],
+      ['land', '', 'Pine Rd', '42', 'South'],
+    ]);
+    const result = await parseWorkbook(file, {
+      houseTypes,
+      estateSlug: 'est',
+      existingIdentifiers: new Set(),
+      maxRows: 5000,
+    });
     expect(result.rows.map((row) => row.rowNumber)).toEqual([2, 4]);
     expect(result.dataRowTotal).toBe(2);
   });
 });
 
 describe('excel-parser: buildTemplate', () => {
-  it('builds a template with the expected columns', () => {
+  it('builds the exact property columns', () => {
     const result = buildTemplate(
       { id: 'est-1', slug: 'est', name: 'Test Estate' },
-      [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      makeTestContext().propertyOptions,
+      houseTypes,
       'One property per row.',
     );
     expect(result.columns).toEqual([
       'type',
+      'house_type',
       'street_name',
-      'plot_number',
       'house_number',
       'block_name',
       'floor_number',
       'unit_number',
+      'plot_number',
+      'plot_name',
     ]);
     expect(result.buffer).toBeDefined();
   });
 
-  it('produces a header-only first worksheet and keeps the guidance on the Instructions sheet', async () => {
+  it('produces a header-only first worksheet and keeps guidance on sheet two', async () => {
     const result = buildTemplate(
       { id: 'est-1', slug: 'est', name: 'Test Estate' },
-      [{ key: 'land', label: 'Land', active: true, detailKind: 'LAND_PARCEL' }],
-      makeTestContext().propertyOptions,
+      houseTypes,
       'One property per row.',
     );
-
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await result.buffer) as unknown as Buffer);
-
-    const sheet = workbook.worksheets[0];
-    expect(sheet?.name).toBe('Properties');
-    // Row 1 holds the headers and nothing follows it: the template carries no
-    // importable sample row, so re-uploading it unchanged imports nothing.
-    expect(sheet?.actualRowCount).toBe(1);
-    const headers = (sheet?.getRow(1).values as unknown[]).slice(1);
-    expect(headers).toEqual([
-      'type',
-      'street_name',
-      'plot_number',
-      'house_number',
-      'block_name',
-      'floor_number',
-      'unit_number',
-    ]);
-    // The sample-row guidance lives on the second sheet, never as data.
+    expect(workbook.worksheets[0]?.name).toBe('Properties');
+    expect(workbook.worksheets[0]?.actualRowCount).toBe(1);
     expect(workbook.worksheets[1]?.name).toBe('Instructions');
   });
 });

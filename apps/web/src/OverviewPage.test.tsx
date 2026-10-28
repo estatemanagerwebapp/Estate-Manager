@@ -34,8 +34,6 @@ vi.mock('./auth/AuthContext', () => ({
 }));
 
 vi.mock('./api/hooks', () => ({
-  usePropertyOptions: () => ({ view: null, loading: false, error: null }),
-  registerableAssetTypes: () => [],
   useDashboard: () => mockUseDashboard,
 }));
 

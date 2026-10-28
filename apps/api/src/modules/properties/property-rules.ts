@@ -1,105 +1,170 @@
-import type { AssetType, PropertyOptions } from '@silverstone/config-schema';
+import type { PropertyKind } from '@silverstone/shared';
+import type { HouseTypeRecord } from './house-type-repository.js';
 
 /**
- * Parent-child (unit-in-building) hierarchy rules.
+ * Property address-shape rules.
  *
- * Pure, testable functions that pin the allowed shape of the property tree to
- * the organization configuration:
- *
- *  1. The parent must exist, be in the same estate, and not be archived when
- *     the child is being created as a new unit under an active estate.
- *  2. The parent's asset type must have `requiresUnits: true` — only asset
- *     types that are containers for units may have children.
- *  3. The child's `unitTypeKey` must be in the parent's permitted
- *     `unitTypeKeys` (from configuration).
- *  4. Depth is 1: a property that already has children cannot itself become a
- *     child (no unit-in-unit).
- *  5. Cycles are structurally impossible at depth 1, but the self-reference
- *     guard (`parent.id !== property.id`) is still asserted.
- *
- * These rules are the authority; the database backs them with a self-FK and a
- * `(parentPropertyId, unitTypeKey)` index.
+ * The rules are pure and shared by the manual create/update path and the Excel
+ * import parser. There is no runtime configuration: the kind is one of HOUSE,
+ * LAND or BOTH, and the selected house type decides whether a house uses a
+ * house number or block/floor/unit fields.
  */
 
-export interface HierarchyContext {
-  /** The candidate parent property id, or null for a top-level property. */
-  parentPropertyId: string | null;
-  /** The child property id, for the self-reference guard. */
-  propertyId: string;
-  /** The child's unit type key (required when parentPropertyId is set). */
-  unitTypeKey: string | null;
-  /** The estate id the parent belongs to (must match the child's estate). */
-  estateId: string;
-  /** Resolved configuration asset types. */
-  assetTypes: readonly AssetType[];
-  /** Resolved configuration property options. */
-  propertyOptions: PropertyOptions;
-  /** True when the parent already has children (depth-1 guard). */
-  parentHasChildren: boolean;
-  /** The parent's own identifier, for error messages. */
-  parentIdentifier?: string;
-  /** The parent's type key. */
-  parentTypeKey?: string;
+export interface PropertyAddressFields {
+  streetName?: string | null;
+  houseNumber?: string | null;
+  blockName?: string | null;
+  floorNumber?: string | null;
+  unitNumber?: string | null;
+  plotNumber?: string | null;
+  plotName?: string | null;
 }
 
-export interface HierarchyResult {
+export interface PropertyFieldInput extends PropertyAddressFields {
+  kind: PropertyKind;
+  /** The resolved house-type row; null for LAND. */
+  houseType: HouseTypeRecord | null;
+}
+
+export interface PropertyFieldValidation {
   valid: boolean;
   reasons: string[];
+  /** First error per API field, for structured 400 responses. */
+  fieldErrors: Record<string, string>;
+}
+
+const MAX_LENGTHS = {
+  streetName: 120,
+  houseNumber: 32,
+  blockName: 64,
+  floorNumber: 16,
+  unitNumber: 32,
+  plotNumber: 32,
+  plotName: 64,
+} as const;
+
+const LABELS = {
+  streetName: 'Street name',
+  houseNumber: 'House number',
+  blockName: 'Block name',
+  floorNumber: 'Floor number',
+  unitNumber: 'Unit number',
+  plotNumber: 'Plot number',
+  plotName: 'Plot name',
+} as const;
+
+/** Trim every address value and turn blank strings into null. */
+export function normalizeAddressFields(fields: PropertyAddressFields): PropertyAddressFields {
+  return {
+    streetName: clean(fields.streetName) ?? '',
+    houseNumber: clean(fields.houseNumber),
+    blockName: clean(fields.blockName),
+    floorNumber: clean(fields.floorNumber),
+    unitNumber: clean(fields.unitNumber),
+    plotNumber: clean(fields.plotNumber),
+    plotName: clean(fields.plotName),
+  };
 }
 
 /**
- * Validates the proposed parent-child relationship. Returns a structured
- * result rather than throwing so callers (manual create + import) can collect
- * all reasons at once.
+ * Validate the address shape for the selected kind and house type.
+ * Call `normalizeAddressFields` first so blank values are null.
  */
-export function validateHierarchy(ctx: HierarchyContext): HierarchyResult {
+export function validatePropertyFields(input: PropertyFieldInput): PropertyFieldValidation {
   const reasons: string[] = [];
+  const fieldErrors: Record<string, string> = {};
+  const add = (field: string, message: string): void => {
+    reasons.push(message);
+    if (!fieldErrors[field]) fieldErrors[field] = message;
+  };
 
-  // Top-level property: nothing to validate beyond the depth guard.
-  if (ctx.parentPropertyId === null) {
-    if (ctx.unitTypeKey !== null && ctx.unitTypeKey !== undefined) {
-      reasons.push('A top-level property cannot have a unit type');
-    }
-    return { valid: reasons.length === 0, reasons };
+  if (!['HOUSE', 'LAND', 'BOTH'].includes(input.kind)) {
+    add('kind', 'Property type must be House, Land, or Both');
+    return { valid: false, reasons, fieldErrors };
   }
 
-  // Self-reference guard: a property cannot be its own parent. The estate id
-  // and property id are drawn from unrelated UUID spaces, so this is a
-  // belt-and-braces check for programming errors, not a realistic runtime path.
-  if (ctx.parentPropertyId === ctx.propertyId) {
-    reasons.push('A property cannot be its own parent');
+  checkLength(input, 'streetName', add);
+  if (!input.streetName || input.streetName.length === 0) {
+    add('streetName', 'Street name is required');
   }
 
-  // Resolve the parent's asset type definition.
-  const parentType = ctx.assetTypes.find((type) => type.key === ctx.parentTypeKey);
-  if (!parentType) {
-    reasons.push(`The parent's asset type "${ctx.parentTypeKey}" is not configured`);
-    return { valid: false, reasons };
+  if (input.kind === 'LAND') {
+    if (input.houseType) add('houseType', 'House type does not apply to land properties');
+    reject(input.houseNumber, 'houseNumber', 'House number', add);
+    reject(input.blockName, 'blockName', 'Block name', add);
+    reject(input.floorNumber, 'floorNumber', 'Floor number', add);
+    reject(input.unitNumber, 'unitNumber', 'Unit number', add);
+    require(input.plotNumber, 'plotNumber', 'Plot number', add);
+    require(input.plotName, 'plotName', 'Plot name', add);
+    checkLength(input, 'plotNumber', add);
+    checkLength(input, 'plotName', add);
+    return { valid: reasons.length === 0, reasons, fieldErrors };
   }
 
-  // Rule 2: the parent's type must permit units.
-  if (!parentType.requiresUnits) {
-    reasons.push(
-      `Asset type "${parentType.label}" does not support units; it cannot have child properties`,
-    );
-    return { valid: false, reasons };
+  // HOUSE and BOTH
+  if (!input.houseType) {
+    add('houseType', 'Select a house type');
+  } else if (input.houseType.requiresUnitFields) {
+    reject(input.houseNumber, 'houseNumber', 'House number', add);
+    require(input.blockName, 'blockName', 'Block name', add);
+    require(input.floorNumber, 'floorNumber', 'Floor number', add);
+    require(input.unitNumber, 'unitNumber', 'Unit number', add);
+    checkLength(input, 'blockName', add);
+    checkLength(input, 'floorNumber', add);
+    checkLength(input, 'unitNumber', add);
+  } else {
+    reject(input.blockName, 'blockName', 'Block name', add);
+    reject(input.floorNumber, 'floorNumber', 'Floor number', add);
+    reject(input.unitNumber, 'unitNumber', 'Unit number', add);
+    require(input.houseNumber, 'houseNumber', 'House number', add);
+    checkLength(input, 'houseNumber', add);
   }
 
-  // Rule 3: the child's unit type must be in the parent's permitted set.
-  if (ctx.unitTypeKey === null || ctx.unitTypeKey === undefined) {
-    reasons.push('A child property must specify a unit type');
-  } else if (!parentType.unitTypeKeys.includes(ctx.unitTypeKey)) {
-    reasons.push(
-      `Unit type "${ctx.unitTypeKey}" is not permitted under asset type "${parentType.label}"`,
-    );
+  if (input.kind === 'BOTH') {
+    require(input.plotNumber, 'plotNumber', 'Plot number', add);
+    require(input.plotName, 'plotName', 'Plot name', add);
+    checkLength(input, 'plotNumber', add);
+    checkLength(input, 'plotName', add);
+  } else {
+    reject(input.plotNumber, 'plotNumber', 'Plot number', add);
+    reject(input.plotName, 'plotName', 'Plot name', add);
   }
 
-  // Rule 4: depth-1 guard — the parent cannot already have children.
-  if (ctx.parentHasChildren) {
-    reasons.push(
-      `The parent property "${ctx.parentIdentifier ?? ctx.parentPropertyId}" already has children; nested units are not supported`,
-    );
-  }
+  return { valid: reasons.length === 0, reasons, fieldErrors };
+}
 
-  return { valid: reasons.length === 0, reasons };
+function require(
+  value: string | null | undefined,
+  field: string,
+  label: string,
+  add: (field: string, message: string) => void,
+): void {
+  if (!value) add(field, `${label} is required`);
+}
+
+function reject(
+  value: string | null | undefined,
+  field: string,
+  label: string,
+  add: (field: string, message: string) => void,
+): void {
+  if (value) add(field, `${label} does not apply to this property type`);
+}
+
+function checkLength(
+  input: PropertyAddressFields,
+  field: keyof typeof MAX_LENGTHS,
+  add: (field: string, message: string) => void,
+): void {
+  const value = input[field];
+  const max = MAX_LENGTHS[field];
+  if (value && value.length > max) {
+    add(field, `${LABELS[field]} must be ${max} characters or fewer`);
+  }
+}
+
+function clean(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length === 0 ? null : trimmed;
 }

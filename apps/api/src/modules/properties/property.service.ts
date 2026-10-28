@@ -1,24 +1,35 @@
 import { AppError } from '../../lib/errors.js';
 import type { PrismaPropertyRepository, PropertyRecord } from './property-repository.js';
-import { validateHierarchy } from './property-rules.js';
+import {
+  normalizeAddressFields,
+  validatePropertyFields,
+  type PropertyAddressFields,
+} from './property-rules.js';
 import { deriveIdentifier } from '../../lib/property-identifier.js';
 import type { PrismaEstateRepository } from '../estates/estate-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
-import type { AssetType, UnitType, OrganizationConfig } from '@silverstone/config-schema';
-import type {
-  PropertyDto,
-  PropertyListResponse,
-  PropertyDetailResponse,
-  PropertyStatus,
+import type { HouseTypeRecord, PrismaHouseTypeRepository } from './house-type-repository.js';
+import {
+  PROPERTY_KINDS,
+  PROPERTY_KIND_LABELS,
+  PROPERTY_STATUSES,
+  type CreatePropertyInput,
+  type PropertyDetailResponse,
+  type PropertyDto,
+  type HouseTypesResponse,
+  type PropertyKind,
+  type PropertyListResponse,
+  type PropertyStatus,
+  type UpdatePropertyInput,
 } from '@silverstone/shared';
 
 /**
  * Property registry: create, read, update, archive.
  *
- * Identifier derivation, address-component validation and the parent-child
- * hierarchy rules all run against the *resolved* organization configuration,
- * never against a client-supplied type list. The canonical identifier is
- * computed once at create time and is immutable thereafter.
+ * The property shape is explicit (kind + typed address columns). There is no
+ * runtime property configuration, no parent/child property hierarchy,
+ * and no "identifier not configured" state. The canonical identifier is
+ * computed once at create time from the typed fields and is immutable.
  *
  * Every mutation is audited; the caller's identity comes from the
  * authenticated session, never the request body.
@@ -30,45 +41,57 @@ export interface PropertyServiceContext {
   requestId: string | null;
 }
 
-export interface PropertyConfigSnapshot {
-  assetTypes: readonly AssetType[];
-  unitTypes: readonly UnitType[];
-  propertyOptions: OrganizationConfig['propertyOptions'];
-  configVersion: number;
+export interface PropertyListQuery {
+  estateId?: string;
+  kind?: string;
+  status?: string;
+  identifierContains?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export class PropertyService {
   constructor(
     private readonly properties: PrismaPropertyRepository,
     private readonly estates: PrismaEstateRepository,
+    private readonly houseTypes: PrismaHouseTypeRepository,
     private readonly audit: PrismaAuditRepository,
   ) {}
 
+  /** Active house types for the create form and import template. */
+  async listHouseTypes(): Promise<HouseTypesResponse> {
+    const houseTypes = await this.houseTypes.listActive();
+    return {
+      houseTypes: houseTypes.map((type) => ({
+        key: type.key,
+        label: type.label,
+        requiresUnitFields: type.requiresUnitFields,
+        active: type.active,
+      })),
+    };
+  }
+
   async list(
     context: PropertyServiceContext,
-    config: PropertyConfigSnapshot,
-    query: {
-      estateId?: string;
-      typeKey?: string;
-      status?: string;
-      identifierContains?: string;
-      page?: number;
-      pageSize?: number;
-    },
+    query: PropertyListQuery,
   ): Promise<PropertyListResponse> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(Math.max(1, query.pageSize ?? 50), 200);
     const result = await this.properties.list({
       organizationId: context.organizationId,
       estateId: query.estateId,
-      typeKey: query.typeKey,
+      kind: query.kind,
       status: query.status,
       identifierContains: query.identifierContains,
       page,
       pageSize,
     });
+    const houseTypes = await this.houseTypes.list();
+    const byKey = new Map(houseTypes.map((type) => [type.key, type]));
     return {
-      properties: result.items.map((record) => this.toDto(record, config)),
+      properties: result.items.map((record) =>
+        this.toDto(record, record.houseTypeKey ? (byKey.get(record.houseTypeKey) ?? null) : null),
+      ),
       total: result.total,
       page,
       pageSize,
@@ -77,29 +100,23 @@ export class PropertyService {
 
   async detail(
     context: PropertyServiceContext,
-    config: PropertyConfigSnapshot,
     propertyId: string,
   ): Promise<PropertyDetailResponse> {
     const record = await this.properties.findById(context.organizationId, propertyId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Property not found');
     }
-    return { property: this.toDto(record, config) };
+    const houseType = record.houseTypeKey
+      ? await this.houseTypes.findByKey(record.houseTypeKey)
+      : null;
+    return { property: this.toDto(record, houseType) };
   }
 
-  async create(
-    context: PropertyServiceContext,
-    config: PropertyConfigSnapshot,
-    input: {
-      estateId: string;
-      typeKey: string;
-      /** For house properties: the nested house type key (bungalow, terrace, …). */
-      houseTypeKey?: string | null;
-      parentPropertyId?: string;
-      name?: string;
-      addressComponents?: Record<string, string>;
-    },
-  ): Promise<PropertyDto> {
+  async create(context: PropertyServiceContext, input: CreatePropertyInput): Promise<PropertyDto> {
+    if (!PROPERTY_KINDS.includes(input.kind)) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Property type must be House, Land, or Both');
+    }
+
     const estate = await this.estates.findById(context.organizationId, input.estateId);
     if (!estate) {
       throw new AppError(404, 'NOT_FOUND', 'Estate not found');
@@ -108,44 +125,31 @@ export class PropertyService {
       throw new AppError(409, 'CONFLICT', 'Properties cannot be created under an archived estate');
     }
 
-    const typeKey = assertConfiguredTypeKey(config, input.typeKey);
-    const houseTypeKey = assertHouseTypeKey(config, typeKey, input.houseTypeKey);
-    const addressComponents = input.addressComponents ?? {};
-    validateAddressComponents(config, typeKey, houseTypeKey, addressComponents);
+    const houseType = await this.resolveHouseType(input.kind, input.houseType ?? null);
+    const fields = normalizeAddressFields({
+      streetName: input.streetName,
+      houseNumber: input.houseNumber,
+      blockName: input.blockName,
+      floorNumber: input.floorNumber,
+      unitNumber: input.unitNumber,
+      plotNumber: input.plotNumber,
+      plotName: input.plotName,
+    });
+    this.assertValidFields(input.kind, houseType, fields);
 
-    // Hierarchy validation (depth-1, parent type supports units, unit type allowed).
-    let parentRecord: PropertyRecord | null = null;
-    let parentHasChildren = false;
-    if (input.parentPropertyId) {
-      parentRecord = await this.properties.findById(context.organizationId, input.parentPropertyId);
-      if (!parentRecord || parentRecord.estateId !== estate.id) {
-        throw new AppError(404, 'NOT_FOUND', 'Parent property not found in this estate');
-      }
-      parentHasChildren = await this.properties.hasChildren(parentRecord.id);
-      const unitTypeKey = addressComponents['unit_type_key'] ?? null;
-      const hierarchy = validateHierarchy({
-        parentPropertyId: parentRecord.id,
-        propertyId: '', // property does not exist yet; self-reference not applicable
-        unitTypeKey,
-        estateId: estate.id,
-        assetTypes: config.assetTypes,
-        propertyOptions: config.propertyOptions,
-        parentHasChildren,
-        parentIdentifier: parentRecord.identifier,
-        parentTypeKey: parentRecord.typeKey,
-      });
-      if (!hierarchy.valid) {
-        throw new AppError(400, 'VALIDATION_ERROR', hierarchy.reasons.join('; '));
-      }
-    }
-
-    // Derive the canonical identifier from the per-type code-defaulted template.
+    const name = normalizeName(input.name);
     const derived = deriveIdentifier({
       estateSlug: estate.slug,
-      typeKey,
-      houseTypeKey,
-      addressComponents,
-      propertyOptions: config.propertyOptions,
+      kind: input.kind,
+      houseType: houseType
+        ? { key: houseType.key, requiresUnitFields: houseType.requiresUnitFields }
+        : null,
+      streetName: fields.streetName ?? '',
+      houseNumber: fields.houseNumber,
+      blockName: fields.blockName,
+      floorNumber: fields.floorNumber,
+      unitNumber: fields.unitNumber,
+      plotNumber: fields.plotNumber,
     });
     if (derived.incomplete || derived.identifier === null) {
       throw new AppError(
@@ -170,12 +174,16 @@ export class PropertyService {
       estateId: estate.id,
       organizationId: context.organizationId,
       identifier: derived.identifier,
-      typeKey,
-      houseTypeKey,
-      unitTypeKey: input.parentPropertyId ? (addressComponents['unit_type_key'] ?? null) : null,
-      parentPropertyId: input.parentPropertyId ?? null,
-      addressComponents,
-      name: input.name?.trim() || null,
+      kind: input.kind,
+      houseTypeKey: houseType?.key ?? null,
+      streetName: fields.streetName ?? '',
+      houseNumber: fields.houseNumber ?? null,
+      blockName: fields.blockName ?? null,
+      floorNumber: fields.floorNumber ?? null,
+      unitNumber: fields.unitNumber ?? null,
+      plotNumber: fields.plotNumber ?? null,
+      plotName: fields.plotName ?? null,
+      name,
     });
 
     await this.audit.record({
@@ -186,46 +194,77 @@ export class PropertyService {
       targetId: record.id,
       requestId: context.requestId,
       outcome: 'success',
-      metadata: { identifier: record.identifier, typeKey: record.typeKey, houseTypeKey: record.houseTypeKey, estateId: estate.id },
+      metadata: {
+        identifier: record.identifier,
+        kind: record.kind,
+        houseTypeKey: record.houseTypeKey,
+        estateId: estate.id,
+      },
     });
 
-    return this.toDto(record, config);
+    return this.toDto(record, houseType);
   }
 
   async update(
     context: PropertyServiceContext,
-    config: PropertyConfigSnapshot,
     propertyId: string,
-    input: {
-      status?: PropertyStatus;
-      name?: string | null;
-      addressComponents?: Record<string, string>;
-    },
+    input: UpdatePropertyInput,
   ): Promise<PropertyDto> {
     const record = await this.properties.findById(context.organizationId, propertyId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Property not found');
     }
 
+    const houseType = record.houseTypeKey
+      ? await this.houseTypes.findByKey(record.houseTypeKey)
+      : null;
+
+    const merged = normalizeAddressFields({
+      streetName: input.streetName !== undefined ? input.streetName : record.streetName,
+      houseNumber: input.houseNumber !== undefined ? input.houseNumber : record.houseNumber,
+      blockName: input.blockName !== undefined ? input.blockName : record.blockName,
+      floorNumber: input.floorNumber !== undefined ? input.floorNumber : record.floorNumber,
+      unitNumber: input.unitNumber !== undefined ? input.unitNumber : record.unitNumber,
+      plotNumber: input.plotNumber !== undefined ? input.plotNumber : record.plotNumber,
+      plotName: input.plotName !== undefined ? input.plotName : record.plotName,
+    });
+    this.assertValidFields(record.kind, houseType, merged);
+
     const data: {
       status?: string;
       name?: string | null;
-      addressComponents?: Record<string, string>;
+      streetName?: string;
+      houseNumber?: string | null;
+      blockName?: string | null;
+      floorNumber?: string | null;
+      unitNumber?: string | null;
+      plotNumber?: string | null;
+      plotName?: string | null;
     } = {};
-    if (input.status !== undefined) {
-      if (input.status !== record.status) {
-        data.status = input.status;
+
+    if (input.status !== undefined && input.status !== record.status) {
+      if (!PROPERTY_STATUSES.includes(input.status)) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'Invalid property status');
       }
+      data.status = input.status;
     }
     if (input.name !== undefined) {
-      data.name = input.name?.trim() || null;
+      data.name = normalizeName(input.name);
     }
-    if (input.addressComponents !== undefined) {
-      data.addressComponents = input.addressComponents;
+    if (input.streetName !== undefined) data.streetName = merged.streetName ?? '';
+    for (const field of [
+      'houseNumber',
+      'blockName',
+      'floorNumber',
+      'unitNumber',
+      'plotNumber',
+      'plotName',
+    ] as const) {
+      if (input[field] !== undefined) data[field] = merged[field] ?? null;
     }
 
     if (Object.keys(data).length === 0) {
-      return this.toDto(record, config);
+      return this.toDto(record, houseType);
     }
 
     const updated = await this.properties.update(propertyId, data);
@@ -241,22 +280,19 @@ export class PropertyService {
       metadata: { changed: Object.keys(data) },
     });
 
-    return this.toDto(updated ?? record, config);
+    return this.toDto(updated ?? record, houseType);
   }
 
-  /**
-   * Archive a property (status transition only; the record is preserved).
-   */
-  async archive(
-    context: PropertyServiceContext,
-    config: PropertyConfigSnapshot,
-    propertyId: string,
-  ): Promise<PropertyDto> {
+  /** Archive a property (status transition only; the record is preserved). */
+  async archive(context: PropertyServiceContext, propertyId: string): Promise<PropertyDto> {
     const record = await this.properties.findById(context.organizationId, propertyId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Property not found');
     }
     const archived = await this.properties.setArchived(propertyId);
+    const houseType = archived?.houseTypeKey
+      ? await this.houseTypes.findByKey(archived.houseTypeKey)
+      : null;
 
     await this.audit.record({
       organizationId: context.organizationId,
@@ -269,28 +305,17 @@ export class PropertyService {
       metadata: { from: record.status, to: 'ARCHIVED' },
     });
 
-    return this.toDto(archived ?? record, config);
+    return this.toDto(archived ?? record, houseType);
   }
 
-  /**
-   * Physically delete a property. The identifier becomes available again for
-   * re-registration within the same estate. Refused when the property has
-   * child properties (units) — archive them first.
-   */
+  /** Physically delete a property. Its identifier becomes available again. */
   async delete(context: PropertyServiceContext, propertyId: string): Promise<void> {
     const record = await this.properties.findById(context.organizationId, propertyId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Property not found');
     }
 
-    const deleted = await this.properties.deleteIfNoChildren(propertyId);
-    if (!deleted) {
-      throw new AppError(
-        409,
-        'CONFLICT',
-        'This property has child properties; archive or re-parent them before deleting',
-      );
-    }
+    await this.properties.delete(propertyId);
 
     await this.audit.record({
       organizationId: context.organizationId,
@@ -304,176 +329,75 @@ export class PropertyService {
     });
   }
 
-  private toDto(record: PropertyRecord, config?: PropertyConfigSnapshot): PropertyDto {
-    const typeLabel =
-      config?.assetTypes.find((type) => type.key === record.typeKey)?.label ?? record.typeKey;
-    const houseTypeLabel =
-      record.houseTypeKey && config?.propertyOptions?.houseTypes
-        ? config.propertyOptions.houseTypes.find((type) => type.key === record.houseTypeKey)?.label ??
-          record.houseTypeKey
-        : null;
-    const parentProperty =
-      record.parentPropertyId && record.parentProperty
-        ? { id: record.parentProperty.id, identifier: record.parentProperty.identifier }
-        : null;
+  private async resolveHouseType(
+    kind: PropertyKind,
+    key: string | null,
+  ): Promise<HouseTypeRecord | null> {
+    if (kind === 'LAND') {
+      if (!key) return null;
+      const supplied = await this.houseTypes.findByKey(key);
+      if (!supplied) {
+        throw new AppError(400, 'VALIDATION_ERROR', `House type "${key}" does not exist`);
+      }
+      return supplied;
+    }
+
+    if (!key) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Select a house type');
+    }
+    const houseType = await this.houseTypes.findByKey(key);
+    if (!houseType || !houseType.active) {
+      throw new AppError(400, 'VALIDATION_ERROR', `House type "${key}" is not available`);
+    }
+    return houseType;
+  }
+
+  private assertValidFields(
+    kind: PropertyKind,
+    houseType: HouseTypeRecord | null,
+    fields: PropertyAddressFields,
+  ): void {
+    const validation = validatePropertyFields({ kind, houseType, ...fields });
+    if (!validation.valid) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Property details are invalid', {
+        details: Object.entries(validation.fieldErrors).map(([path, message]) => ({
+          path,
+          message,
+        })),
+      });
+    }
+  }
+
+  private toDto(record: PropertyRecord, houseType: HouseTypeRecord | null): PropertyDto {
     return {
       id: record.id,
       estateId: record.estateId,
       identifier: record.identifier,
       name: record.name,
-      typeKey: record.typeKey,
-      typeLabel,
-      houseTypeKey: record.houseTypeKey,
-      houseTypeLabel,
+      kind: record.kind,
+      kindLabel: PROPERTY_KIND_LABELS[record.kind] ?? record.kind,
+      houseType: record.houseTypeKey,
+      houseTypeLabel: houseType?.label ?? record.houseTypeKey,
+      houseTypeRequiresUnitFields: houseType?.requiresUnitFields ?? false,
+      streetName: record.streetName,
+      houseNumber: record.houseNumber,
+      blockName: record.blockName,
+      floorNumber: record.floorNumber,
+      unitNumber: record.unitNumber,
+      plotNumber: record.plotNumber,
+      plotName: record.plotName,
       status: record.status as PropertyStatus,
-      parentPropertyId: record.parentPropertyId,
-      parentProperty,
-      unitTypeKey: record.unitTypeKey,
-      defaultUnitTypeKey: null,
-      addressComponents: record.addressComponents,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
   }
 }
 
-/** Enforce the configured property-field contract at the API boundary. */
-export function validateAddressComponents(
-  config: PropertyConfigSnapshot,
-  typeKey: string,
-  houseTypeKey: string | null,
-  values: Record<string, string>,
-): void {
-  const components = config.propertyOptions.addressComponents;
-  const houseType = houseTypeKey ? `${typeKey}.${houseTypeKey}` : null;
-  const configuredKeys = new Set(components.map((component) => component.key));
-  const rejectField = (key: string, message: string): never => {
-    throw new AppError(400, 'VALIDATION_ERROR', message, {
-      details: [{ path: `addressComponents.${key}`, message }],
-    });
-  };
-  for (const key of Object.keys(values)) {
-    if (!configuredKeys.has(key)) {
-      rejectField(key, `Unknown address component "${key}"`);
-    }
-    if (typeof values[key] !== 'string') {
-      rejectField(key, `Address component "${key}" must be text`);
-    }
+function normalizeName(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  if (trimmed.length > 120) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Property name must be 120 characters or fewer');
   }
-  for (const component of components) {
-    const value = values[component.key]?.trim() ?? '';
-    const notApplicable = component.notApplicableFor.includes(typeKey);
-    const notApplicableForHouseType =
-      houseType !== null && component.notApplicableFor.includes(houseType);
-    if (notApplicable || notApplicableForHouseType) {
-      if (value !== '') {
-        rejectField(
-          component.key,
-          `Address component "${component.label}" is not applicable to this property type`,
-        );
-      }
-      continue;
-    }
-    const appliesToAll = component.requiredFor.length === 0;
-    const explicitlyRequired =
-      component.requiredFor.includes(typeKey)
-      || (houseType && component.requiredFor.includes(houseType));
-    const required =
-      !component.notApplicableFor.includes(typeKey)
-      && !component.notApplicableFor.includes(houseType ?? '')
-      && (appliesToAll || explicitlyRequired);
-    if (required && value === '') {
-      rejectField(component.key, `Address component "${component.label}" is required`);
-    }
-    if (value === '') continue;
-    if (value.length > component.maxLength) {
-      rejectField(
-        component.key,
-        `Address component "${component.label}" exceeds ${component.maxLength} characters`,
-      );
-    }
-    if (component.pattern) {
-      let matches = false;
-      try {
-        matches = new RegExp(component.pattern).test(value);
-      } catch {
-        /* invalid config is surfaced below */
-      }
-      if (!matches) {
-        rejectField(
-          component.key,
-          `Address component "${component.label}" does not match the required format`,
-        );
-      }
-    }
-  }
-}
-
-/**
- * Validates that a type key references an active, configured asset type.
- * Throws a 400 when the key is unknown or the type is inactive, so the
- * registry never references a classification that no longer exists.
- */
-function assertConfiguredTypeKey(config: PropertyConfigSnapshot, typeKey: string): string {
-  const assetType = config.assetTypes.find((type) => type.key === typeKey);
-  if (!assetType) {
-    throw new AppError(
-      400,
-      'VALIDATION_ERROR',
-      `Unknown property type "${typeKey}"; it is not in the configured asset types`,
-    );
-  }
-  if (!assetType.active) {
-    throw new AppError(
-      409,
-      'CONFLICT',
-      `Property type "${assetType.label}" is not active; it cannot be assigned to new properties`,
-    );
-  }
-  return typeKey;
-}
-
-/**
- * Validates the nested house type key: required when typeKey is `house`,
- * optional otherwise. Must reference an active configured house type.
- */
-function assertHouseTypeKey(
-  config: PropertyConfigSnapshot,
-  typeKey: string,
-  houseTypeKey: string | null | undefined,
-): string | null {
-  const houseTypes = config.propertyOptions?.houseTypes ?? [];
-  if (typeKey === 'house') {
-    if (!houseTypeKey) {
-      throw new AppError(
-        400,
-        'VALIDATION_ERROR',
-        'A house property must declare a house type (e.g. bungalow, terrace, duplex, apartment, flat)',
-      );
-    }
-    const houseType = houseTypes.find((ht) => ht.key === houseTypeKey);
-    if (!houseType) {
-      throw new AppError(
-        400,
-        'VALIDATION_ERROR',
-        `Unknown house type "${houseTypeKey}"; it is not in the configured house types`,
-      );
-    }
-    if (!houseType.active) {
-      throw new AppError(
-        409,
-        'CONFLICT',
-        `House type "${houseType.label}" is not active; it cannot be assigned to new properties`,
-      );
-    }
-    return houseTypeKey;
-  }
-  if (houseTypeKey) {
-    throw new AppError(
-      400,
-      'VALIDATION_ERROR',
-      `House type "${houseTypeKey}" can only be set when the property type is "house"`,
-    );
-  }
-  return null;
+  return trimmed.length === 0 ? null : trimmed;
 }

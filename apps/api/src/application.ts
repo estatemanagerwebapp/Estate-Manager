@@ -19,10 +19,6 @@ import {
   type ImportRouteOptions,
 } from './modules/imports/import.routes.js';
 import {
-  createPropertyOptionsRouter,
-  type PropertyOptionsRouteOptions,
-} from './modules/organization/property-options.routes.js';
-import {
   createOnboardingRouter,
   type OnboardingRouteOptions,
 } from './modules/auth/onboarding.routes.js';
@@ -57,8 +53,6 @@ export interface AppOptions {
   properties?: PropertyRouteOptions;
   /** Phase 2 bulk import wiring. */
   imports?: ImportRouteOptions;
-  /** Phase 2 property options wiring. */
-  propertyOptions?: PropertyOptionsRouteOptions;
   /** Phase 2 resident onboarding wiring (persistent code, payment-gated). */
   onboarding?: OnboardingRouteOptions;
   /** Phase 2 local media upload + serving. */
@@ -110,7 +104,6 @@ export function createApp(options: AppOptions = {}): Express {
     estates: options.estates,
     properties: options.properties,
     imports: options.imports,
-    propertyOptions: options.propertyOptions,
     onboarding: options.onboarding,
     media: options.media,
     dashboard: options.dashboard,
@@ -135,7 +128,6 @@ function createVersionedRoutes(options: {
   estates?: EstateRouteOptions;
   properties?: PropertyRouteOptions;
   imports?: ImportRouteOptions;
-  propertyOptions?: PropertyOptionsRouteOptions;
   onboarding?: OnboardingRouteOptions;
   media?: MediaRouteOptions;
   dashboard?: DashboardRouteOptions;
@@ -149,7 +141,6 @@ function createVersionedRoutes(options: {
     estates,
     properties,
     imports,
-    propertyOptions,
     onboarding,
     media,
     dashboard,
@@ -192,10 +183,6 @@ function createVersionedRoutes(options: {
     // Batch-level routes (detail, commit) live under /imports/:batchId,
     // so they never collide with the estate router's /:estateId routes.
     router.use('/imports', createImportBatchRouter(imports));
-  }
-
-  if (propertyOptions) {
-    router.use('/property-options', createPropertyOptionsRouter(propertyOptions));
   }
 
   if (onboarding) {
