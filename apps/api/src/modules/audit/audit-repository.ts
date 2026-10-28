@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
-import type { AuditEventDto, AuditEventType } from '@silverstone/shared';
+import type { AuditEventDto, AuditEventType, AuditTargetType } from '@silverstone/shared';
 
 /**
  * Append-only security audit log.
@@ -61,14 +61,44 @@ const AUDIT_EVENT_DB_MAP = {
   'resident.booking_created': 'resident_booking_created',
   'resident.booking_cancelled': 'resident_booking_cancelled',
   'resident.sos_raised': 'resident_sos_raised',
+  // Operator console — Phase 0 catalogue (emitted by later phases).
+  'resident.updated': 'resident_updated',
+  'resident.archived': 'resident_archived',
+  'resident.restored': 'resident_restored',
+  'resident.access_disabled': 'resident_access_disabled',
+  'resident.access_enabled': 'resident_access_enabled',
+  'user.created': 'user_created',
+  'user.sessions_revoked': 'user_sessions_revoked',
+  'message.replied': 'message_replied',
+  'message.thread_closed': 'message_thread_closed',
+  'message.thread_reopened': 'message_thread_reopened',
+  'complaint.replied': 'complaint_replied',
+  'complaint.status_changed': 'complaint_status_changed',
+  'invoice.created': 'invoice_created',
+  'invoice.voided': 'invoice_voided',
+  'payment.recorded': 'payment_recorded',
+  'access_code.revoked': 'access_code_revoked',
+  'access_code.extended': 'access_code_extended',
+  'verification.recorded': 'verification_recorded',
+  'facility.created': 'facility_created',
+  'facility.updated': 'facility_updated',
+  'facility.archived': 'facility_archived',
+  'booking.confirmed': 'booking_confirmed',
+  'booking.cancelled': 'booking_cancelled',
+  'booking.completed': 'booking_completed',
+  'sos.acknowledged': 'sos_acknowledged',
+  'sos.resolved': 'sos_resolved',
+  'settings.updated': 'settings_updated',
+  'audit.exported': 'audit_exported',
 } as const;
+
+export { AUDIT_EVENT_DB_MAP };
 
 export interface RecordAuditEventInput {
   organizationId: string;
   actorId: string | null;
   eventType: AuditEventType;
-  targetType:
-    'user' | 'session' | 'organization' | 'estate' | 'property' | 'import' | 'resident' | null;
+  targetType: AuditTargetType | null;
   targetId: string | null;
   requestId: string | null;
   outcome: 'success' | 'failure';

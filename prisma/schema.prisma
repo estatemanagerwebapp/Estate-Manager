@@ -143,9 +143,9 @@ model ResidentOnboarding {
   propertyId     String @map("property_id") @db.Uuid
 
   /// PENDING (in progress) or COMPLETED (User account created).
-  status   String @default("PENDING") @db.VarChar(20)
+  status         String  @default("PENDING") @db.VarChar(20)
   /// SHA-256 hex of the persistent access code.
-  codeHash String @unique @map("code_hash") @db.VarChar(64)
+  codeHash       String  @unique @map("code_hash") @db.VarChar(64)
   /// Plaintext onboarding code, stored so the admin can re-share it on the
   /// Residents screen at any time. Null for rows created before this field
   /// was added.
@@ -246,15 +246,15 @@ model Invoice {
 }
 
 model Payment {
-  id         String   @id @default(uuid()) @db.Uuid
-  organizationId String @map("organization_id") @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  invoiceId  String   @map("invoice_id") @db.Uuid
-  amountKobo Int      @map("amount_kobo")
-  method     String   @db.VarChar(32)
-  reference  String?  @db.VarChar(120)
-  paidAt     DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  invoiceId      String   @map("invoice_id") @db.Uuid
+  amountKobo     Int      @map("amount_kobo")
+  method         String   @db.VarChar(32)
+  reference      String?  @db.VarChar(120)
+  paidAt         DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -266,17 +266,17 @@ model Payment {
 }
 
 model Transaction {
-  id           String   @id @default(uuid()) @db.Uuid
-  organizationId String @map("organization_id") @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
   /// INVOICE | PAYMENT | REFUND | FEE.
-  kind         String   @db.VarChar(16)
-  amountKobo   Int      @map("amount_kobo")
+  kind           String   @db.VarChar(16)
+  amountKobo     Int      @map("amount_kobo")
   /// Signed amount: positive = credit (incoming), negative = debit (outgoing).
-  signed       Int
-  memo         String? @db.VarChar(255)
-  reference    String? @db.VarChar(120)
-  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  signed         Int
+  memo           String?  @db.VarChar(255)
+  reference      String?  @db.VarChar(120)
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -336,9 +336,9 @@ model Complaint {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property     Property?         @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property     Property?        @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   replies      ComplaintReply[]
 
   @@index([organizationId, userId, status])
@@ -403,14 +403,14 @@ model Message {
 // Both are written by the estate office, never by a resident.
 
 model Announcement {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  title          String    @db.VarChar(160)
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  title          String   @db.VarChar(160)
   body           String
   /// The estate-office user who published it; null when the author was removed.
-  authorId       String?   @map("author_id") @db.Uuid
-  publishedAt    DateTime  @default(now()) @map("published_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  authorId       String?  @map("author_id") @db.Uuid
+  publishedAt    DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   author       User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
@@ -455,7 +455,7 @@ model Facility {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  estate       Estate?       @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  estate       Estate?      @relation(fields: [estateId], references: [id], onDelete: Cascade)
   bookings     Booking[]
 
   @@index([organizationId, estateId])
@@ -685,26 +685,26 @@ model Property {
 
   // --- Shared / house fields -------------------------------------------------
   /// Street name. Required for every property kind.
-  streetName     String       @map("street_name") @db.VarChar(120)
+  streetName  String  @map("street_name") @db.VarChar(120)
   /// Used by bungalow / terrace / duplex (house types without unit fields).
-  houseNumber    String?      @map("house_number") @db.VarChar(32)
+  houseNumber String? @map("house_number") @db.VarChar(32)
   /// Used by apartment / flat (house types with unit fields).
-  blockName      String?      @map("block_name") @db.VarChar(64)
-  floorNumber    String?      @map("floor_number") @db.VarChar(16)
-  unitNumber     String?      @map("unit_number") @db.VarChar(32)
+  blockName   String? @map("block_name") @db.VarChar(64)
+  floorNumber String? @map("floor_number") @db.VarChar(16)
+  unitNumber  String? @map("unit_number") @db.VarChar(32)
 
   // --- Land fields -----------------------------------------------------------
   /// Plot number/identifier. Required for LAND and BOTH.
-  plotNumber     String?      @map("plot_number") @db.VarChar(32)
+  plotNumber String? @map("plot_number") @db.VarChar(32)
   /// Human-facing plot name. Required for LAND and BOTH.
-  plotName       String?      @map("plot_name") @db.VarChar(64)
+  plotName   String? @map("plot_name") @db.VarChar(64)
 
   /// Human-facing name the organization gives this property. Distinct from the
   /// derived `identifier`; null for legacy/import-created records.
-  name           String?      @db.VarChar(120)
-  status         String       @default("ACTIVE") @db.VarChar(20)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  name      String?  @db.VarChar(120)
+  status    String   @default("ACTIVE") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   estate              Estate               @relation(fields: [estateId], references: [id], onDelete: Cascade)
   houseType           HouseType?           @relation(fields: [houseTypeKey], references: [key], onDelete: Restrict)
@@ -841,4 +841,33 @@ enum AuditEventType {
   resident_booking_created
   resident_booking_cancelled
   resident_sos_raised
+  // Operator console — Phase 0 catalogue (emitted by later phases).
+  resident_updated
+  resident_archived
+  resident_restored
+  resident_access_disabled
+  resident_access_enabled
+  user_created
+  user_sessions_revoked
+  message_replied
+  message_thread_closed
+  message_thread_reopened
+  complaint_replied
+  complaint_status_changed
+  invoice_created
+  invoice_voided
+  payment_recorded
+  access_code_revoked
+  access_code_extended
+  verification_recorded
+  facility_created
+  facility_updated
+  facility_archived
+  booking_confirmed
+  booking_cancelled
+  booking_completed
+  sos_acknowledged
+  sos_resolved
+  settings_updated
+  audit_exported
 }

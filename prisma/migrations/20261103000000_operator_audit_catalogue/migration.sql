@@ -1,0 +1,32 @@
+-- Phase 0 operator-console foundation: additive audit event catalogue.
+-- The events are emitted by later operator-console phases; no existing rows
+-- are rewritten and no other table is touched.
+
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'resident_updated';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'resident_archived';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'resident_restored';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'resident_access_disabled';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'resident_access_enabled';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'user_created';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'user_sessions_revoked';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'message_replied';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'message_thread_closed';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'message_thread_reopened';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'complaint_replied';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'complaint_status_changed';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'invoice_created';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'invoice_voided';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'payment_recorded';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'access_code_revoked';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'access_code_extended';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'verification_recorded';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'facility_created';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'facility_updated';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'facility_archived';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'booking_confirmed';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'booking_cancelled';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'booking_completed';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'sos_acknowledged';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'sos_resolved';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'settings_updated';
+ALTER TYPE "AuditEventType" ADD VALUE IF NOT EXISTS 'audit_exported';

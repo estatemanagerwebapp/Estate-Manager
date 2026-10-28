@@ -34,6 +34,7 @@ export type { ModuleFlags, ModuleKey } from './modules.js';
 export {
   ACCOUNT_STATUSES,
   AUDIT_EVENT_TYPES,
+  AUDIT_TARGET_TYPES,
   PASSWORD_POLICY,
   validatePasswordPolicy,
   GENDERS,
@@ -44,6 +45,7 @@ export type {
   AccountStatus,
   AuditEventDto,
   AuditEventType,
+  AuditTargetType,
   AdminMarkPaidInput,
   AdminMarkPaidResponse,
   ChangePasswordResponse,

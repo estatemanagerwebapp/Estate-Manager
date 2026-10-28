@@ -1,18 +1,16 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Building2,
-  LayoutDashboard,
-  Users,
-  UserRound,
-  KeyRound,
-  LogOut,
-  Settings,
-  Home,
-} from 'lucide-react';
+import { Building2, KeyRound, LogOut, Settings } from 'lucide-react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
 import { useCan } from '../auth/useCan';
 import { RefreshButton } from './RefreshButton';
 import { ROLE_LABELS } from '@silverstone/shared';
+import {
+  PRIMARY_NAV,
+  SETTINGS_NAV,
+  SETTINGS_SECTION_LABEL,
+  isNavItemVisible,
+  sectionLabelForPath,
+} from '../navigation';
 
 /**
  * Application shell for signed-in operators. Sidebar navigation is
@@ -23,6 +21,7 @@ import { ROLE_LABELS } from '@silverstone/shared';
 export function AppShell() {
   const { user, logout } = useAuth();
   const can = useCan();
+  const userCanManage = canManageUsers(user);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -52,58 +51,36 @@ export function AppShell() {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-3" aria-label="Primary">
-          <NavLink to="/app" end className={navClasses}>
-            <span className="text-(--color-primary)">
-              <LayoutDashboard aria-hidden size={16} />
-            </span>
-            Overview
-          </NavLink>
-          {can['estate.read'] && (
-            <NavLink to="/app/estates" className={navClasses}>
-              <span className="text-(--color-primary)">
-                <Home aria-hidden size={16} />
-              </span>
-              Estates
-            </NavLink>
-          )}
-          {can['property.read'] && (
-            <NavLink to="/app/properties" className={navClasses}>
-              <span className="text-(--color-primary)">
-                <Building2 aria-hidden size={16} />
-              </span>
-              Properties
-            </NavLink>
-          )}
-          {canManageUsers(user) && (
-            <NavLink to="/app/residents" className={navClasses}>
-              <span className="text-(--color-primary)">
-                <UserRound aria-hidden size={16} />
-              </span>
-              Residents
-            </NavLink>
-          )}
-          {canManageUsers(user) && (
-            <NavLink to="/app/users" className={navClasses}>
-              <span className="text-(--color-primary)">
-                <Users aria-hidden size={16} />
-              </span>
-              Users
-            </NavLink>
-          )}
+          {PRIMARY_NAV.filter((item) => isNavItemVisible(item, can, userCanManage)).map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink key={item.to} to={item.to} end={item.end} className={navClasses}>
+                <span className="text-(--color-primary)">
+                  <Icon aria-hidden size={16} />
+                </span>
+                {item.label}
+              </NavLink>
+            );
+          })}
           <div className="mt-auto border-t border-slate-200/80 pt-3">
             <p
               id="nav-settings"
               className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)"
             >
-              Settings
+              {SETTINGS_SECTION_LABEL}
             </p>
             <div role="group" aria-labelledby="nav-settings" className="flex flex-col gap-1">
-              <NavLink to="/app/account" className={navClasses}>
-                <span className="text-(--color-primary)">
-                  <KeyRound aria-hidden size={16} />
-                </span>
-                Account &amp; password
-              </NavLink>
+              {SETTINGS_NAV.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink key={item.to} to={item.to} className={navClasses}>
+                    <span className="text-(--color-primary)">
+                      <Icon aria-hidden size={16} />
+                    </span>
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
         </nav>
@@ -133,7 +110,7 @@ export function AppShell() {
             <span className="text-sm font-semibold">Silverstone</span>
           </div>
           <p className="hidden text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-ink-muted) md:block">
-            {sectionLabel(location.pathname)}
+            {sectionLabelForPath(location.pathname)}
           </p>
           <div className="flex items-center gap-1.5">
             <RefreshButton />
@@ -181,16 +158,4 @@ export function AppShell() {
       </main>
     </div>
   );
-}
-
-/** Human-readable name for the sticky header. */
-function sectionLabel(pathname: string): string {
-  if (pathname.startsWith('/app/estates')) return 'Estates';
-  if (pathname.startsWith('/app/properties/')) return 'Property';
-  if (pathname.startsWith('/app/properties')) return 'Properties';
-  if (pathname.startsWith('/app/residents')) return 'Residents';
-  if (pathname.startsWith('/app/users')) return 'Users';
-  if (pathname.startsWith('/app/activity')) return 'Activity';
-  if (pathname.startsWith('/app/account')) return 'Settings';
-  return 'Overview';
 }

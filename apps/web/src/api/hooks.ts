@@ -1,6 +1,7 @@
 import type { HouseTypesResponse, AuditEventDto } from '@silverstone/shared';
 import { api, ApiRequestError } from './client';
 import { useApiQuery } from './query';
+import { queryKeys } from './query-keys';
 
 /**
  * Loads the active house-type catalogue. This is a real domain table, so the
@@ -8,7 +9,7 @@ import { useApiQuery } from './query';
  */
 export function useHouseTypes(enabled: boolean) {
   const { data, loading, error } = useApiQuery(
-    ['house-types'],
+    queryKeys.houseTypes,
     () => api.getHouseTypes(),
     'Could not load house types.',
     enabled,
@@ -45,13 +46,13 @@ export interface DashboardKpis {
  */
 export function useDashboard(enabled: boolean) {
   const kpisQuery = useApiQuery(
-    ['dashboard', 'kpis'],
+    queryKeys.dashboard.kpis,
     () => api.getDashboardKpis(),
     'Could not load dashboard statistics.',
     enabled,
   );
   const activityQuery = useApiQuery(
-    ['dashboard', 'activity', 5],
+    queryKeys.dashboard.activity(5),
     () => api.getDashboardActivity(5),
     'Could not load recent activity.',
     enabled,

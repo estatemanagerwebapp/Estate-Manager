@@ -263,7 +263,6 @@ export const AUDIT_EVENT_TYPES = [
   'propertyOptions.updated',
   // Phase 3 — resident dashboard.
   'resident.profile_updated',
-  'resident.payment_recorded',
   'resident.invoice_created',
   'resident.code_generated',
   'resident.code_extended',
@@ -273,9 +272,62 @@ export const AUDIT_EVENT_TYPES = [
   'resident.booking_created',
   'resident.booking_cancelled',
   'resident.sos_raised',
+  // Operator console — Phase 0 catalogue (events are emitted by later phases).
+  'resident.updated',
+  'resident.archived',
+  'resident.restored',
+  'resident.access_disabled',
+  'resident.access_enabled',
+  'user.created',
+  'user.sessions_revoked',
+  'message.replied',
+  'message.thread_closed',
+  'message.thread_reopened',
+  'complaint.replied',
+  'complaint.status_changed',
+  'invoice.created',
+  'invoice.voided',
+  'payment.recorded',
+  'access_code.revoked',
+  'access_code.extended',
+  'verification.recorded',
+  'facility.created',
+  'facility.updated',
+  'facility.archived',
+  'booking.confirmed',
+  'booking.cancelled',
+  'booking.completed',
+  'sos.acknowledged',
+  'sos.resolved',
+  'settings.updated',
+  'audit.exported',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+/** Entities an audit event can point at. Kept explicit so new modules cannot
+ *  silently write an untyped target and break the audit-log filters. */
+export const AUDIT_TARGET_TYPES = [
+  'user',
+  'session',
+  'organization',
+  'estate',
+  'property',
+  'import',
+  'resident',
+  'message_thread',
+  'complaint',
+  'invoice',
+  'payment',
+  'access_code',
+  'access_verification',
+  'facility',
+  'booking',
+  'sos_event',
+  'settings',
+] as const;
+
+export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
 /** A redacted, append-only audit event. `metadata` may only hold safe,
  *  non-secret key/value pairs; passwords, tokens, reset links and full
@@ -284,8 +336,7 @@ export interface AuditEventDto {
   id: string;
   eventType: AuditEventType;
   actorId: string | null;
-  targetType:
-    'user' | 'session' | 'organization' | 'estate' | 'property' | 'import' | 'resident' | null;
+  targetType: AuditTargetType | null;
   targetId: string | null;
   requestId: string | null;
   outcome: 'success' | 'failure';

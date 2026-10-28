@@ -36,6 +36,18 @@ export const PERMISSIONS = [
   'message.view',
   'facility.book',
   'sos.create',
+  // Operator console capabilities (Phase 0 foundation; routes land in later phases).
+  'complaint.read',
+  'complaint.manage',
+  'message.read',
+  'message.manage',
+  'sos.read',
+  'sos.manage',
+  'facility.read',
+  'facility.manage',
+  'booking.read',
+  'booking.manage',
+  'verification.read',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -54,6 +66,12 @@ const AUDITOR_PERMISSIONS: Permission[] = [
   'gate.read',
   'maintenance.read',
   'audit.read',
+  'complaint.read',
+  'message.read',
+  'sos.read',
+  'facility.read',
+  'booking.read',
+  'verification.read',
 ];
 
 /**

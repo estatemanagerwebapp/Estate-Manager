@@ -271,6 +271,34 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'resident.booking_created': 'requested a facility booking',
   'resident.booking_cancelled': 'cancelled a facility booking',
   'resident.sos_raised': 'raised an SOS alert',
+  'resident.updated': 'updated a resident',
+  'resident.archived': 'archived a resident',
+  'resident.restored': 'restored a resident',
+  'resident.access_disabled': 'disabled resident portal access',
+  'resident.access_enabled': 'enabled resident portal access',
+  'user.created': 'created an administrator',
+  'user.sessions_revoked': 'revoked user sessions',
+  'message.replied': 'replied to a message',
+  'message.thread_closed': 'closed a message thread',
+  'message.thread_reopened': 'reopened a message thread',
+  'complaint.replied': 'replied to a complaint',
+  'complaint.status_changed': 'changed a complaint status',
+  'invoice.created': 'created an invoice',
+  'invoice.voided': 'voided an invoice',
+  'payment.recorded': 'recorded a payment',
+  'access_code.revoked': 'revoked an access code',
+  'access_code.extended': 'extended an access code',
+  'verification.recorded': 'verified an access code',
+  'facility.created': 'created a facility',
+  'facility.updated': 'updated a facility',
+  'facility.archived': 'archived a facility',
+  'booking.confirmed': 'confirmed a booking',
+  'booking.cancelled': 'cancelled a booking',
+  'booking.completed': 'completed a booking',
+  'sos.acknowledged': 'acknowledged an SOS alert',
+  'sos.resolved': 'resolved an SOS alert',
+  'settings.updated': 'updated settings',
+  'audit.exported': 'exported the audit log',
 };
 
 type ActivityTone = 'success' | 'danger' | 'warning' | 'neutral';
@@ -281,12 +309,22 @@ function activityTone(event: AuditEventDto): ActivityTone {
     case 'import.commit_failed':
     case 'login.failed':
     case 'user.deleted':
+    case 'user.sessions_revoked':
     case 'estate.deleted':
     case 'property.deleted':
     case 'resident.deleted':
+    case 'resident.archived':
+    case 'invoice.voided':
+    case 'access_code.revoked':
+    case 'facility.archived':
+    case 'booking.cancelled':
       return 'warning';
     case 'login.succeeded':
     case 'resident.payment_recorded':
+    case 'payment.recorded':
+    case 'verification.recorded':
+    case 'booking.confirmed':
+    case 'sos.resolved':
     case 'import.completed':
       return 'success';
     default:

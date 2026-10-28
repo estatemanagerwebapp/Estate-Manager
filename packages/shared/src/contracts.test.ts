@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { AUDIT_EVENT_TYPES, AUDIT_TARGET_TYPES } from './auth-contract.js';
 import { DEFAULT_MODULE_FLAGS, enabledModules, isModuleEnabled } from './modules.js';
-import { hasPermission, permissionsForRole } from './permissions.js';
+import { PERMISSIONS, hasPermission, permissionsForRole } from './permissions.js';
 import { ROLE_KEYS, isRoleKey } from './roles.js';
 
 describe('roles', () => {
@@ -50,13 +51,59 @@ describe('permissions', () => {
     expect(hasPermission('RESIDENT', 'config.manage')).toBe(false);
   });
 
-  it('grants auditors read-only access', () => {
+  it('grants auditors read-only access to operator queues', () => {
     expect(hasPermission('AUDITOR', 'audit.read')).toBe(true);
+    expect(hasPermission('AUDITOR', 'complaint.read')).toBe(true);
+    expect(hasPermission('AUDITOR', 'message.read')).toBe(true);
+    expect(hasPermission('AUDITOR', 'sos.read')).toBe(true);
+    expect(hasPermission('AUDITOR', 'facility.read')).toBe(true);
+    expect(hasPermission('AUDITOR', 'booking.read')).toBe(true);
+    expect(hasPermission('AUDITOR', 'verification.read')).toBe(true);
     expect(hasPermission('AUDITOR', 'resident.manage')).toBe(false);
+    expect(hasPermission('AUDITOR', 'complaint.manage')).toBe(false);
+    expect(hasPermission('AUDITOR', 'sos.manage')).toBe(false);
+  });
+
+  it('grants estate administrators the operator management surface', () => {
+    expect(hasPermission('ESTATE_ADMIN', 'complaint.manage')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'message.manage')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'sos.manage')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'facility.manage')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'booking.manage')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'verification.read')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'config.manage')).toBe(false);
+  });
+
+  it('keeps operator capabilities out of the resident role', () => {
+    expect(hasPermission('RESIDENT', 'complaint.read')).toBe(false);
+    expect(hasPermission('RESIDENT', 'message.manage')).toBe(false);
+    expect(hasPermission('RESIDENT', 'sos.manage')).toBe(false);
+    expect(hasPermission('RESIDENT', 'facility.manage')).toBe(false);
+    expect(hasPermission('RESIDENT', 'verification.read')).toBe(false);
   });
 
   it('honours organization overrides', () => {
     expect(hasPermission('GUARD', 'audit.read', { GUARD: ['audit.read'] })).toBe(true);
+  });
+});
+
+describe('audit catalogue', () => {
+  it('declares each permission and audit event once', () => {
+    expect(new Set(PERMISSIONS).size).toBe(PERMISSIONS.length);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(AUDIT_EVENT_TYPES.length);
+    expect(new Set(AUDIT_TARGET_TYPES).size).toBe(AUDIT_TARGET_TYPES.length);
+  });
+
+  it('includes the operator foundation event and target types', () => {
+    expect(AUDIT_EVENT_TYPES).toContain('message.replied');
+    expect(AUDIT_EVENT_TYPES).toContain('complaint.status_changed');
+    expect(AUDIT_EVENT_TYPES).toContain('payment.recorded');
+    expect(AUDIT_EVENT_TYPES).toContain('verification.recorded');
+    expect(AUDIT_EVENT_TYPES).toContain('sos.resolved');
+    expect(AUDIT_EVENT_TYPES).toContain('settings.updated');
+    expect(AUDIT_TARGET_TYPES).toContain('message_thread');
+    expect(AUDIT_TARGET_TYPES).toContain('access_verification');
+    expect(AUDIT_TARGET_TYPES).toContain('settings');
   });
 });
 
