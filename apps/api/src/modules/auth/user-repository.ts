@@ -1,5 +1,11 @@
 import type { PrismaClient } from '@prisma/client';
-import { ROLE_KEYS, isRoleKey, ACCOUNT_STATUSES } from '@silverstone/shared';
+import {
+  ROLE_KEYS,
+  STAFF_ROLE_KEYS,
+  isRoleKey,
+  isStaffRole,
+  ACCOUNT_STATUSES,
+} from '@silverstone/shared';
 
 /**
  * Data access for staff users. Prisma types stop at this boundary; callers
@@ -38,6 +44,8 @@ export interface UserQuery {
   /** Optional role/status filters for the admin list. */
   role?: string;
   status?: string;
+  /** Restrict the result to staff roles (Administrators screen). */
+  staffOnly?: boolean;
   /** Case-insensitive email prefix search (admin convenience). */
   emailContains?: string;
 }
@@ -61,10 +69,23 @@ export class PrismaUserRepository {
   }
 
   async list(query: UserQuery): Promise<UserRecord[]> {
+    // `staffOnly` is the Administrators screen. An explicit role is
+    // intersected with the staff set, so asking for RESIDENT on a staff list
+    // returns nothing rather than leaking resident accounts into it.
+    const roleFilter = query.staffOnly
+      ? {
+          role: {
+            in: query.role ? (isStaffRole(query.role) ? [query.role] : []) : [...STAFF_ROLE_KEYS],
+          },
+        }
+      : query.role
+        ? { role: query.role }
+        : {};
+
     const rows = await this.prisma.user.findMany({
       where: {
         organizationId: query.organizationId,
-        ...(query.role ? { role: query.role } : {}),
+        ...roleFilter,
         ...(query.status ? { status: query.status } : {}),
         ...(query.emailContains ? { email: { contains: query.emailContains.toLowerCase() } } : {}),
       },

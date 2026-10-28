@@ -22,9 +22,9 @@ describe('operator navigation registry', () => {
 
   it('gates account-administration links on user management', () => {
     expect(isNavItemVisible(item('Residents'), {}, false)).toBe(false);
-    expect(isNavItemVisible(item('Users'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('Administrators'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Residents'), {}, true)).toBe(true);
-    expect(isNavItemVisible(item('Users'), {}, true)).toBe(true);
+    expect(isNavItemVisible(item('Administrators'), {}, true)).toBe(true);
   });
 
   it('derives the sticky-header section from the current path', () => {
@@ -33,7 +33,9 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/properties/123')).toBe('Property');
     expect(sectionLabelForPath('/app/properties')).toBe('Properties');
     expect(sectionLabelForPath('/app/residents')).toBe('Residents');
-    expect(sectionLabelForPath('/app/users')).toBe('Users');
+    expect(sectionLabelForPath('/app/administrators')).toBe('Administrators');
+    // Old bookmarks redirect to Administrators but still label the header.
+    expect(sectionLabelForPath('/app/users')).toBe('Administrators');
     expect(sectionLabelForPath('/app/activity')).toBe('Activity');
     expect(sectionLabelForPath('/app/account')).toBe('Settings');
   });

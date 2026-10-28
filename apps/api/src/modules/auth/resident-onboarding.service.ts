@@ -1,6 +1,6 @@
 import { AppError } from '../../lib/errors.js';
 import { hashPassword } from '../../lib/password.js';
-import { randomBytes } from 'node:crypto';
+import { generateTemporaryPassword } from '../../lib/temporary-password.js';
 import type { PrismaUserRepository } from './user-repository.js';
 import type {
   PrismaResidentOnboardingRepository,
@@ -753,7 +753,7 @@ export class ResidentOnboardingService {
     // Generate the demo password (meets the password policy: 12+ chars,
     // mixed case + digit). It is returned to the resident exactly once
     // and hashed immediately.
-    const demoPassword = generateDemoPassword();
+    const demoPassword = generateTemporaryPassword();
     const hash = await hashPassword(demoPassword);
 
     const user = await this.users.create({
@@ -864,34 +864,4 @@ function normalizeNullable(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
-}
-
-/**
- * Generate a demo password that satisfies the password policy
- * (12+ chars, at least one lowercase, one uppercase, one digit).
- */
-function generateDemoPassword(): string {
-  const lowercase = 'abcdefghjkmnpqrstuvwxyz';
-  const uppercase = 'ABCDEFGHJKMNPQRSTUVWXYZ';
-  const digits = '23456789';
-  const all = lowercase + uppercase + digits;
-  const random = randomBytes(16);
-  const chars: string[] = [];
-  // Guarantee one from each class, then fill the rest at random.
-  chars.push(lowercase.charAt(random.readUInt8(0) % lowercase.length));
-  chars.push(uppercase.charAt(random.readUInt8(1) % uppercase.length));
-  chars.push(digits.charAt(random.readUInt8(2) % digits.length));
-  for (let i = 3; i < 16; i += 1) {
-    const idx = random.readUInt8(i) % all.length;
-    chars.push(all.charAt(idx));
-  }
-  // Shuffle (Fisher-Yates) so the guaranteed chars are not in fixed
-  // positions.
-  for (let i = chars.length - 1; i > 0; i -= 1) {
-    const j = random.readUInt8(i) % (i + 1);
-    const tmp = chars[i] as string;
-    chars[i] = chars[j] as string;
-    chars[j] = tmp;
-  }
-  return chars.join('');
 }

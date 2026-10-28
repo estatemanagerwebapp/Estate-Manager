@@ -10,8 +10,8 @@ export {
 } from './money.js';
 export type { FormatNairaOptions, Kobo } from './money.js';
 
-export { ROLE_KEYS, ROLE_LABELS, isRoleKey } from './roles.js';
-export type { RoleKey } from './roles.js';
+export { ROLE_KEYS, ROLE_LABELS, STAFF_ROLE_KEYS, isRoleKey, isStaffRole } from './roles.js';
+export type { RoleKey, StaffRole } from './roles.js';
 
 export {
   DEFAULT_ROLE_PERMISSIONS,
@@ -46,6 +46,8 @@ export type {
   AuditEventDto,
   AuditEventType,
   AuditTargetType,
+  AdminCreateUserInput,
+  AdminCreateUserResponse,
   AdminMarkPaidInput,
   AdminMarkPaidResponse,
   AdminSetResidentPortalAccessInput,
@@ -70,6 +72,7 @@ export type {
   ResidentMutationResponse,
   ResidentOnboardingDto,
   ResetPasswordResponse,
+  RevokeUserSessionsResponse,
   SetUserRoleResponse,
   SetUserStatusResponse,
   UserDetailResponse,

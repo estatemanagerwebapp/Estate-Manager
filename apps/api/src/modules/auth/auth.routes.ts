@@ -14,6 +14,7 @@ import {
   SESSION_COOKIE_NAME,
 } from '../../middleware/auth-guard.js';
 import { z } from 'zod';
+import { STAFF_ROLE_KEYS } from '@silverstone/shared';
 import { AppError } from '../../lib/errors.js';
 import { createRateLimitedResponse } from '../../lib/rate-limit-response.js';
 import { clearSessionCookieOptions, sessionCookieOptions } from '../../lib/session-cookie.js';
@@ -266,14 +267,55 @@ export function createAuthRouter(options: AuthRouteOptions): Router {
         .object({
           role: z.enum(['SUPER_ADMIN', 'ESTATE_ADMIN', 'GUARD', 'RESIDENT', 'AUDITOR']).optional(),
           status: z.enum(['ACTIVE', 'SUSPENDED', 'DISABLED']).optional(),
+          // `scope=staff` is the Administrators screen. The default keeps the
+          // historical all-accounts behavior for existing callers.
+          scope: z.enum(['all', 'staff']).optional(),
         })
         .safeParse(req.query ?? {});
       if (!query.success) {
         next(new AppError(400, 'VALIDATION_ERROR', 'Invalid filter'));
         return;
       }
-      const response = await userService.list(organizationId, query.data);
+      const response = await userService.list(organizationId, {
+        role: query.data.role,
+        status: query.data.status,
+        staffOnly: query.data.scope === 'staff',
+      });
       res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- POST /users --------------------------------------------------------------
+  // Create a staff account. Residents are intentionally not accepted here;
+  // their accounts are created by the onboarding/payment flow.
+
+  router.post(
+    '/users',
+    authGuard,
+    userManagePermission,
+    asyncWrap(async (req, res, next) => {
+      const body = z
+        .object({
+          email: z.string().trim().email().max(255),
+          fullName: z.string().trim().min(1).max(160),
+          phone: z.string().trim().max(40).optional().nullable(),
+          role: z.enum(STAFF_ROLE_KEYS),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid administrator account'));
+        return;
+      }
+
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+
+      const context = makeContext(req, res);
+      const response = await userService.create(context, auth.role, body.data);
+      res.status(201).json({ data: response });
     }),
   );
 
@@ -345,6 +387,24 @@ export function createAuthRouter(options: AuthRouteOptions): Router {
         param(req, 'userId'),
         body.data.role,
       );
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  // --- POST /users/:userId/sessions/revoke -------------------------------------
+
+  router.post(
+    '/users/:userId/sessions/revoke',
+    authGuard,
+    userManagePermission,
+    asyncWrap(async (req, res, next) => {
+      const auth = getAuth(req);
+      if (!auth) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      const context = makeContext(req, res);
+      const response = await userService.revokeSessions(context, auth.role, param(req, 'userId'));
       res.status(200).json({ data: response });
     }),
   );

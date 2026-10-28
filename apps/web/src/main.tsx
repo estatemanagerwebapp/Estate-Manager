@@ -15,7 +15,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { ActivityPage } from './pages/activity/ActivityPage';
 import { AccountPage } from './pages/AccountPage';
-import { UsersPage } from './pages/UsersPage';
+import { AdministratorsPage } from './pages/AdministratorsPage';
 import { ResidentsPage } from './pages/ResidentsPage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
@@ -103,13 +103,15 @@ createRoot(container).render(
                   }
                 />
                 <Route
-                  path="/app/users"
+                  path="/app/administrators"
                   element={
                     <RequirePermission permission="user.manage">
-                      <UsersPage />
+                      <AdministratorsPage />
                     </RequirePermission>
                   }
                 />
+                {/* Older bookmark: the Users screen became Administrators. */}
+                <Route path="/app/users" element={<Navigate to="/app/administrators" replace />} />
                 <Route
                   path="/app/residents"
                   element={

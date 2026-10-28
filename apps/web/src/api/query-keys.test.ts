@@ -16,6 +16,10 @@ describe('operator query keys', () => {
       { status: 'OPEN' },
     ]);
     expect(queryKeys.complaints.all).not.toEqual(queryKeys.complaints.list({ status: 'OPEN' }));
+    expect(queryKeys.administrators.list({ scope: 'staff' })).toEqual([
+      'administrators',
+      { scope: 'staff' },
+    ]);
   });
 
   it('keeps each operator module in its own namespace', () => {

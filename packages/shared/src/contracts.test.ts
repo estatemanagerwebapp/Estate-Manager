@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AUDIT_EVENT_TYPES, AUDIT_TARGET_TYPES } from './auth-contract.js';
 import { DEFAULT_MODULE_FLAGS, enabledModules, isModuleEnabled } from './modules.js';
 import { PERMISSIONS, hasPermission, permissionsForRole } from './permissions.js';
-import { ROLE_KEYS, isRoleKey } from './roles.js';
+import { ROLE_KEYS, STAFF_ROLE_KEYS, isRoleKey, isStaffRole } from './roles.js';
 
 describe('roles', () => {
   it('recognises every declared role and rejects unknown values', () => {
@@ -11,6 +11,14 @@ describe('roles', () => {
     }
     expect(isRoleKey('OWNER')).toBe(false);
     expect(isRoleKey(undefined)).toBe(false);
+  });
+
+  it('separates staff roles from the resident role', () => {
+    expect(STAFF_ROLE_KEYS).toEqual(['SUPER_ADMIN', 'ESTATE_ADMIN', 'GUARD', 'AUDITOR']);
+    expect(isStaffRole('ESTATE_ADMIN')).toBe(true);
+    expect(isStaffRole('RESIDENT')).toBe(false);
+    expect(isStaffRole('OWNER')).toBe(false);
+    expect(isStaffRole(undefined)).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import { isRoleKey, ROLE_KEYS, type RoleKey } from '@silverstone/shared';
+import { isRoleKey, isStaffRole, ROLE_KEYS, type RoleKey } from '@silverstone/shared';
 import { assertRole, assertStatus, type UserRecord } from './user-repository.js';
 
 /**
@@ -98,6 +98,25 @@ export function assertNewRoleAllowed(
   assertRole(newRole);
   if (!canSetRole(actorRole, currentRole, newRole)) {
     throw new AppError(403, 'FORBIDDEN', 'You cannot assign this role to the user');
+  }
+}
+
+/**
+ * Guard for creating a staff account. Resident accounts are never created
+ * here — they are produced by the onboarding/payment flow — and an actor may
+ * only create a role they can manage.
+ */
+export function assertCanCreateRole(actorRole: string, newRole: string): void {
+  assertRole(newRole);
+  if (!isStaffRole(newRole)) {
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      'Resident accounts are created through resident onboarding',
+    );
+  }
+  if (!canManageRole(actorRole, newRole)) {
+    throw new AppError(403, 'FORBIDDEN', 'You cannot create a user with this role');
   }
 }
 

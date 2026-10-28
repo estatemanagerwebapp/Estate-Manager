@@ -1,4 +1,4 @@
-import type { RoleKey } from './roles.js';
+import type { RoleKey, StaffRole } from './roles.js';
 import type { Permission } from './permissions.js';
 
 /**
@@ -77,6 +77,34 @@ export interface SetUserStatusResponse {
 export interface SetUserRoleResponse {
   ok: true;
   user: UserListItemDto;
+}
+
+/**
+ * Create a staff account from the operator console. Residents are deliberately
+ * excluded: their accounts are created by the onboarding/payment flow.
+ */
+export interface AdminCreateUserInput {
+  email: string;
+  fullName: string;
+  phone?: string | null;
+  role: StaffRole;
+}
+
+/**
+ * The temporary password is returned exactly once, in this response. It is
+ * never stored in plain text, written to the audit log, or returned by a later
+ * read.
+ */
+export interface AdminCreateUserResponse {
+  ok: true;
+  user: UserListItemDto;
+  temporaryPassword: string;
+}
+
+/** Result of revoking every session for a managed account. */
+export interface RevokeUserSessionsResponse {
+  ok: true;
+  id: string;
 }
 
 /** Result of permanently deleting a user account. */

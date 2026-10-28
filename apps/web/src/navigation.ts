@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Building2, Home, KeyRound, LayoutDashboard, UserRound, Users } from 'lucide-react';
+import { Building2, Home, KeyRound, LayoutDashboard, ShieldCheck, UserRound } from 'lucide-react';
 import type { Permission } from '@silverstone/shared';
 
 /**
@@ -10,8 +10,9 @@ import type { Permission } from '@silverstone/shared';
  * exist, so the sidebar never points at a dead page.
  *
  * `requiresUserManage` mirrors the existing account-administration surface:
- * Residents and Users are visible to operators who can administer accounts.
- * It is a display convenience only; every route is guarded separately.
+ * Residents and Administrators are visible to operators who can administer
+ * accounts. It is a display convenience only; every route is guarded
+ * separately.
  */
 export interface NavItem {
   to: string;
@@ -54,9 +55,9 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     requiresUserManage: true,
   },
   {
-    to: '/app/users',
-    label: 'Users',
-    icon: Users,
+    to: '/app/administrators',
+    label: 'Administrators',
+    icon: ShieldCheck,
     requiresUserManage: true,
   },
 ];
@@ -86,7 +87,8 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/properties/')) return 'Property';
   if (pathname.startsWith('/app/properties')) return 'Properties';
   if (pathname.startsWith('/app/residents')) return 'Residents';
-  if (pathname.startsWith('/app/users')) return 'Users';
+  if (pathname.startsWith('/app/administrators')) return 'Administrators';
+  if (pathname.startsWith('/app/users')) return 'Administrators';
   if (pathname.startsWith('/app/activity')) return 'Activity';
   if (pathname.startsWith('/app/account')) return 'Settings';
   return 'Overview';

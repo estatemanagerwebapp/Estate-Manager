@@ -15,7 +15,9 @@ import {
   generateOpaqueToken,
 } from './lib/password.js';
 import { validatePassword, meetsPasswordPolicy } from './modules/auth/password-policy.js';
+import { generateTemporaryPassword } from './lib/temporary-password.js';
 import {
+  assertCanCreateRole,
   canManageRole,
   canSetRole,
   USER_MANAGE,
@@ -80,6 +82,13 @@ describe('password policy', () => {
     expect(problems).toHaveLength(0);
     expect(meetsPasswordPolicy('Correct-Horse-77!')).toBe(true);
   });
+
+  it('generates a one-time password that satisfies the policy', () => {
+    const password = generateTemporaryPassword();
+    expect(password).toHaveLength(16);
+    expect(validatePassword(password)).toHaveLength(0);
+    expect(generateTemporaryPassword()).not.toBe(password);
+  });
 });
 
 describe('user-rules', () => {
@@ -114,6 +123,17 @@ describe('user-rules', () => {
     expect(canSetRole('ESTATE_ADMIN', 'ESTATE_ADMIN', 'GUARD')).toBe(true);
     expect(canSetRole('ESTATE_ADMIN', 'ESTATE_ADMIN', 'ESTATE_ADMIN')).toBe(true);
     expect(canSetRole('SUPER_ADMIN', 'RESIDENT', 'ESTATE_ADMIN')).toBe(true);
+  });
+
+  it('only lets an actor create staff roles they can manage', () => {
+    expect(() => assertCanCreateRole('SUPER_ADMIN', 'SUPER_ADMIN')).not.toThrow();
+    expect(() => assertCanCreateRole('SUPER_ADMIN', 'ESTATE_ADMIN')).not.toThrow();
+    expect(() => assertCanCreateRole('ESTATE_ADMIN', 'GUARD')).not.toThrow();
+    expect(() => assertCanCreateRole('ESTATE_ADMIN', 'SUPER_ADMIN')).toThrow(
+      /cannot create a user with this role/i,
+    );
+    // Residents are created by onboarding, never by staff account creation.
+    expect(() => assertCanCreateRole('SUPER_ADMIN', 'RESIDENT')).toThrow(/resident onboarding/i);
   });
 
   it('the last active super admin cannot be closed or demoted', () => {

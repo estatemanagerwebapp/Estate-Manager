@@ -51,8 +51,8 @@ import { ResidentRegisterModal, OnboardingCodePanel } from './ResidentRegisterMo
  * ID document and pay the registration fee at `/onboard`.
  *
  * A resident only becomes a *user* when onboarding completes (payment
- * verified): the account is then created with the RESIDENT role and appears
- * on the Users screen. Until then the resident exists here, as a draft.
+ * verified): the account is then created with the RESIDENT role and its portal
+ * status is managed here. Until then the resident exists here, as a draft.
  *
  * Phase 1 adds operator edit, soft archive/restore, portal-access control and
  * safe deletion. Archive deliberately does not change portal access; the two
@@ -961,7 +961,7 @@ function ResidentDetailModal({
             <dt className="text-(--color-ink-muted)">Account</dt>
             <dd>
               {resident.userId
-                ? 'Created — see the Users screen'
+                ? 'Created — portal account linked'
                 : resident.status === 'COMPLETED'
                   ? 'Account deleted'
                   : 'Not created yet'}

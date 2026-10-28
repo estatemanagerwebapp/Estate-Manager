@@ -1,9 +1,12 @@
 import { AppError } from '../../lib/errors.js';
+import { hashPassword } from '../../lib/password.js';
+import { generateTemporaryPassword } from '../../lib/temporary-password.js';
 import type { PrismaUserRepository } from './user-repository.js';
 import type { PrismaSessionRepository } from './session-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type { PermissionResolver } from './permission-resolver.js';
 import {
+  assertCanCreateRole,
   assertMayManage,
   assertMayDelete,
   assertNewRoleAllowed,
@@ -11,8 +14,11 @@ import {
   lastAdminGuardMessage,
 } from './user-rules.js';
 import type {
+  AdminCreateUserInput,
+  AdminCreateUserResponse,
   UserDto,
   UserListItemDto,
+  RevokeUserSessionsResponse,
   SetUserStatusResponse,
   SetUserRoleResponse,
   DeleteUserResponse,
@@ -42,16 +48,108 @@ export class UserService {
 
   async list(
     organizationId: string,
-    filter: { role?: string; status?: string },
+    filter: { role?: string; status?: string; staffOnly?: boolean },
   ): Promise<UserListResponse> {
     const records = await this.users.list({
       organizationId,
       role: filter.role,
       status: filter.status,
+      staffOnly: filter.staffOnly,
     });
     return {
       users: await Promise.all(records.map((record) => this.toDto(record))),
     };
+  }
+
+  /**
+   * Create a staff account with a one-time temporary password.
+   *
+   * Only staff roles are accepted (residents are created by onboarding), and
+   * the actor may only create roles they can manage. The plaintext password is
+   * returned once and never persisted or audited.
+   */
+  async create(
+    context: AuthAuditContext,
+    actorRole: string,
+    input: AdminCreateUserInput,
+  ): Promise<AdminCreateUserResponse> {
+    const email = input.email.trim().toLowerCase();
+    const fullName = input.fullName.trim();
+    const phone = input.phone?.trim() || null;
+
+    assertCanCreateRole(actorRole, input.role);
+
+    const existing = await this.users.findByEmail(context.organizationId, email);
+    if (existing) {
+      throw new AppError(409, 'CONFLICT', 'A user with this email already exists');
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await hashPassword(temporaryPassword);
+
+    const record = await this.users.create({
+      organizationId: context.organizationId,
+      email,
+      passwordHash,
+      fullName,
+      phone,
+      role: input.role,
+      status: 'ACTIVE',
+      mustChangePassword: true,
+    });
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'user.created',
+      targetType: 'user',
+      targetId: record.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: {
+        email: record.email,
+        role: record.role,
+        mustChangePassword: true,
+      },
+    });
+
+    return {
+      ok: true,
+      user: await this.toDto(record),
+      temporaryPassword,
+    };
+  }
+
+  /**
+   * Revoke every session for a managed staff account. Useful after a lost
+   * device or when an operator wants to force a fresh sign-in without
+   * changing the account's status or role.
+   */
+  async revokeSessions(
+    context: AuthAuditContext,
+    actorRole: string,
+    targetUserId: string,
+  ): Promise<RevokeUserSessionsResponse> {
+    const target = await this.users.findById(context.organizationId, targetUserId);
+    if (!target) {
+      throw new AppError(404, 'NOT_FOUND', 'User not found');
+    }
+
+    assertMayManage(actorRole, target, context.actorId ?? '', target.id);
+    await this.sessions.revokeAllForUser(target.id);
+
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'user.sessions_revoked',
+      targetType: 'user',
+      targetId: target.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { role: target.role, status: target.status },
+    });
+
+    return { ok: true, id: target.id };
   }
 
   async get(organizationId: string, userId: string): Promise<UserDetailResponse> {

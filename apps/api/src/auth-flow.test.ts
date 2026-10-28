@@ -523,6 +523,183 @@ describe('admin user management (RBAC)', () => {
   });
 });
 
+describe('administrator account management', () => {
+  it('creates a staff account, returns the temporary password once, and scopes it to staff', async () => {
+    const admin = await createTestUser({ role: 'SUPER_ADMIN' });
+    const resident = await createTestUser({ role: 'RESIDENT' });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    const cookie = cookieFrom(login);
+    const email = `new_guard_${uniqueSuffix()}@example.com`;
+
+    const created = await request(app).post('/api/v1/auth/users').set('Cookie', cookie).send({
+      email,
+      fullName: 'New Guard',
+      phone: '+234 800 111 2222',
+      role: 'GUARD',
+    });
+
+    expect(created.status).toBe(201);
+    expect(created.body.data.user.email).toBe(email);
+    expect(created.body.data.user.role).toBe('GUARD');
+    expect(created.body.data.user.status).toBe('ACTIVE');
+    expect(created.body.data.user.mustChangePassword).toBe(true);
+    expect(created.body.data.temporaryPassword).toHaveLength(16);
+
+    // The one-time password actually signs the new account in.
+    const newLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email, password: created.body.data.temporaryPassword });
+    expect(newLogin.status).toBe(200);
+    expect(newLogin.body.data.user.mustChangePassword).toBe(true);
+
+    // The Administrators scope exposes staff only; the historical all-users
+    // list still includes the resident account.
+    const staffList = await request(app)
+      .get('/api/v1/auth/users?scope=staff')
+      .set('Cookie', cookie);
+    expect(staffList.status).toBe(200);
+    expect(staffList.body.data.users.some((user: { email: string }) => user.email === email)).toBe(
+      true,
+    );
+    expect(
+      staffList.body.data.users.some((user: { email: string }) => user.email === resident.email),
+    ).toBe(false);
+
+    const allList = await request(app).get('/api/v1/auth/users').set('Cookie', cookie);
+    expect(
+      allList.body.data.users.some((user: { email: string }) => user.email === resident.email),
+    ).toBe(true);
+
+    const event = await prisma.auditEvent.findFirst({
+      where: { organizationId, targetId: created.body.data.user.id, eventType: 'user_created' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(event).toBeDefined();
+    const metadata = event!.metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject({ email, role: 'GUARD', mustChangePassword: true });
+    expect(metadata.temporaryPassword).toBeUndefined();
+    expect(metadata.password).toBeUndefined();
+  });
+
+  it('refuses role escalation and resident creation through the administrator endpoint', async () => {
+    const manager = await createTestUser({ role: 'ESTATE_ADMIN' });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: manager.email, password: SUPER_ADMIN_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    const escalate = await request(app)
+      .post('/api/v1/auth/users')
+      .set('Cookie', cookie)
+      .send({
+        email: `boss_${uniqueSuffix()}@example.com`,
+        fullName: 'A Boss',
+        role: 'SUPER_ADMIN',
+      });
+    expect(escalate.status).toBe(403);
+
+    const resident = await request(app)
+      .post('/api/v1/auth/users')
+      .set('Cookie', cookie)
+      .send({
+        email: `resident_${uniqueSuffix()}@example.com`,
+        fullName: 'A Resident',
+        role: 'RESIDENT',
+      });
+    expect(resident.status).toBe(400);
+
+    // The same manager may create a role they can manage.
+    const allowed = await request(app)
+      .post('/api/v1/auth/users')
+      .set('Cookie', cookie)
+      .send({
+        email: `auditor_${uniqueSuffix()}@example.com`,
+        fullName: 'An Auditor',
+        role: 'AUDITOR',
+      });
+    expect(allowed.status).toBe(201);
+    expect(allowed.body.data.user.role).toBe('AUDITOR');
+  });
+
+  it('rejects a duplicate email with 409', async () => {
+    const admin = await createTestUser({ role: 'SUPER_ADMIN' });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    const duplicate = await request(app).post('/api/v1/auth/users').set('Cookie', cookie).send({
+      email: admin.email,
+      fullName: 'Duplicate Admin',
+      role: 'ESTATE_ADMIN',
+    });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('CONFLICT');
+  });
+
+  it('revokes every session for a managed account and audits the action', async () => {
+    const admin = await createTestUser({ role: 'SUPER_ADMIN' });
+    const guard = await createTestUser({ role: 'GUARD', password: GUARD_PASSWORD });
+    const adminLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    const adminCookie = cookieFrom(adminLogin);
+    const guardLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: guard.email, password: GUARD_PASSWORD });
+    const guardCookie = cookieFrom(guardLogin);
+    expect((await request(app).get('/api/v1/auth/me').set('Cookie', guardCookie)).status).toBe(200);
+
+    const revoked = await request(app)
+      .post(`/api/v1/auth/users/${guard.id}/sessions/revoke`)
+      .set('Cookie', adminCookie);
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.data).toEqual({ ok: true, id: guard.id });
+
+    expect((await request(app).get('/api/v1/auth/me').set('Cookie', guardCookie)).status).toBe(401);
+
+    const event = await prisma.auditEvent.findFirst({
+      where: {
+        organizationId,
+        targetId: guard.id,
+        eventType: 'user_sessions_revoked',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(event).toBeDefined();
+
+    // Revocation does not change the password: the guard can sign in again.
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/auth/login')
+          .send({ email: guard.email, password: GUARD_PASSWORD })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('blocks revoking sessions for a higher role or the caller themselves', async () => {
+    const manager = await createTestUser({ role: 'ESTATE_ADMIN' });
+    const boss = await createTestUser({ role: 'SUPER_ADMIN' });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: manager.email, password: SUPER_ADMIN_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    const higher = await request(app)
+      .post(`/api/v1/auth/users/${boss.id}/sessions/revoke`)
+      .set('Cookie', cookie);
+    expect(higher.status).toBe(403);
+
+    const self = await request(app)
+      .post(`/api/v1/auth/users/${manager.id}/sessions/revoke`)
+      .set('Cookie', cookie);
+    expect(self.status).toBe(403);
+  });
+});
+
 describe('audit log integrity', () => {
   it('sensitive metadata keys are stripped from audit events', async () => {
     // The auth service never puts secrets in metadata, but the repository

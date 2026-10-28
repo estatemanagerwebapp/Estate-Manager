@@ -10,6 +10,9 @@ import type {
   UserDto,
   UserListResponse,
   UserDetailResponse,
+  AdminCreateUserInput,
+  AdminCreateUserResponse,
+  RevokeUserSessionsResponse,
   SetUserStatusResponse,
   SetUserRoleResponse,
   DeleteUserResponse,
@@ -195,6 +198,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export interface UserFilter {
   role?: string;
   status?: string;
+  /** `staff` excludes RESIDENT accounts (Administrators screen). */
+  scope?: 'all' | 'staff';
 }
 
 /** Query filters for the estate list (mirrors the API's accepted params). */
@@ -264,9 +269,24 @@ export const api = {
     const params = new URLSearchParams();
     if (filter.role) params.set('role', filter.role);
     if (filter.status) params.set('status', filter.status);
+    if (filter.scope) params.set('scope', filter.scope);
     const qs = params.toString();
     return request<UserListResponse>(`/api/v1/auth/users${qs ? `?${qs}` : ''}`);
   },
+
+  /** Create a staff account. The response carries the temporary password once. */
+  createAdministrator: (input: AdminCreateUserInput) =>
+    request<AdminCreateUserResponse>('/api/v1/auth/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** Sign a managed account out everywhere without changing its status. */
+  revokeUserSessions: (userId: string) =>
+    request<RevokeUserSessionsResponse>(
+      `/api/v1/auth/users/${encodeURIComponent(userId)}/sessions/revoke`,
+      { method: 'POST' },
+    ),
 
   getUser: (userId: string) =>
     request<UserDetailResponse>(`/api/v1/auth/users/${encodeURIComponent(userId)}`),

@@ -110,3 +110,8 @@ ADMIN_EMAIL=ops@example.com ADMIN_PASSWORD='…' npm run bootstrap:admin -w @sil
 
 The command is idempotent (a no-op when a super admin already exists) and
 never logs or echoes the password. See `docs/adr/0005-auth-sessions.md`.
+
+After signing in, create later staff accounts from **Administrators**
+(`user.manage`). The screen generates a one-time temporary password and the
+new account must change it at first sign-in. Resident accounts are created by
+the resident onboarding/payment flow, not from the Administrators screen.
