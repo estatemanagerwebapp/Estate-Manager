@@ -74,6 +74,7 @@ export function OverviewPage() {
                 <QuickLink to="/app/estates" label="Manage estates" />
                 {can['property.read'] && <QuickLink to="/app/properties" label="View properties" />}
                 {can['billing.read'] && <QuickLink to="/app/billing" label="Review billing" />}
+                {can['verification.read'] && <QuickLink to="/app/gate" label="Open gate access" />}
               </ul>
             </section>
           )}

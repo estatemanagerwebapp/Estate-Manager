@@ -88,6 +88,14 @@ import type {
   OperatorRecordPaymentInput,
   OperatorRecordPaymentResponse,
   OperatorPaymentsResponse,
+  OperatorAccessCodesResponse,
+  AccessVerificationsResponse,
+  OperatorVerifyAccessCodeInput,
+  OperatorVerifyAccessCodeResponse,
+  AccessCodeKind,
+  AccessCodeStatus,
+  AccessVerificationGate,
+  AccessVerificationOutcome,
   ResidentInvoiceStatus,
   ResidentNotificationsView,
   ResidentMarkNotificationReadResponse,
@@ -260,6 +268,22 @@ export interface OperatorInvoiceFilter {
 }
 
 export interface OperatorPaymentFilter {
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the operator access-code register. */
+export interface OperatorAccessCodeFilter {
+  status?: AccessCodeStatus;
+  kind?: AccessCodeKind;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the gate verification history. */
+export interface AccessVerificationFilter {
+  outcome?: AccessVerificationOutcome;
+  gate?: AccessVerificationGate;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -850,6 +874,34 @@ export const api = {
     const qs = params.toString();
     return request<OperatorPaymentsResponse>(`/api/v1/payments${qs ? `?${qs}` : ''}`);
   },
+
+  // --- Operator gate access ---------------------------------------------------
+  /** Organization-wide access-code register. Requires `gate.read`. */
+  listOperatorAccessCodes: (filter: OperatorAccessCodeFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.kind) params.set('kind', filter.kind);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorAccessCodesResponse>(`/api/v1/access-codes${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Gate verification history. Requires `verification.read`. */
+  listAccessVerifications: (filter: AccessVerificationFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.outcome) params.set('outcome', filter.outcome);
+    if (filter.gate) params.set('gate', filter.gate);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<AccessVerificationsResponse>(`/api/v1/verifications${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Verify a presented code and record the attempt. Requires `gate.manage`. */
+  verifyAccessCode: (input: OperatorVerifyAccessCodeInput) =>
+    request<OperatorVerifyAccessCodeResponse>('/api/v1/verifications', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   /** S10: the resident's notification inbox plus their upcoming bookings. */
   getResidentNotifications: () =>

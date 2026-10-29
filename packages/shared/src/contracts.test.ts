@@ -37,11 +37,13 @@ describe('permissions', () => {
     expect(permissionsForRole('GUARD')).toEqual([
       'gate.manage',
       'gate.read',
+      'verification.read',
       'resident.read',
       'sos.read',
       'sos.manage',
     ]);
     expect(hasPermission('GUARD', 'billing.manage')).toBe(false);
+    expect(hasPermission('GUARD', 'verification.read')).toBe(true);
     expect(hasPermission('GUARD', 'sos.read')).toBe(true);
     expect(hasPermission('GUARD', 'sos.manage')).toBe(true);
   });

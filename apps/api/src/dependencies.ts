@@ -38,6 +38,8 @@ import { OperatorSosService } from './modules/sos/operator-sos.service.js';
 import { OperatorMessagesService } from './modules/messages/operator-messages.service.js';
 import { OperatorComplaintsService } from './modules/complaints/operator-complaints.service.js';
 import { OperatorBillingService } from './modules/billing/operator-billing.service.js';
+import { PrismaGateRepository } from './modules/gate/gate-repository.js';
+import { OperatorGateService } from './modules/gate/gate.service.js';
 import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
 import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 import {
@@ -114,6 +116,8 @@ export interface AppDependencies {
   operatorComplaintsService: OperatorComplaintsService;
   /** Operator manual billing: invoices and recorded payments. */
   operatorBillingService: OperatorBillingService;
+  /** Operator gate access: access-code register and verification history. */
+  operatorGateService: OperatorGateService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
@@ -234,6 +238,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
   const operatorBillingService = new OperatorBillingService({ finance: financeRepo, audit });
+  const gateRepo = new PrismaGateRepository(prisma);
+  const operatorGateService = new OperatorGateService({ gate: gateRepo, audit });
 
   const accessCodeRepo = new PrismaAccessCodeRepository(prisma);
   const residentCodesService = new ResidentCodesService({
@@ -370,6 +376,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     operatorMessagesService,
     operatorComplaintsService,
     operatorBillingService,
+    operatorGateService,
     residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,

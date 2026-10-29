@@ -42,6 +42,7 @@ model Organization {
   payments            Payment[]
   transactions        Transaction[]
   accessCodes         AccessCode[]
+  accessVerifications AccessVerification[]
   complaints          Complaint[]
   messageThreads      MessageThread[]
   announcements       Announcement[]
@@ -102,29 +103,31 @@ model User {
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sessions            Session[]
-  resetTokens         PasswordResetToken[]
-  auditEvents         AuditEvent[]
-  mediaFiles          MediaFile[]
-  residentOnboarding  ResidentOnboarding?
-  invoices            Invoice[]
-  invoicesCreated     Invoice[]            @relation("InvoiceCreatedBy")
-  invoicesVoided      Invoice[]            @relation("InvoiceVoidedBy")
-  payments            Payment[]
-  paymentsRecorded    Payment[]            @relation("PaymentRecordedBy")
-  transactions        Transaction[]
-  accessCodes         AccessCode[]
-  complaints          Complaint[]
-  complaintReplies    ComplaintReply[]
-  messageThreads      MessageThread[]
-  messages            Message[]
-  announcements       Announcement[]
-  bookings            Booking[]
-  sosEvents           SosEvent[]
-  sosAcknowledgements SosEvent[]           @relation("SosAcknowledgedBy")
-  sosResolutions      SosEvent[]           @relation("SosResolvedBy")
-  notifications       Notification[]
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions                Session[]
+  resetTokens             PasswordResetToken[]
+  auditEvents             AuditEvent[]
+  mediaFiles              MediaFile[]
+  residentOnboarding      ResidentOnboarding?
+  invoices                Invoice[]
+  invoicesCreated         Invoice[]            @relation("InvoiceCreatedBy")
+  invoicesVoided          Invoice[]            @relation("InvoiceVoidedBy")
+  payments                Payment[]
+  paymentsRecorded        Payment[]            @relation("PaymentRecordedBy")
+  transactions            Transaction[]
+  accessCodes             AccessCode[]
+  verificationsAsResident AccessVerification[] @relation("VerificationResident")
+  verificationsPerformed  AccessVerification[] @relation("VerificationActor")
+  complaints              Complaint[]
+  complaintReplies        ComplaintReply[]
+  messageThreads          MessageThread[]
+  messages                Message[]
+  announcements           Announcement[]
+  bookings                Booking[]
+  sosEvents               SosEvent[]
+  sosAcknowledgements     SosEvent[]           @relation("SosAcknowledgedBy")
+  sosResolutions          SosEvent[]           @relation("SosResolvedBy")
+  notifications           Notification[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -337,12 +340,47 @@ model AccessCode {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property      Property?            @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  verifications AccessVerification[]
 
   @@index([organizationId, userId, status])
+  @@index([organizationId, codeHash])
   @@map("access_codes")
+}
+
+/// A gate verification attempt. Stores the outcome and a short code prefix,
+/// never the full code or its hash. Historical rows survive code/resident/
+/// property/guard deletion through nullable, SetNull references.
+model AccessVerification {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  accessCodeId   String?  @map("access_code_id") @db.Uuid
+  residentId     String?  @map("resident_id") @db.Uuid
+  propertyId     String?  @map("property_id") @db.Uuid
+  verifiedById   String?  @map("verified_by_id") @db.Uuid
+  /// ENTRY | EXIT.
+  gate           String   @db.VarChar(16)
+  /// GRANTED | DENIED.
+  outcome        String   @db.VarChar(16)
+  /// NOT_FOUND | REVOKED | EXPIRED | WRONG_DIRECTION. Null when granted.
+  reason         String?  @db.VarChar(32)
+  /// First characters of the attempted code, for display only.
+  codePrefix     String?  @map("code_prefix") @db.VarChar(8)
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accessCode   AccessCode?  @relation(fields: [accessCodeId], references: [id], onDelete: SetNull)
+  resident     User?        @relation("VerificationResident", fields: [residentId], references: [id], onDelete: SetNull)
+  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  verifiedBy   User?        @relation("VerificationActor", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, occurredAt(sort: Desc)])
+  @@index([accessCodeId])
+  @@index([residentId])
+  @@index([verifiedById])
+  @@map("access_verifications")
 }
 
 // --- Phase 3 — resident complaints (S5) ----------------------------------------
@@ -758,6 +796,7 @@ model Property {
   residentOnboardings ResidentOnboarding[]
   invoices            Invoice[]
   accessCodes         AccessCode[]
+  accessVerifications AccessVerification[]
   complaints          Complaint[]
   sosEvents           SosEvent[]
 

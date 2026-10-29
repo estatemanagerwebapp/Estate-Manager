@@ -37,6 +37,11 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('Billing'), { 'billing.read': true }, false)).toBe(true);
   });
 
+  it('gates gate access on the verification read permission', () => {
+    expect(isNavItemVisible(item('Gate access'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('Gate access'), { 'verification.read': true }, false)).toBe(true);
+  });
+
   it('gates messages and complaints on their read permissions', () => {
     expect(isNavItemVisible(item('Messages'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Messages'), { 'message.read': true }, false)).toBe(true);
@@ -57,6 +62,7 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/sos')).toBe('SOS alerts');
     expect(sectionLabelForPath('/app/messages')).toBe('Messages');
     expect(sectionLabelForPath('/app/complaints')).toBe('Complaints');
+    expect(sectionLabelForPath('/app/gate')).toBe('Gate access');
     expect(sectionLabelForPath('/app/activity')).toBe('Activity');
     expect(sectionLabelForPath('/app/account')).toBe('Settings');
   });

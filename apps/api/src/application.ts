@@ -44,6 +44,11 @@ import {
   type OperatorComplaintsRouteOptions,
 } from './modules/complaints/operator-complaints.routes.js';
 import {
+  createOperatorAccessCodeRouter,
+  createOperatorVerificationRouter,
+  type OperatorGateRouteOptions,
+} from './modules/gate/gate.routes.js';
+import {
   createOperatorInvoiceRouter,
   createOperatorPaymentRouter,
   type OperatorBillingRouteOptions,
@@ -86,6 +91,8 @@ export interface AppOptions {
   complaints?: OperatorComplaintsRouteOptions;
   /** Operator manual billing (`/invoices/*` and `/payments`). */
   billing?: OperatorBillingRouteOptions;
+  /** Operator gate access (`/access-codes` and `/verifications`). */
+  gate?: OperatorGateRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -137,6 +144,7 @@ export function createApp(options: AppOptions = {}): Express {
     messages: options.messages,
     complaints: options.complaints,
     billing: options.billing,
+    gate: options.gate,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -165,6 +173,7 @@ function createVersionedRoutes(options: {
   messages?: OperatorMessagesRouteOptions;
   complaints?: OperatorComplaintsRouteOptions;
   billing?: OperatorBillingRouteOptions;
+  gate?: OperatorGateRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
   const {
@@ -182,6 +191,7 @@ function createVersionedRoutes(options: {
     messages,
     complaints,
     billing,
+    gate,
   } = options;
 
   router.use(
@@ -259,6 +269,12 @@ function createVersionedRoutes(options: {
     // Manual operator billing: invoices and payment history (staff-scoped).
     router.use('/invoices', createOperatorInvoiceRouter(billing));
     router.use('/payments', createOperatorPaymentRouter(billing));
+  }
+
+  if (gate) {
+    // Gate access: organization-wide access codes and verification history.
+    router.use('/access-codes', createOperatorAccessCodeRouter(gate));
+    router.use('/verifications', createOperatorVerificationRouter(gate));
   }
 
   return router;

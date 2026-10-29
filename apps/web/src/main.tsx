@@ -21,6 +21,7 @@ import { SosAlertsPage } from './pages/SosAlertsPage';
 import { MessagesPage } from './pages/MessagesPage';
 import { ComplaintsPage } from './pages/ComplaintsPage';
 import { BillingPage } from './pages/BillingPage';
+import { GatePage } from './pages/GatePage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
 import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
@@ -129,6 +130,14 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="billing.read">
                       <BillingPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/gate"
+                  element={
+                    <RequirePermission permission="verification.read">
+                      <GatePage />
                     </RequirePermission>
                   }
                 />

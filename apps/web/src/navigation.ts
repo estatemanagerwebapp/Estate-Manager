@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Mail,
   MessageSquareWarning,
+  ScanLine,
   ShieldCheck,
   Siren,
   UserRound,
@@ -95,6 +96,12 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     icon: MessageSquareWarning,
     permission: 'complaint.read',
   },
+  {
+    to: '/app/gate',
+    label: 'Gate access',
+    icon: ScanLine,
+    permission: 'verification.read',
+  },
 ];
 
 export const SETTINGS_SECTION_LABEL = 'Settings';
@@ -128,6 +135,7 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/sos')) return 'SOS alerts';
   if (pathname.startsWith('/app/messages')) return 'Messages';
   if (pathname.startsWith('/app/complaints')) return 'Complaints';
+  if (pathname.startsWith('/app/gate')) return 'Gate access';
   if (pathname.startsWith('/app/activity')) return 'Activity';
   if (pathname.startsWith('/app/account')) return 'Settings';
   return 'Overview';

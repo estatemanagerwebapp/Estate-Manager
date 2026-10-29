@@ -170,6 +170,70 @@ export interface ResidentDeactivateAccessCodeResponse {
   code: ResidentAccessCodeDto;
 }
 
+// --- Operator gate access (Phase 6) ---------------------------------------------
+
+/** Gate directions a verification can be performed against. */
+export const ACCESS_VERIFICATION_GATES = ['ENTRY', 'EXIT'] as const;
+export type AccessVerificationGate = (typeof ACCESS_VERIFICATION_GATES)[number];
+
+/** Every verification attempt is either granted or denied. */
+export const ACCESS_VERIFICATION_OUTCOMES = ['GRANTED', 'DENIED'] as const;
+export type AccessVerificationOutcome = (typeof ACCESS_VERIFICATION_OUTCOMES)[number];
+
+/** Why a verification was denied. Null when it was granted. */
+export const ACCESS_VERIFICATION_REASONS = [
+  'NOT_FOUND',
+  'REVOKED',
+  'EXPIRED',
+  'WRONG_DIRECTION',
+] as const;
+export type AccessVerificationReason = (typeof ACCESS_VERIFICATION_REASONS)[number];
+
+/** A resident access code with the resident/property context staff need. */
+export interface OperatorAccessCodeDto {
+  id: string;
+  kind: AccessCodeKind;
+  status: AccessCodeStatus;
+  codePrefix: string;
+  validUntil: string | null;
+  issuedAt: string;
+  revokedAt: string | null;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+}
+
+export interface OperatorAccessCodesResponse {
+  codes: OperatorAccessCodeDto[];
+}
+
+/** One gate verification attempt, never the code itself. */
+export interface AccessVerificationDto {
+  id: string;
+  accessCodeId: string | null;
+  gate: AccessVerificationGate;
+  outcome: AccessVerificationOutcome;
+  reason: AccessVerificationReason | null;
+  codePrefix: string | null;
+  occurredAt: string;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  verifiedBy: OperatorActorSummaryDto | null;
+}
+
+export interface AccessVerificationsResponse {
+  verifications: AccessVerificationDto[];
+}
+
+export interface OperatorVerifyAccessCodeInput {
+  code: string;
+  gate: AccessVerificationGate;
+}
+
+export interface OperatorVerifyAccessCodeResponse {
+  ok: true;
+  verification: AccessVerificationDto;
+}
+
 // --- Complaints (S5) -------------------------------------------------------------
 
 export const COMPLAINT_STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const;

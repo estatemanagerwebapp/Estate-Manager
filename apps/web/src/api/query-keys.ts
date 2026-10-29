@@ -1,4 +1,6 @@
 import type {
+  AccessVerificationFilter,
+  OperatorAccessCodeFilter,
   OperatorComplaintFilter,
   OperatorInvoiceFilter,
   OperatorMessageFilter,
@@ -67,11 +69,11 @@ export const queryKeys = {
   },
   accessCodes: {
     all: ['access-codes'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['access-codes', filter] as const,
+    list: (filter: OperatorAccessCodeFilter = {}) => ['access-codes', filter] as const,
   },
   verifications: {
     all: ['verifications'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['verifications', filter] as const,
+    list: (filter: AccessVerificationFilter = {}) => ['verifications', filter] as const,
   },
   facilities: {
     all: ['facilities'] as const,
