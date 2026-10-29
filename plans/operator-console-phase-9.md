@@ -1,6 +1,6 @@
 # Operator Console — Phase 9: Audit Logs + Dashboard Completion
 
-**Status:** Implemented and verified locally
+**Status:** Implemented and verified
 **Scope:** Finish the organisation-wide audit log and turn the overview into an
 operational dashboard. No new resident surface and no module rollout changes.
 

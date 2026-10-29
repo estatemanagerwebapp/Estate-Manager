@@ -1,6 +1,6 @@
 # Operator Console — Phase 7: Facilities & Bookings
 
-**Status:** Planned
+**Status:** Implemented and verified
 **Scope:** Operator facility management, the resident booking queue, facility
 usage fees, booking-payment verification and date/time-specific availability
 alerts. No separate billing screens, gate, settings, SOS, audit-log, or

@@ -1,6 +1,6 @@
 # Operator Console — Phase 8: Operational Settings
 
-**Status:** Implemented and verified locally
+**Status:** Implemented and verified
 **Scope:** Curated operational settings only — onboarding fee, access-code
 validity, bank-transfer instructions and predefined emergency contacts.
 Administrator/account settings stay in `AdministratorsPage` and `AccountPage`.
