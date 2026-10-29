@@ -33,6 +33,7 @@ export type { ModuleFlags, ModuleKey } from './modules.js';
 
 export {
   ACCOUNT_STATUSES,
+  AUDIT_EVENT_OUTCOMES,
   AUDIT_EVENT_TYPES,
   AUDIT_TARGET_TYPES,
   PASSWORD_POLICY,
@@ -44,6 +45,9 @@ export {
 export type {
   AccountStatus,
   AuditEventDto,
+  AuditEventFilter,
+  AuditEventsResponse,
+  AuditEventOutcome,
   AuditEventType,
   AuditTargetType,
   AdminCreateUserInput,
@@ -80,6 +84,13 @@ export type {
   UserListResponse,
   UserListItemDto,
 } from './auth-contract.js';
+
+export type {
+  DashboardAttentionItemDto,
+  DashboardAttentionKey,
+  DashboardKpisDto,
+  DashboardSummaryResponse,
+} from './dashboard-contract.js';
 
 export { ERROR_CODES } from './api-contract.js';
 export type {

@@ -170,6 +170,12 @@ export class PrismaUserRepository {
     return this.prisma.user.count({ where: { organizationId, role } });
   }
 
+  /** Active accounts for one role (used by the dashboard resident KPI). */
+  async countActiveByRole(organizationId: string, role: string): Promise<number> {
+    assertRole(role);
+    return this.prisma.user.count({ where: { organizationId, role, status: 'ACTIVE' } });
+  }
+
   async countAll(organizationId: string): Promise<number> {
     return this.prisma.user.count({ where: { organizationId } });
   }

@@ -27,6 +27,7 @@ import {
   createDashboardRouter,
   type DashboardRouteOptions,
 } from './modules/dashboard/dashboard.routes.js';
+import { createAuditRouter, type AuditRouteOptions } from './modules/audit/audit.routes.js';
 import {
   createResidentRouter,
   type ResidentRouteOptions,
@@ -91,6 +92,8 @@ export interface AppOptions {
   media?: MediaRouteOptions;
   /** Dashboard KPI + activity aggregates (operator overview). */
   dashboard?: DashboardRouteOptions;
+  /** Organisation-wide audit log and CSV export (`/audit/*`). */
+  audit?: AuditRouteOptions;
   /** Phase 3 resident portal (`/resident/*`), self-scoped. */
   resident?: ResidentRouteOptions;
   /** Operator SOS queue and acknowledge/resolve actions (`/sos/*`). */
@@ -155,6 +158,7 @@ export function createApp(options: AppOptions = {}): Express {
     onboarding: options.onboarding,
     media: options.media,
     dashboard: options.dashboard,
+    audit: options.audit,
     resident: options.resident,
     sos: options.sos,
     messages: options.messages,
@@ -187,6 +191,7 @@ function createVersionedRoutes(options: {
   onboarding?: OnboardingRouteOptions;
   media?: MediaRouteOptions;
   dashboard?: DashboardRouteOptions;
+  audit?: AuditRouteOptions;
   resident?: ResidentRouteOptions;
   sos?: OperatorSosRouteOptions;
   messages?: OperatorMessagesRouteOptions;
@@ -208,6 +213,7 @@ function createVersionedRoutes(options: {
     onboarding,
     media,
     dashboard,
+    audit,
     resident,
     sos,
     messages,
@@ -268,6 +274,10 @@ function createVersionedRoutes(options: {
 
   if (dashboard) {
     router.use('/dashboard', createDashboardRouter(dashboard));
+  }
+
+  if (audit) {
+    router.use('/audit', createAuditRouter(audit));
   }
 
   if (resident) {

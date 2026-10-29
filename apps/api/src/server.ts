@@ -120,6 +120,16 @@ async function buildApp(): Promise<HttpHandler> {
       residentOnboarding: deps.residentOnboarding,
       estates: deps.estates,
       properties: deps.properties,
+      finance: deps.finance,
+      complaints: deps.complaints,
+      sos: deps.sos,
+      organizationId: deps.organizationId,
+      loadModules: deps.loadModules,
+    },
+    audit: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      audit: deps.audit,
       organizationId: deps.organizationId,
     },
     resident: {

@@ -44,6 +44,9 @@ import type {
   AdminUpdateResidentInput,
   ResidentMutationResponse,
   AuditEventDto,
+  AuditEventFilter,
+  AuditEventsResponse,
+  DashboardSummaryResponse,
   ResidentProfileView,
   ResidentProfileUpdateInput,
   ResidentProfileUpdateResponse,
@@ -350,6 +353,24 @@ export interface ApiErrorDetails {
   details?: Array<{ path: string; message: string }>;
 }
 
+/**
+ * Serialize audit filters into the query string accepted by `/audit/events`
+ * and `/audit/export`. Empty values are omitted so a cleared filter does not
+ * become `eventType=`.
+ */
+export function buildAuditQuery(filter: AuditEventFilter = {}, includeLimit = true): string {
+  const params = new URLSearchParams();
+  if (includeLimit && filter.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter.after) params.set('after', filter.after);
+  if (filter.eventType) params.set('eventType', filter.eventType);
+  if (filter.outcome) params.set('outcome', filter.outcome);
+  if (filter.targetType) params.set('targetType', filter.targetType);
+  if (filter.actorId) params.set('actorId', filter.actorId);
+  if (filter.from) params.set('from', filter.from);
+  if (filter.to) params.set('to', filter.to);
+  return params.toString();
+}
+
 export const api = {
   // --- Auth ----------------------------------------------------------------
   login: (email: string, password: string) =>
@@ -602,17 +623,7 @@ export const api = {
    * a zero would claim the metric is empty, which is a fact the role cannot
    * see.
    */
-  getDashboardKpis: () =>
-    request<{
-      kpis: {
-        estates: number | null;
-        activeProperties: number | null;
-        totalProperties: number | null;
-        users: number | null;
-        residentDrafts: number | null;
-        auditEventsLast30Days: number | null;
-      };
-    }>('/api/v1/dashboard/kpis'),
+  getDashboardKpis: () => request<DashboardSummaryResponse>('/api/v1/dashboard/kpis'),
 
   /**
    * Most-recent audit events for the dashboard activity feed and the full
@@ -633,6 +644,52 @@ export const api = {
         return `/api/v1/dashboard/activity?${params.toString()}`;
       })(),
     ),
+
+  /**
+   * Filtered organization-wide audit log. Requires `audit.read`.
+   *
+   * The server clamps `limit` to [1, 50] and returns an opaque `nextCursor`
+   * for the next page.
+   */
+  getAuditEvents: (filter: AuditEventFilter = {}) =>
+    request<AuditEventsResponse>(`/api/v1/audit/events?${buildAuditQuery(filter)}`),
+
+  /**
+   * Download the filtered audit log as CSV. The response is a file, not the
+   * JSON envelope, so this bypasses `request` and reads the blob + filename
+   * directly.
+   */
+  exportAuditEvents: async (
+    filter: AuditEventFilter = {},
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const response = await fetch(`/api/v1/audit/export?${buildAuditQuery(filter, false)}`, {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      let error: ApiErrorBody['error'] | undefined;
+      try {
+        const body = (await response.json()) as Partial<ApiErrorBody>;
+        error = body.error;
+      } catch {
+        // A non-JSON failure (proxy timeout, etc.): fall through to a generic
+        // message so the caller still gets a useful ApiRequestError.
+      }
+      if (response.status === 401 && unauthorizedHandler) unauthorizedHandler();
+      throw new ApiRequestError(
+        error?.code ?? 'INTERNAL_ERROR',
+        error?.message ?? `Export failed with status ${response.status}`,
+        {
+          status: response.status,
+          requestId: error?.requestId,
+          details: error?.details,
+        },
+      );
+    }
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const match = /filename="?([^";]+)"?/i.exec(disposition);
+    const filename = match?.[1] ?? `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    return { blob: await response.blob(), filename };
+  },
 
   /** Active house-type catalogue for the property form. */
   getHouseTypes: () => request<HouseTypesResponse>('/api/v1/properties/house-types'),

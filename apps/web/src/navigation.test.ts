@@ -37,6 +37,11 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('SOS alerts'), { 'sos.read': true }, false)).toBe(true);
   });
 
+  it('gates the activity log on audit.read', () => {
+    expect(isNavItemVisible(item('Activity'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('Activity'), { 'audit.read': true }, false)).toBe(true);
+  });
+
   it('gates billing on the billing read permission', () => {
     expect(isNavItemVisible(item('Billing'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Billing'), { 'billing.read': true }, false)).toBe(true);

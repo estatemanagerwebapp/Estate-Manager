@@ -1,4 +1,9 @@
-import type { HouseTypesResponse, AuditEventDto } from '@silverstone/shared';
+import type {
+  HouseTypesResponse,
+  AuditEventDto,
+  DashboardAttentionItemDto,
+  DashboardKpisDto,
+} from '@silverstone/shared';
 import { api, ApiRequestError } from './client';
 import { useApiQuery } from './query';
 import { queryKeys } from './query-keys';
@@ -24,16 +29,10 @@ export function useHouseTypes(enabled: boolean) {
 
 /**
  * The dashboard KPI aggregate. `null` counters mean "hidden to this role"
- * (the role lacks the read permission), not "zero".
+ * (the role lacks the read permission, or the module is disabled), not
+ * "zero".
  */
-export interface DashboardKpis {
-  estates: number | null;
-  activeProperties: number | null;
-  totalProperties: number | null;
-  users: number | null;
-  residentDrafts: number | null;
-  auditEventsLast30Days: number | null;
-}
+export type DashboardKpis = DashboardKpisDto;
 
 /**
  * Loads the operator dashboard in one pass: the KPI aggregate plus the most
@@ -71,6 +70,7 @@ export function useDashboard(enabled: boolean) {
 
   return {
     kpis: (kpisQuery.data?.kpis ?? null) as DashboardKpis | null,
+    attention: (kpisQuery.data?.attention ?? null) as DashboardAttentionItemDto[] | null,
     activity,
     activityDenied,
     loading,

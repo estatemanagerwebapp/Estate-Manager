@@ -214,6 +214,20 @@ export class PrismaResidentOnboardingRepository {
     return rows.map(toRecord);
   }
 
+  /** Drafts waiting for the resident to finish onboarding. */
+  async countPending(organizationId: string): Promise<number> {
+    return this.prisma.residentOnboarding.count({
+      where: { organizationId, status: 'PENDING', archivedAt: null },
+    });
+  }
+
+  /** Non-archived drafts (pending + completed-but-not-archived). */
+  async countActive(organizationId: string): Promise<number> {
+    return this.prisma.residentOnboarding.count({
+      where: { organizationId, archivedAt: null },
+    });
+  }
+
   /** Operator edit of the admin-owned fields. Omitted fields stay unchanged. */
   async updateAdminFields(
     input: UpdateResidentAdminFieldsInput,

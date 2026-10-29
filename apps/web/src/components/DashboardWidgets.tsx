@@ -1,18 +1,22 @@
 import {
+  ArrowRight,
   Building2,
+  CircleAlert,
+  CircleCheck,
+  ClipboardList,
   Database,
   History,
+  MessageSquareWarning,
   Network,
   ShieldCheck,
-  Users,
+  Siren,
   UserRound,
-  ClipboardList,
-  CircleCheck,
-  CircleAlert,
+  Wallet,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { AuditEventDto, AuditEventType } from '@silverstone/shared';
+import { formatNaira } from '@silverstone/shared';
+import type { AuditEventDto, AuditEventType, DashboardAttentionItemDto } from '@silverstone/shared';
 import type { DashboardKpis } from '../api/hooks';
 /**
  * The operator overview widgets: KPI cards, a property-status chart, a recent
@@ -30,7 +34,7 @@ import type { DashboardKpis } from '../api/hooks';
 interface KpiCardProps {
   label: string;
   /** The metric value, or `null` when hidden to the signed-in role. */
-  value: number | null;
+  value: number | string | null;
   icon: React.ReactNode;
   /** Optional sub-line, e.g. "active / total". */
   detail?: string;
@@ -73,31 +77,47 @@ function KpiSkeleton() {
  * grid layout does not jump.
  */
 export function KpiRow({ kpis }: { kpis: DashboardKpis | null }) {
+  const outstanding =
+    kpis?.outstandingKobo != null ? formatNaira(kpis.outstandingKobo, { compact: true }) : null;
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Key metrics">
       <KpiCard
-        label="Estates"
-        value={kpis?.estates ?? null}
-        icon={<Building2 aria-hidden size={14} />}
+        label="Residents"
+        value={kpis?.residents ?? null}
+        icon={<UserRound aria-hidden size={14} />}
+        detail={
+          kpis?.pendingInvitations != null
+            ? `${kpis.pendingInvitations} pending invitation${kpis.pendingInvitations === 1 ? '' : 's'}`
+            : undefined
+        }
       />
       <KpiCard
         label="Active properties"
         value={kpis?.activeProperties ?? null}
-        icon={<Database aria-hidden size={14} />}
+        icon={<Building2 aria-hidden size={14} />}
         detail={
           kpis?.totalProperties != null
             ? `${kpis.activeProperties ?? 0} of ${kpis.totalProperties}`
             : undefined
         }
       />
-      <KpiCard label="Users" value={kpis?.users ?? null} icon={<Users aria-hidden size={14} />} />
       <KpiCard
-        label="Resident drafts"
-        value={kpis?.residentDrafts ?? null}
-        icon={<UserRound aria-hidden size={14} />}
+        label="Outstanding invoices"
+        value={outstanding}
+        icon={<Wallet aria-hidden size={14} />}
         detail={
-          kpis?.auditEventsLast30Days != null
-            ? `${kpis.auditEventsLast30Days} audit events in the last 30 days`
+          kpis?.outstandingInvoices != null
+            ? `${kpis.outstandingInvoices} invoice${kpis.outstandingInvoices === 1 ? '' : 's'} · ${kpis.overdueInvoices ?? 0} overdue`
+            : undefined
+        }
+      />
+      <KpiCard
+        label="Active SOS alerts"
+        value={kpis?.activeSos ?? null}
+        icon={<Siren aria-hidden size={14} />}
+        detail={
+          kpis?.openComplaints != null
+            ? `${kpis.openComplaints} open complaint${kpis.openComplaints === 1 ? '' : 's'}`
             : undefined
         }
       />
@@ -113,6 +133,76 @@ export function KpiRowSkeleton() {
       <KpiSkeleton />
       <KpiSkeleton />
     </div>
+  );
+}
+
+// --- Needs attention ------------------------------------------------------------
+
+const ATTENTION_ICONS: Record<DashboardAttentionItemDto['key'], React.ReactNode> = {
+  residents: <UserRound aria-hidden size={16} />,
+  billing: <Wallet aria-hidden size={16} />,
+  complaints: <MessageSquareWarning aria-hidden size={16} />,
+  sos: <Siren aria-hidden size={16} />,
+};
+
+/**
+ * Operator "needs attention" list. The server has already dropped items the
+ * role cannot read and modules that are disabled, so this panel never hints
+ * at data the signed-in operator is not allowed to see.
+ */
+export function NeedsAttentionPanel({
+  items,
+  loading,
+}: {
+  items: DashboardAttentionItemDto[] | null;
+  loading: boolean;
+}) {
+  return (
+    <section
+      aria-label="Needs attention"
+      className="rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)"
+    >
+      <div className="flex items-center gap-2 border-b border-slate-200/80 px-5 py-4">
+        <CircleAlert aria-hidden size={16} className="text-(--color-primary)" />
+        <h2 className="text-sm font-semibold text-(--color-ink)">Needs attention</h2>
+      </div>
+      <div className="p-5">
+        {loading ? (
+          <ul className="flex flex-col gap-3" aria-hidden>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <li key={i} className="h-10 animate-pulse rounded bg-slate-100" />
+            ))}
+          </ul>
+        ) : !items || items.length === 0 ? (
+          <p className="text-xs text-(--color-ink-muted)">
+            Nothing needs attention right now. Operational queues are clear.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-slate-100">
+            {items.map((item) => (
+              <li key={item.key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-(--color-primary-soft) text-(--color-primary)">
+                  {ATTENTION_ICONS[item.key]}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-(--color-ink)">{item.label}</p>
+                  <p className="text-[11px] text-(--color-ink-muted)">
+                    {item.count} item{item.count === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <Link
+                  to={item.href}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-(--color-primary) hover:underline"
+                >
+                  Review
+                  <ArrowRight aria-hidden size={12} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -360,8 +450,12 @@ function eventSummary(event: AuditEventDto): string {
   const metadata = event.metadata ?? {};
   const target = (metadata.targetName ?? metadata.identifier ?? metadata.slug ?? '') as
     string | undefined;
-  const who = (metadata.actorEmail ?? metadata.email ?? metadata.fullName ?? '') as
-    string | undefined;
+  const who = (event.actorEmail ??
+    metadata.actorEmail ??
+    metadata.email ??
+    metadata.fullName ??
+    event.actorName ??
+    '') as string | undefined;
   const label = ACTIVITY_LABELS[event.eventType] ?? event.eventType;
 
   if (target && who && target !== who) return `${who} ${label} — ${target}`;

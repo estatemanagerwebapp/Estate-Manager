@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useCan } from '../auth/useCan';
 import { useDashboard } from '../api/hooks';
-import { MoneyContractCard } from '../components/SystemStatus';
 import {
   KpiRow,
   KpiRowSkeleton,
+  NeedsAttentionPanel,
   RecentActivityPanel,
   PropertyStatusCard,
   SystemHealthStrip,
@@ -19,16 +19,15 @@ import { ROLE_LABELS } from '@silverstone/shared';
  * The page is deliberately dumb: every fetch and permission check lives in a
  * hook (`useDashboard`, `useCan`), and the widgets in
  * `components/DashboardWidgets.tsx` own the presentation. This section is the
- * *operator* dashboard — KPIs, a property-status chart, a recent-activity feed
- * and the system-health strip. The Phase-0 money-contract card is kept below
- * so a deployment can still verify the kobo → naira contract on the same
- * screen.
+ * *operator* dashboard — operational KPIs, a "needs attention" queue, a
+ * property-status chart, a recent-activity feed and the system-health strip.
  */
 export function OverviewPage() {
   const { user } = useAuth();
   const can = useCan();
   const dashboardEnabled = user !== null;
-  const { kpis, activity, activityDenied, loading, error } = useDashboard(dashboardEnabled);
+  const { kpis, attention, activity, activityDenied, loading, error } =
+    useDashboard(dashboardEnabled);
 
   return (
     <div className="flex flex-col">
@@ -54,16 +53,16 @@ export function OverviewPage() {
         )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <NeedsAttentionPanel items={attention} loading={loading} />
+          <RecentActivityPanel events={activity} loading={loading} denied={activityDenied} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <PropertyStatusCard
             total={kpis?.totalProperties ?? null}
             active={kpis?.activeProperties ?? null}
             linkTo={can['property.read'] ? '/app/properties' : undefined}
           />
-          <RecentActivityPanel events={activity} loading={loading} denied={activityDenied} />
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <MoneyContractCard />
           {can['estate.read'] && (
             <section
               aria-label="Quick actions"

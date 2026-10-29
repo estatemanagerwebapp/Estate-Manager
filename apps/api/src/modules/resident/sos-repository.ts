@@ -108,6 +108,13 @@ export class PrismaSosRepository {
     return toSosRecord(row);
   }
 
+  /** RAISED + ACKNOWLEDGED count for the dashboard. */
+  async countActive(organizationId: string): Promise<number> {
+    return this.prisma.sosEvent.count({
+      where: { organizationId, status: { in: ['RAISED', 'ACKNOWLEDGED'] } },
+    });
+  }
+
   /**
    * Operator queue. Relations are loaded in one query so the SOS screen never
    * produces an N+1 read per alert.

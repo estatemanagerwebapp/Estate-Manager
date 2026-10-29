@@ -6,7 +6,13 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import type { UserDto, AuditEventDto, Permission } from '@silverstone/shared';
+import type {
+  UserDto,
+  AuditEventDto,
+  DashboardAttentionItemDto,
+  DashboardKpisDto,
+  Permission,
+} from '@silverstone/shared';
 import type { useDashboard } from './api/hooks';
 import { OverviewPage } from './pages/OverviewPage';
 
@@ -69,18 +75,13 @@ function canMatrix(
 function renderOverview({
   permissions,
   kpis,
+  attention,
   events,
   activityDenied,
 }: {
   permissions: Permission[];
-  kpis?: {
-    estates: number | null;
-    activeProperties: number | null;
-    totalProperties: number | null;
-    users: number | null;
-    residentDrafts: number | null;
-    auditEventsLast30Days: number | null;
-  };
+  kpis?: DashboardKpisDto;
+  attention?: DashboardAttentionItemDto[];
   events?: AuditEventDto[];
   activityDenied?: boolean;
 }) {
@@ -102,6 +103,7 @@ function renderOverview({
   mockUseCan = canMatrix(permissions, user);
   mockUseDashboard = {
     kpis: kpis ?? null,
+    attention: attention ?? null,
     activity: events ?? null,
     activityDenied: activityDenied ?? false,
     loading: false,
@@ -115,6 +117,25 @@ function renderOverview({
   );
 }
 
+function kpis(overrides: Partial<DashboardKpisDto> = {}): DashboardKpisDto {
+  return {
+    residents: null,
+    pendingInvitations: null,
+    activeProperties: null,
+    totalProperties: null,
+    outstandingKobo: null,
+    outstandingInvoices: null,
+    overdueInvoices: null,
+    activeSos: null,
+    openComplaints: null,
+    auditEventsLast30Days: null,
+    estates: null,
+    users: null,
+    residentDrafts: null,
+    ...overrides,
+  };
+}
+
 afterEach(() => {
   cleanup();
   mockUseCan = null;
@@ -126,23 +147,29 @@ describe('OverviewPage dashboard', () => {
   it('renders KPI values when the API supplies them', async () => {
     renderOverview({
       permissions: ['estate.read', 'property.read', 'user.manage', 'resident.manage', 'audit.read'],
-      kpis: {
-        estates: 3,
+      kpis: kpis({
+        residents: 20,
+        pendingInvitations: 4,
         activeProperties: 12,
         totalProperties: 15,
-        users: 20,
-        residentDrafts: 4,
-        auditEventsLast30Days: 88,
-      },
+        outstandingKobo: 4_500_000,
+        outstandingInvoices: 6,
+        overdueInvoices: 2,
+        activeSos: 1,
+        openComplaints: 3,
+      }),
     });
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Estates/i)?.textContent).toContain('3');
+      expect(screen.getByLabelText(/Residents/i)?.textContent).toContain('20');
     });
+    expect(screen.getByLabelText(/Residents/i)?.textContent).toContain('4 pending invitations');
     expect(screen.getByLabelText(/Active properties/i)?.textContent).toContain('12');
-    expect(screen.getByLabelText(/Users/i)?.textContent).toContain('20');
-    expect(screen.getByLabelText(/Resident drafts/i)?.textContent).toContain('4');
-    expect(screen.getByText(/88 audit events/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Active properties/i)?.textContent).toContain('12 of 15');
+    expect(screen.getByLabelText(/Outstanding invoices/i)?.textContent).toContain('6 invoices');
+    expect(screen.getByLabelText(/Outstanding invoices/i)?.textContent).toContain('2 overdue');
+    expect(screen.getByLabelText(/Active SOS alerts/i)?.textContent).toContain('1');
+    expect(screen.getByLabelText(/Active SOS alerts/i)?.textContent).toContain('3 open complaints');
   });
 
   it('renders "n/a" for KPIs hidden to a restricted role', async () => {
@@ -150,14 +177,7 @@ describe('OverviewPage dashboard', () => {
     // every counter arrives as null and the card says "n/a" (not 0).
     renderOverview({
       permissions: [],
-      kpis: {
-        estates: null,
-        activeProperties: null,
-        totalProperties: null,
-        users: null,
-        residentDrafts: null,
-        auditEventsLast30Days: null,
-      },
+      kpis: kpis(),
     });
 
     await waitFor(() => {
@@ -168,14 +188,7 @@ describe('OverviewPage dashboard', () => {
   it('renders the property status card with a donut when property data is present', async () => {
     renderOverview({
       permissions: ['property.read'],
-      kpis: {
-        estates: null,
-        activeProperties: 7,
-        totalProperties: 10,
-        users: null,
-        residentDrafts: null,
-        auditEventsLast30Days: null,
-      },
+      kpis: kpis({ activeProperties: 7, totalProperties: 10 }),
     });
 
     await waitFor(() => {
@@ -189,20 +202,52 @@ describe('OverviewPage dashboard', () => {
   it('hides the property status card for a role without property.read', async () => {
     renderOverview({
       permissions: [],
-      kpis: {
-        estates: null,
-        activeProperties: null,
-        totalProperties: null,
-        users: null,
-        residentDrafts: null,
-        auditEventsLast30Days: null,
-      },
+      kpis: kpis(),
     });
 
     await waitFor(() => {
       expect(
         screen.getByText('Your role does not have read access to the property registry.'),
       ).toBeTruthy();
+    });
+  });
+
+  it('renders the needs-attention queue from the dashboard payload', async () => {
+    renderOverview({
+      permissions: ['billing.read', 'complaint.read', 'audit.read'],
+      kpis: kpis({ overdueInvoices: 2, openComplaints: 3 }),
+      attention: [
+        {
+          key: 'billing',
+          label: 'Overdue invoices',
+          count: 2,
+          href: '/app/billing',
+        },
+        {
+          key: 'complaints',
+          label: 'Open complaints',
+          count: 3,
+          href: '/app/complaints',
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      const panel = screen.getByLabelText('Needs attention');
+      expect(panel.textContent).toContain('Overdue invoices');
+      expect(panel.textContent).toContain('2 items');
+      expect(panel.textContent).toContain('Open complaints');
+    });
+    expect(screen.getAllByRole('link', { name: /Review/i })[0]?.getAttribute('href')).toBe(
+      '/app/billing',
+    );
+  });
+
+  it('shows the quiet attention state when no readable counter needs attention', async () => {
+    renderOverview({ permissions: [], kpis: kpis(), attention: [] });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Nothing needs attention right now/i)).toBeTruthy();
     });
   });
 

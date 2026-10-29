@@ -171,6 +171,13 @@ export class PrismaComplaintRepository {
     return row ? toRecord(row) : null;
   }
 
+  /** OPEN + IN_PROGRESS count for the dashboard. */
+  async countOpen(organizationId: string): Promise<number> {
+    return this.prisma.complaint.count({
+      where: { organizationId, status: { in: ['OPEN', 'IN_PROGRESS'] } },
+    });
+  }
+
   /** Staff queue: every complaint in the organization with resident context. */
   async listForOrganization(query: OperatorComplaintQuery): Promise<OperatorComplaintRecord[]> {
     const where: Prisma.ComplaintWhereInput = { organizationId: query.organizationId };

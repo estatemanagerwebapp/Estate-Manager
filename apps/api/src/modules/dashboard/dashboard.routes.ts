@@ -8,7 +8,16 @@ import type { PrismaUserRepository } from '../auth/user-repository.js';
 import type { PrismaResidentOnboardingRepository } from '../auth/resident-onboarding-repository.js';
 import type { PrismaEstateRepository } from '../estates/estate-repository.js';
 import type { PrismaPropertyRepository } from '../properties/property-repository.js';
-import type { AuditEventDto } from '@silverstone/shared';
+import type { PrismaFinanceRepository } from '../resident/finance-repository.js';
+import type { PrismaComplaintRepository } from '../resident/complaints-repository.js';
+import type { PrismaSosRepository } from '../resident/sos-repository.js';
+import {
+  DEFAULT_MODULE_FLAGS,
+  type AuditEventDto,
+  type DashboardAttentionItemDto,
+  type DashboardKpisDto,
+  type ModuleFlags,
+} from '@silverstone/shared';
 
 export interface DashboardRouteOptions {
   sessions: PrismaSessionRepository;
@@ -18,7 +27,12 @@ export interface DashboardRouteOptions {
   residentOnboarding: PrismaResidentOnboardingRepository;
   estates: PrismaEstateRepository;
   properties: PrismaPropertyRepository;
+  finance: PrismaFinanceRepository;
+  complaints: PrismaComplaintRepository;
+  sos: PrismaSosRepository;
   organizationId: string;
+  /** Reads the live module flags; omitted in tests means all defaults. */
+  loadModules?: () => Promise<ModuleFlags>;
 }
 
 /**
@@ -39,78 +53,146 @@ export interface DashboardRouteOptions {
  * two so a restricted role (e.g. GUARD) does not see a misleading 0 next to a
  * metric they are not allowed to read.
  */
-export interface DashboardKpis {
-  estates: number | null;
-  activeProperties: number | null;
-  totalProperties: number | null;
-  users: number | null;
-  residentDrafts: number | null;
-  /** Audit events recorded in the trailing 30 days; `null` when hidden. */
-  auditEventsLast30Days: number | null;
+/** Retained alias for consumers that imported the local name. */
+export type DashboardKpis = DashboardKpisDto;
+
+export interface DashboardSummary {
+  kpis: DashboardKpisDto;
+  attention: DashboardAttentionItemDto[];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Loads the dashboard KPIs. Counters gated on a permission the role does not
- * hold resolve to `null`.
+ * Loads the dashboard KPIs and the "needs attention" list. Counters gated on
+ * a permission the role does not hold — or on a disabled module — resolve to
+ * `null`.
  *
- * The estate, property, user, onboarding and audit repositories are used
- * only for their *count* / *list-length* surfaces, so the service does not
- * reach into a module's write path.
+ * This function only uses count/aggregate repositories; it never fetches a
+ * capped list to derive a number.
  */
-export async function loadDashboardKpis(
+export async function loadDashboardSummary(
   organizationId: string,
   held: ReadonlySet<string>,
   options: Pick<
     DashboardRouteOptions,
-    'users' | 'residentOnboarding' | 'estates' | 'properties' | 'audit'
+    | 'users'
+    | 'residentOnboarding'
+    | 'estates'
+    | 'properties'
+    | 'finance'
+    | 'complaints'
+    | 'sos'
+    | 'audit'
+    | 'loadModules'
   >,
-): Promise<DashboardKpis> {
-  const { users, residentOnboarding, estates, properties, audit } = options;
+): Promise<DashboardSummary> {
+  const { users, residentOnboarding, estates, properties, finance, complaints, sos, audit } =
+    options;
 
+  const modules = options.loadModules ? await options.loadModules() : DEFAULT_MODULE_FLAGS;
   const cutoff = new Date(Date.now() - 30 * DAY_MS);
 
-  const [estateCount, propertyStats, userCount, residentCount, auditCount] = await Promise.all([
-    held.has('estate.read')
-      ? estates.list({ organizationId }).then((rows) => rows.length)
+  const residentsEnabled = modules.residents;
+  const propertiesEnabled = modules.properties;
+  const billingEnabled = modules.billing;
+  const estatesEnabled = modules.estates;
+
+  const [
+    estateCount,
+    propertyStats,
+    residentCount,
+    pendingInvitations,
+    userCount,
+    residentDraftCount,
+    financeSummary,
+    activeSos,
+    openComplaints,
+    auditCount,
+  ] = await Promise.all([
+    held.has('estate.read') && estatesEnabled
+      ? estates.count(organizationId)
       : Promise.resolve(null),
-    held.has('property.read')
+    held.has('property.read') && propertiesEnabled
       ? (async () => {
-          const total = await properties.list({
-            organizationId,
-            page: 1,
-            pageSize: 1,
-          });
-          const active = await properties.list({
-            organizationId,
-            status: 'ACTIVE',
-            page: 1,
-            pageSize: 1,
-          });
-          return { total: total.total, active: active.total };
+          const [total, active] = await Promise.all([
+            properties.count(organizationId),
+            properties.count(organizationId, 'ACTIVE'),
+          ]);
+          return { total, active };
         })()
+      : Promise.resolve(null),
+    held.has('user.manage') && residentsEnabled
+      ? users.countActiveByRole(organizationId, 'RESIDENT')
+      : Promise.resolve(null),
+    held.has('resident.manage') && residentsEnabled
+      ? residentOnboarding.countPending(organizationId)
       : Promise.resolve(null),
     held.has('user.manage') ? users.countAll(organizationId) : Promise.resolve(null),
     held.has('resident.manage')
-      ? residentOnboarding
-          .listByOrganization(organizationId)
-          .then((rows) => rows.filter((row) => row.archivedAt === null).length)
+      ? residentOnboarding.countActive(organizationId)
       : Promise.resolve(null),
+    held.has('billing.read') && billingEnabled
+      ? finance.summarizeOutstanding(organizationId)
+      : Promise.resolve(null),
+    held.has('sos.read') ? sos.countActive(organizationId) : Promise.resolve(null),
+    held.has('complaint.read') ? complaints.countOpen(organizationId) : Promise.resolve(null),
     held.has('audit.read')
-      ? audit
-          .listForAuditReadonly({ organizationId, limit: 500 })
-          .then((events) => events.filter((e) => new Date(e.createdAt) >= cutoff).length)
+      ? audit.countForOrganization({ organizationId, since: cutoff })
       : Promise.resolve(null),
   ]);
 
+  const attention: DashboardAttentionItemDto[] = [];
+  if (pendingInvitations !== null && pendingInvitations > 0) {
+    attention.push({
+      key: 'residents',
+      label: 'Pending resident invitations',
+      count: pendingInvitations,
+      href: '/app/residents',
+    });
+  }
+  if (financeSummary && financeSummary.overdueInvoices > 0) {
+    attention.push({
+      key: 'billing',
+      label: 'Overdue invoices',
+      count: financeSummary.overdueInvoices,
+      href: '/app/billing',
+    });
+  }
+  if (openComplaints !== null && openComplaints > 0) {
+    attention.push({
+      key: 'complaints',
+      label: 'Open complaints',
+      count: openComplaints,
+      href: '/app/complaints',
+    });
+  }
+  if (activeSos !== null && activeSos > 0) {
+    attention.push({
+      key: 'sos',
+      label: 'Active SOS alerts',
+      count: activeSos,
+      href: '/app/sos',
+    });
+  }
+
   return {
-    estates: estateCount,
-    totalProperties: propertyStats?.total ?? null,
-    activeProperties: propertyStats?.active ?? null,
-    users: userCount,
-    residentDrafts: residentCount,
-    auditEventsLast30Days: auditCount,
+    kpis: {
+      residents: residentCount,
+      pendingInvitations,
+      totalProperties: propertyStats?.total ?? null,
+      activeProperties: propertyStats?.active ?? null,
+      outstandingKobo: financeSummary?.outstandingKobo ?? null,
+      outstandingInvoices: financeSummary?.outstandingInvoices ?? null,
+      overdueInvoices: financeSummary?.overdueInvoices ?? null,
+      activeSos,
+      openComplaints,
+      auditEventsLast30Days: auditCount,
+      estates: estateCount,
+      users: userCount,
+      residentDrafts: residentDraftCount,
+    },
+    attention,
   };
 }
 
@@ -142,9 +224,12 @@ export async function loadDashboardActivity(
     cursor: after,
   });
   const hasMore = events.length > max;
+  const page = hasMore ? events.slice(0, max) : events;
   return {
-    events: hasMore ? events.slice(0, max) : events,
-    nextCursor: hasMore ? (events[events.length - 1]?.id ?? null) : null,
+    events: page,
+    // The cursor is the last *returned* event, so the next page resumes after
+    // it and never skips the look-ahead row.
+    nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
   };
 }
 
@@ -180,14 +265,18 @@ export function createDashboardRouter(options: DashboardRouteOptions): Router {
       // Resolve the role's effective permissions server-side; the dashboard
       // exposes only counters the role is granted to read.
       const held = new Set<string>(await permissions.effectivePermissions(auth.role));
-      const kpis = await loadDashboardKpis(organizationId, held, {
+      const summary = await loadDashboardSummary(organizationId, held, {
         users: options.users,
         residentOnboarding: options.residentOnboarding,
         estates: options.estates,
         properties: options.properties,
+        finance: options.finance,
+        complaints: options.complaints,
+        sos: options.sos,
         audit,
+        loadModules: options.loadModules,
       });
-      res.status(200).json({ data: { kpis } });
+      res.status(200).json({ data: summary });
     }),
   );
 

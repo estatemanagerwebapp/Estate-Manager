@@ -1,6 +1,11 @@
 import type { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
-import type { AuditEventDto, AuditEventType, AuditTargetType } from '@silverstone/shared';
+import type {
+  AuditEventDto,
+  AuditEventOutcome,
+  AuditEventType,
+  AuditTargetType,
+} from '@silverstone/shared';
 
 /**
  * Append-only security audit log.
@@ -92,6 +97,11 @@ const AUDIT_EVENT_DB_MAP = {
   'audit.exported': 'audit_exported',
 } as const;
 
+/** Reverse map, built once: database enum → shared wire event name. */
+const AUDIT_EVENT_WIRE_MAP: Record<string, AuditEventType> = Object.fromEntries(
+  Object.entries(AUDIT_EVENT_DB_MAP).map(([wire, db]) => [db, wire as AuditEventType]),
+);
+
 export { AUDIT_EVENT_DB_MAP };
 
 export interface RecordAuditEventInput {
@@ -106,6 +116,26 @@ export interface RecordAuditEventInput {
    *  reset links or full request bodies. */
   metadata?: Record<string, unknown>;
 }
+
+/** Filters shared by the audit list and the CSV export. */
+export interface AuditQueryFilter {
+  organizationId: string;
+  limit?: number;
+  cursor?: string;
+  eventType?: AuditEventType;
+  outcome?: AuditEventOutcome;
+  targetType?: AuditTargetType;
+  actorId?: string;
+  /** Inclusive lower bound on `createdAt`. */
+  from?: Date;
+  /** Inclusive upper bound on `createdAt`. */
+  to?: Date;
+}
+
+const AUDIT_ACTOR_SELECT = {
+  email: true,
+  fullName: true,
+} satisfies Prisma.UserSelect;
 
 export class PrismaAuditRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -132,25 +162,84 @@ export class PrismaAuditRepository {
     });
   }
 
-  async listForAuditReadonly(filter: {
-    organizationId: string;
-    limit?: number;
-    cursor?: string;
-  }): Promise<AuditEventDto[]> {
+  async listForAuditReadonly(filter: AuditQueryFilter): Promise<AuditEventDto[]> {
+    if (filter.cursor && !(await this.cursorBelongsToOrganization(filter))) return [];
     const rows = await this.prisma.auditEvent.findMany({
-      where: { organizationId: filter.organizationId },
-      orderBy: { createdAt: 'desc' },
+      where: toWhere(filter),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.min(filter.limit ?? 100, 500),
+      include: { actor: { select: AUDIT_ACTOR_SELECT } },
       ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
     });
     return rows.map(toAuditEventDto);
   }
+
+  /**
+   * Export window. The caller asks for `limit + 1` rows so the route can tell
+   * whether the hard cap was hit without a second count query.
+   */
+  async listForExport(
+    filter: AuditQueryFilter,
+    limit: number,
+  ): Promise<{ events: AuditEventDto[]; capped: boolean }> {
+    if (filter.cursor && !(await this.cursorBelongsToOrganization(filter))) {
+      return { events: [], capped: false };
+    }
+    const rows = await this.prisma.auditEvent.findMany({
+      where: toWhere(filter),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      include: { actor: { select: AUDIT_ACTOR_SELECT } },
+      ...(filter.cursor ? { cursor: { id: filter.cursor }, skip: 1 } : {}),
+    });
+    return {
+      events: rows.slice(0, limit).map(toAuditEventDto),
+      capped: rows.length > limit,
+    };
+  }
+
+  /** Exact organization-scoped count, optionally from a trailing timestamp. */
+  async countForOrganization(filter: { organizationId: string; since?: Date }): Promise<number> {
+    return this.prisma.auditEvent.count({
+      where: {
+        organizationId: filter.organizationId,
+        ...(filter.since ? { createdAt: { gte: filter.since } } : {}),
+      },
+    });
+  }
+
+  private async cursorBelongsToOrganization(filter: AuditQueryFilter): Promise<boolean> {
+    const row = await this.prisma.auditEvent.findFirst({
+      where: { id: filter.cursor, organizationId: filter.organizationId },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+}
+
+function toWhere(filter: AuditQueryFilter): Prisma.AuditEventWhereInput {
+  return {
+    organizationId: filter.organizationId,
+    ...(filter.eventType ? { eventType: AUDIT_EVENT_DB_MAP[filter.eventType] } : {}),
+    ...(filter.outcome ? { outcome: filter.outcome } : {}),
+    ...(filter.targetType ? { targetType: filter.targetType } : {}),
+    ...(filter.actorId ? { actorId: filter.actorId } : {}),
+    ...(filter.from || filter.to
+      ? {
+          createdAt: {
+            ...(filter.from ? { gte: filter.from } : {}),
+            ...(filter.to ? { lte: filter.to } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 function toAuditEventDto(row: {
   id: string;
   eventType: string;
   actorId: string | null;
+  actor: { email: string; fullName: string | null } | null;
   targetType: string | null;
   targetId: string | null;
   requestId: string | null;
@@ -158,14 +247,12 @@ function toAuditEventDto(row: {
   metadata: Prisma.JsonValue;
   createdAt: Date;
 }): AuditEventDto {
-  const reverse: Record<string, AuditEventType> = {};
-  for (const [wire, db] of Object.entries(AUDIT_EVENT_DB_MAP)) {
-    reverse[db] = wire as AuditEventType;
-  }
   return {
     id: row.id,
-    eventType: reverse[row.eventType] ?? (row.eventType as AuditEventType),
+    eventType: AUDIT_EVENT_WIRE_MAP[row.eventType] ?? (row.eventType as AuditEventType),
     actorId: row.actorId,
+    actorEmail: row.actor?.email ?? null,
+    actorName: row.actor?.fullName ?? null,
     targetType: row.targetType as AuditEventDto['targetType'],
     targetId: row.targetId,
     requestId: row.requestId,

@@ -119,6 +119,15 @@ export interface OperatorInvoiceFilter {
   limit?: number;
 }
 
+/** Exact billing counters for the operator dashboard. */
+export interface OutstandingInvoiceSummary {
+  /** UNPAID + OVERDUE amounts, in kobo. */
+  outstandingKobo: number;
+  outstandingInvoices: number;
+  /** Stored OVERDUE plus UNPAID invoices past their due date. */
+  overdueInvoices: number;
+}
+
 export interface OperatorPaymentFilter {
   limit?: number;
 }
@@ -521,6 +530,36 @@ export class PrismaFinanceRepository {
       include: OPERATOR_INVOICE_INCLUDE,
     });
     return rows.map(toOperatorInvoice);
+  }
+
+  /**
+   * Exact outstanding/overdue aggregates for the dashboard. This never loads
+   * invoice rows; a deployment with thousands of invoices still costs three
+   * index-backed queries.
+   */
+  async summarizeOutstanding(organizationId: string): Promise<OutstandingInvoiceSummary> {
+    const outstandingWhere = {
+      organizationId,
+      status: { in: ['UNPAID', 'OVERDUE'] },
+    } satisfies Prisma.InvoiceWhereInput;
+    const [sum, outstandingInvoices, overdueInvoices] = await Promise.all([
+      this.prisma.invoice.aggregate({
+        where: outstandingWhere,
+        _sum: { amountKobo: true },
+      }),
+      this.prisma.invoice.count({ where: outstandingWhere }),
+      this.prisma.invoice.count({
+        where: {
+          organizationId,
+          OR: [{ status: 'OVERDUE' }, { status: 'UNPAID', dueAt: { lt: new Date() } }],
+        },
+      }),
+    ]);
+    return {
+      outstandingKobo: sum._sum.amountKobo ?? 0,
+      outstandingInvoices,
+      overdueInvoices,
+    };
   }
 
   /** One organization-scoped invoice, or null when it is not visible. */

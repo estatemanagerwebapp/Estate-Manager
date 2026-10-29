@@ -387,6 +387,9 @@ export const AUDIT_TARGET_TYPES = [
 
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
+export const AUDIT_EVENT_OUTCOMES = ['success', 'failure'] as const;
+export type AuditEventOutcome = (typeof AUDIT_EVENT_OUTCOMES)[number];
+
 /** A redacted, append-only audit event. `metadata` may only hold safe,
  *  non-secret key/value pairs; passwords, tokens, reset links and full
  *  request bodies are never stored. */
@@ -394,12 +397,37 @@ export interface AuditEventDto {
   id: string;
   eventType: AuditEventType;
   actorId: string | null;
+  /** Resolved actor projection. Null for system events or deleted accounts. */
+  actorEmail?: string | null;
+  actorName?: string | null;
   targetType: AuditTargetType | null;
   targetId: string | null;
   requestId: string | null;
-  outcome: 'success' | 'failure';
+  outcome: AuditEventOutcome;
   metadata: Record<string, unknown>;
   createdAt: string;
+}
+
+/** Query filters accepted by the operator audit log and CSV export. */
+export interface AuditEventFilter {
+  /** Page size, clamped to [1, 50] by the API. */
+  limit?: number;
+  /** Opaque cursor: the last event id of the previous page. */
+  after?: string;
+  eventType?: AuditEventType;
+  outcome?: AuditEventOutcome;
+  targetType?: AuditTargetType;
+  actorId?: string;
+  /** Inclusive ISO timestamp lower bound. */
+  from?: string;
+  /** Inclusive ISO timestamp upper bound. */
+  to?: string;
+}
+
+export interface AuditEventsResponse {
+  events: AuditEventDto[];
+  nextCursor: string | null;
+  limit: number;
 }
 
 export interface PasswordPolicy {

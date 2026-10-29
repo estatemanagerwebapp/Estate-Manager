@@ -4,7 +4,7 @@
  * field-level validation errors without parsing the prose message.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, api } from './client';
+import { ApiRequestError, api, buildAuditQuery } from './client';
 import type { EstateFilter } from './client';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -31,6 +31,27 @@ describe('ApiRequestError', () => {
       status: 400,
       details,
     });
+  });
+
+  it('serializes audit filters without empty values', () => {
+    expect(buildAuditQuery({})).toBe('');
+    expect(
+      buildAuditQuery({
+        eventType: 'estate.created',
+        outcome: 'failure',
+        targetType: 'estate',
+        actorId: '00000000-0000-4000-8000-000000000001',
+        from: '2026-10-01T00:00:00.000Z',
+        to: '2026-10-31T23:59:59.999Z',
+        limit: 25,
+      }),
+    ).toBe(
+      'limit=25&eventType=estate.created&outcome=failure&targetType=estate&actorId=00000000-0000-4000-8000-000000000001&from=2026-10-01T00%3A00%3A00.000Z&to=2026-10-31T23%3A59%3A59.999Z',
+    );
+    // The export omits the page limit; the server applies its own cap.
+    expect(buildAuditQuery({ limit: 25, eventType: 'login.failed' }, false)).toBe(
+      'eventType=login.failed',
+    );
   });
 
   it('is constructable with the options bag (requestId/status/details)', () => {

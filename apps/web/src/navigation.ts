@@ -3,6 +3,7 @@ import {
   Building,
   Building2,
   CalendarDays,
+  History,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -50,6 +51,12 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     label: 'Overview',
     icon: LayoutDashboard,
     end: true,
+  },
+  {
+    to: '/app/activity',
+    label: 'Activity',
+    icon: History,
+    permission: 'audit.read',
   },
   {
     to: '/app/estates',

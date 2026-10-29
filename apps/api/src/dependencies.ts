@@ -72,6 +72,7 @@ import { PrismaHouseTypeRepository } from './modules/properties/house-type-repos
 import { PropertyService } from './modules/properties/property.service.js';
 import { PrismaImportRepository } from './modules/imports/import-repository.js';
 import { ImportService } from './modules/imports/import.service.js';
+import type { ModuleFlags } from '@silverstone/shared';
 
 export interface AppDependencies {
   checkDatabase: () => Promise<void>;
@@ -94,6 +95,12 @@ export interface AppDependencies {
   residentOnboarding: PrismaResidentOnboardingRepository;
   estates: PrismaEstateRepository;
   properties: PrismaPropertyRepository;
+  /** Billing, complaint and SOS aggregates for the operator dashboard. */
+  finance: PrismaFinanceRepository;
+  complaints: PrismaComplaintRepository;
+  sos: PrismaSosRepository;
+  /** Live module flags from the resolved organization configuration. */
+  loadModules: () => Promise<ModuleFlags>;
   /** Resolved at startup: the organization's database id. */
   organizationId: string;
   /** Phase 2 — estate management. */
@@ -431,6 +438,10 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentOnboarding: residentDrafts,
     estates,
     properties,
+    finance: financeRepo,
+    complaints: complaintRepo,
+    sos: sosRepo,
+    loadModules: async () => (await configService.resolve()).config.modules,
     organizationId: await resolveOrganizationId(prisma, configService),
     estateService,
     propertyService,

@@ -67,6 +67,10 @@ export class PrismaEstateRepository {
     return row ? toRecord(row) : null;
   }
 
+  async count(organizationId: string): Promise<number> {
+    return this.prisma.estate.count({ where: { organizationId } });
+  }
+
   async list(query: EstateQuery): Promise<EstateRecord[]> {
     const rows = await this.prisma.estate.findMany({
       where: {

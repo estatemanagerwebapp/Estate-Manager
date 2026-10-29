@@ -7,6 +7,11 @@ describe('operator query keys', () => {
     expect(queryKeys.dashboard.kpis).toEqual(['dashboard', 'kpis']);
     expect(queryKeys.users.all).toEqual(['users']);
     expect(queryKeys.audit.all).toEqual(['activity']);
+    expect(queryKeys.audit.list({ outcome: 'failure' })).toEqual([
+      'activity',
+      { outcome: 'failure' },
+    ]);
+    expect(queryKeys.audit.list()).not.toEqual(queryKeys.audit.list({ outcome: 'failure' }));
   });
 
   it('scopes filtered lists without colliding with their domain root', () => {

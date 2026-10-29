@@ -1,3 +1,4 @@
+import type { AuditEventFilter } from '@silverstone/shared';
 import type {
   AccessVerificationFilter,
   OperatorAccessCodeFilter,
@@ -46,7 +47,7 @@ export const queryKeys = {
   },
   audit: {
     all: ['activity'] as const,
-    list: () => ['activity'] as const,
+    list: (filter: AuditEventFilter = {}) => ['activity', filter] as const,
   },
   // Operator modules added in later phases. Keeping the names here makes the
   // invalidation convention visible before the screens exist.

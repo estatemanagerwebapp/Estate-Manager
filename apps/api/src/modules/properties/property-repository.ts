@@ -193,6 +193,13 @@ export class PrismaPropertyRepository {
     return new Set(rows.map((row) => row.identifier));
   }
 
+  /** Exact organization-scoped count, optionally filtered by status. */
+  async count(organizationId: string, status?: string): Promise<number> {
+    return this.prisma.property.count({
+      where: { organizationId, ...(status ? { status } : {}) },
+    });
+  }
+
   async list(query: PropertyQuery): Promise<{ items: PropertyRecord[]; total: number }> {
     const where: Prisma.PropertyWhereInput = {
       organizationId: query.organizationId,

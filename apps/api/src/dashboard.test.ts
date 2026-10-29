@@ -21,8 +21,12 @@ import { PrismaAuditRepository } from './modules/audit/audit-repository.js';
 import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
 import { PrismaResidentOnboardingRepository } from './modules/auth/resident-onboarding-repository.js';
+import { PrismaFinanceRepository } from './modules/resident/finance-repository.js';
+import { PrismaComplaintRepository } from './modules/resident/complaints-repository.js';
+import { PrismaSosRepository } from './modules/resident/sos-repository.js';
 import { PermissionResolver } from './modules/auth/permission-resolver.js';
 import { MockEmailAdapter } from './modules/auth/email-adapter.js';
+import { DEFAULT_MODULE_FLAGS, type ModuleFlags } from '@silverstone/shared';
 import { getPrismaClient, disconnectPrisma } from './lib/prisma.js';
 import { hashPassword } from './lib/password.js';
 
@@ -35,6 +39,9 @@ let audit: PrismaAuditRepository;
 let estates: PrismaEstateRepository;
 let properties: PrismaPropertyRepository;
 let residentOnboarding: PrismaResidentOnboardingRepository;
+let finance: PrismaFinanceRepository;
+let complaints: PrismaComplaintRepository;
+let sos: PrismaSosRepository;
 let email: MockEmailAdapter;
 let organizationId = '';
 
@@ -45,7 +52,7 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildApp(): Express {
+function buildApp(loadModules?: () => Promise<ModuleFlags>): Express {
   const permissions = new PermissionResolver(async () => []);
   const authService = new AuthService(
     users,
@@ -78,7 +85,11 @@ function buildApp(): Express {
       residentOnboarding,
       estates,
       properties,
+      finance,
+      complaints,
+      sos,
       organizationId,
+      ...(loadModules ? { loadModules } : {}),
     },
   });
 }
@@ -123,6 +134,9 @@ beforeAll(async () => {
   estates = new PrismaEstateRepository(prisma);
   properties = new PrismaPropertyRepository(prisma);
   residentOnboarding = new PrismaResidentOnboardingRepository(prisma);
+  finance = new PrismaFinanceRepository(prisma);
+  complaints = new PrismaComplaintRepository(prisma);
+  sos = new PrismaSosRepository(prisma);
 
   const org = await prisma.organization.create({
     data: { slug: `dash_test_${uniqueSuffix()}`, name: 'Dashboard Test' },
@@ -184,6 +198,48 @@ async function seedData(): Promise<void> {
       phone: null,
     },
   });
+
+  const resident = await prisma.user.create({
+    data: {
+      organizationId,
+      email: `seed_resident_${uniqueSuffix()}@example.com`,
+      passwordHash: await hashPassword('Res1dentSecretXyz'),
+      role: 'RESIDENT',
+      status: 'ACTIVE',
+      lastPasswordChangedAt: new Date(),
+    },
+  });
+  await prisma.invoice.create({
+    data: {
+      organizationId,
+      userId: resident.id,
+      propertyId: activeProperty.id,
+      period: '2026-11',
+      amountKobo: 5_000_000,
+      status: 'UNPAID',
+      dueAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    },
+  });
+  await prisma.complaint.create({
+    data: {
+      organizationId,
+      userId: resident.id,
+      propertyId: activeProperty.id,
+      category: 'security',
+      subject: 'Gate light out',
+      description: 'The gate light has been out for two nights.',
+      status: 'OPEN',
+    },
+  });
+  await prisma.sosEvent.create({
+    data: {
+      organizationId,
+      userId: resident.id,
+      propertyId: activeProperty.id,
+      status: 'RAISED',
+      note: 'Test alert',
+    },
+  });
 }
 
 describe('dashboard KPIs', () => {
@@ -209,9 +265,26 @@ describe('dashboard KPIs', () => {
     expect(kpis.estates).toBe(1);
     expect(kpis.totalProperties).toBe(2);
     expect(kpis.activeProperties).toBe(1);
-    expect(kpis.users).toBe(1); // the admin itself
+    expect(kpis.users).toBe(2); // the admin + the seeded resident
     expect(kpis.residentDrafts).toBe(1);
+    expect(kpis.residents).toBe(1);
+    expect(kpis.pendingInvitations).toBe(1);
+    expect(kpis.outstandingKobo).toBe(5_000_000);
+    expect(kpis.outstandingInvoices).toBe(1);
+    expect(kpis.overdueInvoices).toBe(1);
+    expect(kpis.activeSos).toBe(1);
+    expect(kpis.openComplaints).toBe(1);
     expect(kpis.auditEventsLast30Days).toBeGreaterThanOrEqual(1); // login.succeeded
+
+    const attention = response.body.data.attention;
+    expect(attention).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'residents', count: 1 }),
+        expect.objectContaining({ key: 'billing', count: 1 }),
+        expect.objectContaining({ key: 'complaints', count: 1 }),
+        expect.objectContaining({ key: 'sos', count: 1 }),
+      ]),
+    );
   });
 
   it('GUARD sees only the counters its role permits (null, not zero)', async () => {
@@ -226,14 +299,24 @@ describe('dashboard KPIs', () => {
     expect(response.status).toBe(200);
 
     const kpis = response.body.data.kpis;
-    // GUARD's baseline (gate.manage, gate.read, resident.read) holds none of
-    // the read permissions the KPIs are gated on, so every counter is null.
+    // GUARD's baseline holds gate/resident/sos read but none of the
+    // estate/property/billing/user/audit permissions the other KPIs need.
     expect(kpis.estates).toBeNull();
     expect(kpis.totalProperties).toBeNull();
     expect(kpis.activeProperties).toBeNull();
     expect(kpis.users).toBeNull();
     expect(kpis.residentDrafts).toBeNull();
+    expect(kpis.residents).toBeNull();
+    expect(kpis.pendingInvitations).toBeNull();
+    expect(kpis.outstandingKobo).toBeNull();
+    expect(kpis.outstandingInvoices).toBeNull();
+    expect(kpis.overdueInvoices).toBeNull();
+    expect(kpis.activeSos).toBe(1);
+    expect(kpis.openComplaints).toBeNull();
     expect(kpis.auditEventsLast30Days).toBeNull();
+    expect(response.body.data.attention).toEqual([
+      expect.objectContaining({ key: 'sos', count: 1 }),
+    ]);
   });
 
   it('AUDITOR sees the read-only counters but not user/resident management', async () => {
@@ -254,6 +337,46 @@ describe('dashboard KPIs', () => {
     expect(kpis.auditEventsLast30Days).toBeGreaterThanOrEqual(1);
     expect(kpis.users).toBeNull();
     expect(kpis.residentDrafts).toBeNull();
+    expect(kpis.residents).toBeNull();
+    expect(kpis.pendingInvitations).toBeNull();
+    // AUDITOR holds billing/sos/complaint read, so those counters are visible.
+    expect(kpis.outstandingKobo).toBe(5_000_000);
+    expect(kpis.outstandingInvoices).toBe(1);
+    expect(kpis.overdueInvoices).toBe(1);
+    expect(kpis.activeSos).toBe(1);
+    expect(kpis.openComplaints).toBe(1);
+    const keys = response.body.data.attention.map((item: { key: string }) => item.key);
+    expect(keys).toEqual(expect.arrayContaining(['billing', 'complaints', 'sos']));
+    expect(keys).not.toContain('residents');
+  });
+
+  it('hides disabled modules even when the role holds the read permission', async () => {
+    const disabledApp = buildApp(async () => ({
+      ...DEFAULT_MODULE_FLAGS,
+      residents: false,
+      billing: false,
+    }));
+    const admin = await createTestUser({ role: 'SUPER_ADMIN' });
+    const login = await request(disabledApp)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    expect(login.status).toBe(200);
+    const cookie = cookieFrom(login);
+
+    const response = await request(disabledApp).get('/api/v1/dashboard/kpis').set('Cookie', cookie);
+    expect(response.status).toBe(200);
+    const kpis = response.body.data.kpis;
+    expect(kpis.residents).toBeNull();
+    expect(kpis.pendingInvitations).toBeNull();
+    expect(kpis.outstandingKobo).toBeNull();
+    expect(kpis.outstandingInvoices).toBeNull();
+    expect(kpis.overdueInvoices).toBeNull();
+    // SOS and complaints have no module flag; they remain permission-gated.
+    expect(kpis.activeSos).toBe(1);
+    expect(kpis.openComplaints).toBe(1);
+    const keys = response.body.data.attention.map((item: { key: string }) => item.key);
+    expect(keys).not.toContain('residents');
+    expect(keys).not.toContain('billing');
   });
 });
 
@@ -319,5 +442,38 @@ describe('dashboard activity', () => {
     const zero = await request(app).get('/api/v1/dashboard/activity?limit=0').set('Cookie', cookie);
     expect(zero.status).toBe(200);
     expect(zero.body.data.limit).toBe(1);
+  });
+
+  it('resumes after the last returned event without skipping the look-ahead row', async () => {
+    const admin = await createTestUser({ role: 'SUPER_ADMIN' });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: admin.email, password: SUPER_ADMIN_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    // There are at least three login audit events by now; use a larger read
+    // as the reference order, then check that limit=2 + cursor lands exactly
+    // on the third event rather than skipping to the fourth.
+    const reference = await request(app)
+      .get('/api/v1/dashboard/activity?limit=5')
+      .set('Cookie', cookie);
+    expect(reference.status).toBe(200);
+    const referenceIds = reference.body.data.events.map((event: { id: string }) => event.id);
+    expect(referenceIds.length).toBeGreaterThanOrEqual(3);
+
+    const firstPage = await request(app)
+      .get('/api/v1/dashboard/activity?limit=2')
+      .set('Cookie', cookie);
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.data.events.map((event: { id: string }) => event.id)).toEqual(
+      referenceIds.slice(0, 2),
+    );
+    expect(firstPage.body.data.nextCursor).toBe(referenceIds[1]);
+
+    const secondPage = await request(app)
+      .get(`/api/v1/dashboard/activity?limit=2&after=${firstPage.body.data.nextCursor}`)
+      .set('Cookie', cookie);
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.data.events[0].id).toBe(referenceIds[2]);
   });
 });
