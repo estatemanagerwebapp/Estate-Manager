@@ -82,6 +82,13 @@ import type {
   OperatorComplaintResponse,
   OperatorComplaintReplyInput,
   OperatorComplaintStatusInput,
+  OperatorInvoicesResponse,
+  OperatorInvoiceResponse,
+  OperatorCreateInvoiceInput,
+  OperatorRecordPaymentInput,
+  OperatorRecordPaymentResponse,
+  OperatorPaymentsResponse,
+  ResidentInvoiceStatus,
   ResidentNotificationsView,
   ResidentMarkNotificationReadResponse,
   ResidentDashboardView,
@@ -241,6 +248,18 @@ export interface OperatorMessageFilter {
 /** Query filters for the operator complaint queue. */
 export interface OperatorComplaintFilter {
   status?: ComplaintStatus;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the operator invoice/payment views. */
+export interface OperatorInvoiceFilter {
+  status?: ResidentInvoiceStatus;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+export interface OperatorPaymentFilter {
   /** Server caps at 200. */
   limit?: number;
 }
@@ -793,6 +812,44 @@ export const api = {
       `/api/v1/complaints/${encodeURIComponent(complaintId)}/status`,
       { method: 'POST', body: JSON.stringify(input) },
     ),
+
+  // --- Operator billing -------------------------------------------------------
+  /** Organization-scoped invoice queue. Requires `billing.read`. */
+  listOperatorInvoices: (filter: OperatorInvoiceFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorInvoicesResponse>(`/api/v1/invoices${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Issue a manual invoice for a resident. Requires `billing.manage`. */
+  createOperatorInvoice: (input: OperatorCreateInvoiceInput) =>
+    request<OperatorInvoiceResponse>('/api/v1/invoices', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** Void an unpaid invoice. Requires `billing.manage`. */
+  voidOperatorInvoice: (invoiceId: string) =>
+    request<OperatorInvoiceResponse>(`/api/v1/invoices/${encodeURIComponent(invoiceId)}/void`, {
+      method: 'POST',
+    }),
+
+  /** Record a payment received out of band. Requires `payment.verify`. */
+  recordOperatorPayment: (invoiceId: string, input: OperatorRecordPaymentInput) =>
+    request<OperatorRecordPaymentResponse>(
+      `/api/v1/invoices/${encodeURIComponent(invoiceId)}/payments`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+
+  /** Organization-scoped manual payment history. Requires `billing.read`. */
+  listOperatorPayments: (filter: OperatorPaymentFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorPaymentsResponse>(`/api/v1/payments${qs ? `?${qs}` : ''}`);
+  },
 
   /** S10: the resident's notification inbox plus their upcoming bookings. */
   getResidentNotifications: () =>

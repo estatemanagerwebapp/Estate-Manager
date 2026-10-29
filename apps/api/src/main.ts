@@ -137,6 +137,12 @@ async function main(): Promise<void> {
       organizationId: deps.organizationId,
       complaints: deps.operatorComplaintsService,
     },
+    billing: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      billing: deps.operatorBillingService,
+    },
   });
 
   const server = http.createServer(app);

@@ -345,6 +345,85 @@ export interface OperatorComplaintResponse {
   complaint: OperatorComplaintDto;
 }
 
+// --- Operator billing (Phase 5) -----------------------------------------------------
+
+/** Manual payment methods the estate office can record. Provider settlement is out of scope. */
+export const OPERATOR_PAYMENT_METHODS = [
+  'CASH',
+  'BANK_TRANSFER',
+  'POS',
+  'CHEQUE',
+  'OTHER',
+] as const;
+export type OperatorPaymentMethod = (typeof OPERATOR_PAYMENT_METHODS)[number];
+
+export interface OperatorInvoiceDto {
+  id: string;
+  period: string;
+  amountKobo: number;
+  currency: string;
+  status: ResidentInvoiceStatus;
+  dueAt: string;
+  issuedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  /** True when the invoice is stored OVERDUE, or still unpaid past its due date. */
+  overdue: boolean;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  paidKobo: number;
+  paymentCount: number;
+  createdBy: OperatorActorSummaryDto | null;
+  voidedAt: string | null;
+  voidedBy: OperatorActorSummaryDto | null;
+}
+
+export interface OperatorInvoicesResponse {
+  invoices: OperatorInvoiceDto[];
+}
+
+export interface OperatorCreateInvoiceInput {
+  residentId: string;
+  period: string;
+  amountKobo: number;
+  dueAt: string;
+}
+
+export interface OperatorInvoiceResponse {
+  ok: true;
+  invoice: OperatorInvoiceDto;
+}
+
+export interface OperatorRecordPaymentInput {
+  method: OperatorPaymentMethod;
+  reference?: string;
+  paidAt?: string;
+}
+
+export interface OperatorPaymentDto {
+  id: string;
+  invoiceId: string;
+  period: string;
+  amountKobo: number;
+  method: string;
+  reference: string | null;
+  paidAt: string;
+  createdAt: string;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  recordedBy: OperatorActorSummaryDto | null;
+}
+
+export interface OperatorPaymentsResponse {
+  payments: OperatorPaymentDto[];
+}
+
+export interface OperatorRecordPaymentResponse {
+  ok: true;
+  payment: OperatorPaymentDto;
+  invoice: OperatorInvoiceDto;
+}
+
 // --- Community (S7) ----------------------------------------------------------------
 
 export interface AnnouncementDto {

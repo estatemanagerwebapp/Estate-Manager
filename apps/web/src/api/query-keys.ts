@@ -1,6 +1,8 @@
 import type {
   OperatorComplaintFilter,
+  OperatorInvoiceFilter,
   OperatorMessageFilter,
+  OperatorPaymentFilter,
   OperatorSosFilter,
   UserFilter,
 } from './client';
@@ -56,12 +58,12 @@ export const queryKeys = {
   },
   invoices: {
     all: ['invoices'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['invoices', filter] as const,
+    list: (filter: OperatorInvoiceFilter = {}) => ['invoices', filter] as const,
     detail: (invoiceId: string) => ['invoice', invoiceId] as const,
   },
   payments: {
     all: ['payments'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['payments', filter] as const,
+    list: (filter: OperatorPaymentFilter = {}) => ['payments', filter] as const,
   },
   accessCodes: {
     all: ['access-codes'] as const,

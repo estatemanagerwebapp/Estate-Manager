@@ -37,6 +37,7 @@ import { ResidentSosService } from './modules/resident/sos.service.js';
 import { OperatorSosService } from './modules/sos/operator-sos.service.js';
 import { OperatorMessagesService } from './modules/messages/operator-messages.service.js';
 import { OperatorComplaintsService } from './modules/complaints/operator-complaints.service.js';
+import { OperatorBillingService } from './modules/billing/operator-billing.service.js';
 import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
 import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 import {
@@ -111,6 +112,8 @@ export interface AppDependencies {
   operatorMessagesService: OperatorMessagesService;
   /** Operator complaint queue, replies and status changes. */
   operatorComplaintsService: OperatorComplaintsService;
+  /** Operator manual billing: invoices and recorded payments. */
+  operatorBillingService: OperatorBillingService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
@@ -230,6 +233,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       return config.fees?.registration ?? { amountKobo: 0, currency: 'NGN' };
     },
   });
+  const operatorBillingService = new OperatorBillingService({ finance: financeRepo, audit });
 
   const accessCodeRepo = new PrismaAccessCodeRepository(prisma);
   const residentCodesService = new ResidentCodesService({
@@ -365,6 +369,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     operatorSosService,
     operatorMessagesService,
     operatorComplaintsService,
+    operatorBillingService,
     residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,

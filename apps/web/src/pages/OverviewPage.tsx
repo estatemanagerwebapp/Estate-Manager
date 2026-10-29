@@ -73,6 +73,7 @@ export function OverviewPage() {
               <ul className="mt-3 flex flex-col gap-2">
                 <QuickLink to="/app/estates" label="Manage estates" />
                 {can['property.read'] && <QuickLink to="/app/properties" label="View properties" />}
+                {can['billing.read'] && <QuickLink to="/app/billing" label="Review billing" />}
               </ul>
             </section>
           )}
@@ -82,7 +83,7 @@ export function OverviewPage() {
       </main>
 
       <footer className="mt-8 text-xs text-(--color-ink-muted)">
-        API version 0.1 · billing and onboarding features land in a later phase
+        API version 0.1 · payments are recorded manually by estate staff
       </footer>
     </div>
   );

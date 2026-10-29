@@ -109,7 +109,10 @@ model User {
   mediaFiles          MediaFile[]
   residentOnboarding  ResidentOnboarding?
   invoices            Invoice[]
+  invoicesCreated     Invoice[]            @relation("InvoiceCreatedBy")
+  invoicesVoided      Invoice[]            @relation("InvoiceVoidedBy")
   payments            Payment[]
+  paymentsRecorded    Payment[]            @relation("PaymentRecordedBy")
   transactions        Transaction[]
   accessCodes         AccessCode[]
   complaints          Complaint[]
@@ -245,12 +248,22 @@ model Invoice {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// The operator who issued the invoice. Null for registration-fee seeds.
+  createdById String?   @map("created_by_id") @db.Uuid
+  /// Set when an unpaid invoice is voided.
+  voidedAt    DateTime? @map("voided_at") @db.Timestamptz(6)
+  voidedById  String?   @map("voided_by_id") @db.Uuid
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  voidedBy     User?        @relation("InvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
   payments     Payment[]
 
   @@index([organizationId, userId, status])
+  @@index([createdById])
+  @@index([voidedById])
   @@map("invoices")
 }
 
@@ -265,12 +278,17 @@ model Payment {
   paidAt         DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  /// The operator who recorded the manual payment. Null for seed/resident payments.
+  recordedById String? @map("recorded_by_id") @db.Uuid
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   invoice      Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([invoiceId])
+  @@index([recordedById])
   @@map("payments")
 }
 

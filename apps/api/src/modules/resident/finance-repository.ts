@@ -59,6 +59,8 @@ export interface CreateInvoiceInput {
   dueAt: Date;
   /** Seed the paid state immediately (registration-fee seed). */
   paidOnIssue?: boolean;
+  /** Operator who issued the invoice; null for system seeds. */
+  createdById?: string | null;
 }
 
 export interface CreatePaymentInput {
@@ -68,6 +70,62 @@ export interface CreatePaymentInput {
   amountKobo: number;
   method: string;
   reference?: string | null;
+  /** Manual/bank timestamp supplied by the operator. Defaults to now. */
+  paidAt?: Date;
+  /** Operator who recorded the payment; null for resident/seed payments. */
+  recordedById?: string | null;
+}
+
+export interface OperatorBillingActorRecord {
+  id: string;
+  fullName: string | null;
+  email: string;
+  role: string;
+}
+
+export interface OperatorBillingResidentRecord {
+  id: string;
+  fullName: string | null;
+  email: string;
+  phone: string | null;
+}
+
+export interface OperatorBillingPropertyRecord {
+  id: string;
+  identifier: string;
+  name: string | null;
+  estate: { id: string; name: string; slug: string };
+}
+
+export interface OperatorInvoiceRecord extends FinanceInvoiceRecord {
+  resident: OperatorBillingResidentRecord | null;
+  property: OperatorBillingPropertyRecord | null;
+  paidKobo: number;
+  paymentCount: number;
+  createdBy: OperatorBillingActorRecord | null;
+  voidedAt: Date | null;
+  voidedBy: OperatorBillingActorRecord | null;
+}
+
+export interface OperatorPaymentRecord extends FinancePaymentRecord {
+  period: string;
+  resident: OperatorBillingResidentRecord | null;
+  property: OperatorBillingPropertyRecord | null;
+  recordedBy: OperatorBillingActorRecord | null;
+}
+
+export interface OperatorInvoiceFilter {
+  status?: FinanceInvoiceRecord['status'];
+  limit?: number;
+}
+
+export interface OperatorPaymentFilter {
+  limit?: number;
+}
+
+export interface OperatorResidentBillingContext extends OperatorBillingResidentRecord {
+  propertyId: string | null;
+  property: OperatorBillingPropertyRecord | null;
 }
 
 export interface CreateTransactionInput {
@@ -80,9 +138,68 @@ export interface CreateTransactionInput {
   reference?: string | null;
 }
 
+export interface RecordManualPaymentInput {
+  organizationId: string;
+  userId: string;
+  invoiceId: string;
+  period: string;
+  amountKobo: number;
+  method: string;
+  reference: string | null;
+  paidAt: Date;
+  recordedById: string;
+}
+
 type PrismaInvoiceRow = Prisma.InvoiceGetPayload<Prisma.InvoiceDefaultArgs>;
 type PrismaPaymentRow = Prisma.PaymentGetPayload<Prisma.PaymentDefaultArgs>;
 type PrismaTransactionRow = Prisma.TransactionGetPayload<Prisma.TransactionDefaultArgs>;
+
+const OPERATOR_ACTOR_SELECT = {
+  id: true,
+  fullName: true,
+  email: true,
+  role: true,
+} satisfies Prisma.UserSelect;
+
+const OPERATOR_RESIDENT_SELECT = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+} satisfies Prisma.UserSelect;
+
+const OPERATOR_PROPERTY_SELECT = {
+  id: true,
+  identifier: true,
+  name: true,
+  estate: { select: { id: true, name: true, slug: true } },
+} satisfies Prisma.PropertySelect;
+
+const OPERATOR_INVOICE_INCLUDE = {
+  user: { select: OPERATOR_RESIDENT_SELECT },
+  property: { select: OPERATOR_PROPERTY_SELECT },
+  payments: { select: { amountKobo: true } },
+  createdBy: { select: OPERATOR_ACTOR_SELECT },
+  voidedBy: { select: OPERATOR_ACTOR_SELECT },
+} satisfies Prisma.InvoiceInclude;
+
+const OPERATOR_PAYMENT_INCLUDE = {
+  user: { select: OPERATOR_RESIDENT_SELECT },
+  invoice: {
+    select: {
+      period: true,
+      property: { select: OPERATOR_PROPERTY_SELECT },
+    },
+  },
+  recordedBy: { select: OPERATOR_ACTOR_SELECT },
+} satisfies Prisma.PaymentInclude;
+
+type PrismaOperatorInvoiceRow = Prisma.InvoiceGetPayload<{
+  include: typeof OPERATOR_INVOICE_INCLUDE;
+}>;
+type PrismaOperatorPaymentRow = Prisma.PaymentGetPayload<{
+  include: typeof OPERATOR_PAYMENT_INCLUDE;
+}>;
 
 export class PrismaFinanceRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -98,6 +215,7 @@ export class PrismaFinanceRepository {
         currency: input.currency ?? 'NGN',
         status: input.paidOnIssue ? 'PAID' : 'UNPAID',
         dueAt: input.dueAt,
+        createdById: input.createdById ?? null,
       },
     });
     return toInvoice(row);
@@ -143,9 +261,69 @@ export class PrismaFinanceRepository {
         amountKobo: input.amountKobo,
         method: input.method,
         reference: input.reference ?? null,
+        paidAt: input.paidAt,
+        recordedById: input.recordedById ?? null,
       },
     });
     return toPayment(row);
+  }
+
+  /**
+   * Atomically claim an unpaid invoice, create the payment and write both
+   * ledger entries. Returns null when another request has already paid or
+   * voided the invoice, so a duplicate operator payment cannot settle twice.
+   */
+  async recordManualPayment(input: RecordManualPaymentInput): Promise<FinancePaymentRecord | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.invoice.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          id: input.invoiceId,
+          status: { in: ['UNPAID', 'OVERDUE'] },
+          payments: { none: {} },
+        },
+        data: { status: 'PAID' },
+      });
+      if (claimed.count === 0) return null;
+
+      const payment = await transaction.payment.create({
+        data: {
+          organizationId: input.organizationId,
+          userId: input.userId,
+          invoiceId: input.invoiceId,
+          amountKobo: input.amountKobo,
+          method: input.method,
+          reference: input.reference,
+          paidAt: input.paidAt,
+          recordedById: input.recordedById,
+        },
+      });
+
+      await transaction.transaction.createMany({
+        data: [
+          {
+            organizationId: input.organizationId,
+            userId: input.userId,
+            kind: 'PAYMENT',
+            amountKobo: input.amountKobo,
+            signed: input.amountKobo,
+            memo: `Payment against ${input.period}`,
+            reference: payment.id,
+          },
+          {
+            organizationId: input.organizationId,
+            userId: input.userId,
+            kind: 'INVOICE',
+            amountKobo: input.amountKobo,
+            signed: -input.amountKobo,
+            memo: `${input.period} settled`,
+            reference: input.invoiceId,
+          },
+        ],
+      });
+
+      return toPayment(payment);
+    });
   }
 
   async listPayments(
@@ -187,6 +365,120 @@ export class PrismaFinanceRepository {
       take: limit,
     });
     return rows.map(toTransaction);
+  }
+
+  /** Resolve a resident account and its assigned property for invoice creation. */
+  async findResidentBillingContext(
+    organizationId: string,
+    residentId: string,
+  ): Promise<OperatorResidentBillingContext | null> {
+    const row = await this.prisma.user.findFirst({
+      where: { organizationId, id: residentId, role: 'RESIDENT' },
+      select: {
+        ...OPERATOR_RESIDENT_SELECT,
+        residentOnboarding: {
+          select: {
+            propertyId: true,
+            property: { select: OPERATOR_PROPERTY_SELECT },
+          },
+        },
+      },
+    });
+    if (!row) return null;
+    return {
+      id: row.id,
+      fullName: row.fullName,
+      email: row.email,
+      phone: row.phone,
+      propertyId: row.residentOnboarding?.propertyId ?? null,
+      property: row.residentOnboarding?.property ?? null,
+    };
+  }
+
+  /** Organization-scoped invoice queue with resident, property and payment totals. */
+  async listInvoicesForOrganization(
+    organizationId: string,
+    filter: OperatorInvoiceFilter = {},
+  ): Promise<OperatorInvoiceRecord[]> {
+    const rows = await this.prisma.invoice.findMany({
+      where: {
+        organizationId,
+        // The operator UI shows a past-due UNPAID invoice as Overdue even
+        // before a background job flips the stored status. Match that view.
+        ...(filter.status === 'OVERDUE'
+          ? {
+              OR: [{ status: 'OVERDUE' }, { status: 'UNPAID', dueAt: { lt: new Date() } }],
+            }
+          : filter.status
+            ? { status: filter.status }
+            : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }, { dueAt: 'asc' }],
+      take: filter.limit ?? 100,
+      include: OPERATOR_INVOICE_INCLUDE,
+    });
+    return rows.map(toOperatorInvoice);
+  }
+
+  /** One organization-scoped invoice, or null when it is not visible. */
+  async findInvoiceForOrganization(
+    organizationId: string,
+    invoiceId: string,
+  ): Promise<OperatorInvoiceRecord | null> {
+    const row = await this.prisma.invoice.findFirst({
+      where: { organizationId, id: invoiceId },
+      include: OPERATOR_INVOICE_INCLUDE,
+    });
+    return row ? toOperatorInvoice(row) : null;
+  }
+
+  /**
+   * Void an unpaid invoice. The conditional update makes a concurrent payment
+   * or void lose the race instead of leaving a paid invoice marked VOID.
+   */
+  async voidInvoice(
+    organizationId: string,
+    invoiceId: string,
+    voidedById: string,
+    voidedAt: Date,
+  ): Promise<OperatorInvoiceRecord | null> {
+    const updated = await this.prisma.invoice.updateMany({
+      where: {
+        organizationId,
+        id: invoiceId,
+        status: { in: ['UNPAID', 'OVERDUE'] },
+        payments: { none: {} },
+      },
+      data: { status: 'VOID', voidedAt, voidedById },
+    });
+    if (updated.count === 0) return null;
+    return this.findInvoiceForOrganization(organizationId, invoiceId);
+  }
+
+  /** Organization-scoped manual payment history. */
+  async listPaymentsForOrganization(
+    organizationId: string,
+    filter: OperatorPaymentFilter = {},
+  ): Promise<OperatorPaymentRecord[]> {
+    const rows = await this.prisma.payment.findMany({
+      where: { organizationId },
+      orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+      take: filter.limit ?? 100,
+      include: OPERATOR_PAYMENT_INCLUDE,
+    });
+    return rows.map(toOperatorPayment);
+  }
+
+  /** One organization-scoped payment with its resident/property context. */
+  async findPaymentForOrganization(
+    organizationId: string,
+    paymentId: string,
+  ): Promise<OperatorPaymentRecord | null> {
+    const row = await this.prisma.payment.findFirst({
+      where: { organizationId, id: paymentId },
+      include: OPERATOR_PAYMENT_INCLUDE,
+    });
+    return row ? toOperatorPayment(row) : null;
   }
 
   /**
@@ -245,5 +537,56 @@ function toTransaction(row: PrismaTransactionRow): FinanceTransactionRecord {
     memo: row.memo,
     reference: row.reference,
     occurredAt: row.occurredAt,
+  };
+}
+
+function toOperatorInvoice(row: PrismaOperatorInvoiceRow): OperatorInvoiceRecord {
+  return {
+    ...toInvoice(row),
+    resident: row.user
+      ? {
+          id: row.user.id,
+          fullName: row.user.fullName,
+          email: row.user.email,
+          phone: row.user.phone,
+        }
+      : null,
+    property: row.property
+      ? {
+          id: row.property.id,
+          identifier: row.property.identifier,
+          name: row.property.name,
+          estate: row.property.estate,
+        }
+      : null,
+    paidKobo: row.payments.reduce((total, payment) => total + payment.amountKobo, 0),
+    paymentCount: row.payments.length,
+    createdBy: row.createdBy,
+    voidedAt: row.voidedAt,
+    voidedBy: row.voidedBy,
+  };
+}
+
+function toOperatorPayment(row: PrismaOperatorPaymentRow): OperatorPaymentRecord {
+  return {
+    ...toPayment(row),
+    period: row.invoice.period,
+    resident: row.user
+      ? {
+          id: row.user.id,
+          fullName: row.user.fullName,
+          email: row.user.email,
+          phone: row.user.phone,
+        }
+      : null,
+    property: row.invoice.property
+      ? {
+          id: row.invoice.property.id,
+          identifier: row.invoice.property.identifier,
+          name: row.invoice.property.name,
+          estate: row.invoice.property.estate,
+        }
+      : null,
+    recordedBy: row.recordedBy,
   };
 }

@@ -43,6 +43,11 @@ import {
   createOperatorComplaintsRouter,
   type OperatorComplaintsRouteOptions,
 } from './modules/complaints/operator-complaints.routes.js';
+import {
+  createOperatorInvoiceRouter,
+  createOperatorPaymentRouter,
+  type OperatorBillingRouteOptions,
+} from './modules/billing/operator-billing.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -79,6 +84,8 @@ export interface AppOptions {
   messages?: OperatorMessagesRouteOptions;
   /** Operator complaint queue, replies and status changes (`/complaints/*`). */
   complaints?: OperatorComplaintsRouteOptions;
+  /** Operator manual billing (`/invoices/*` and `/payments`). */
+  billing?: OperatorBillingRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -129,6 +136,7 @@ export function createApp(options: AppOptions = {}): Express {
     sos: options.sos,
     messages: options.messages,
     complaints: options.complaints,
+    billing: options.billing,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -156,6 +164,7 @@ function createVersionedRoutes(options: {
   sos?: OperatorSosRouteOptions;
   messages?: OperatorMessagesRouteOptions;
   complaints?: OperatorComplaintsRouteOptions;
+  billing?: OperatorBillingRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
   const {
@@ -172,6 +181,7 @@ function createVersionedRoutes(options: {
     sos,
     messages,
     complaints,
+    billing,
   } = options;
 
   router.use(
@@ -243,6 +253,12 @@ function createVersionedRoutes(options: {
   if (complaints) {
     // Operator complaint queue (staff-scoped), mounted at /complaints.
     router.use('/complaints', createOperatorComplaintsRouter(complaints));
+  }
+
+  if (billing) {
+    // Manual operator billing: invoices and payment history (staff-scoped).
+    router.use('/invoices', createOperatorInvoiceRouter(billing));
+    router.use('/payments', createOperatorPaymentRouter(billing));
   }
 
   return router;

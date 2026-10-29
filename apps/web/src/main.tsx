@@ -20,6 +20,7 @@ import { ResidentsPage } from './pages/ResidentsPage';
 import { SosAlertsPage } from './pages/SosAlertsPage';
 import { MessagesPage } from './pages/MessagesPage';
 import { ComplaintsPage } from './pages/ComplaintsPage';
+import { BillingPage } from './pages/BillingPage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
 import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
@@ -120,6 +121,14 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="user.manage">
                       <ResidentsPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/billing"
+                  element={
+                    <RequirePermission permission="billing.read">
+                      <BillingPage />
                     </RequirePermission>
                   }
                 />

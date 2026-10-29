@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Siren,
   UserRound,
+  Wallet,
 } from 'lucide-react';
 import type { Permission } from '@silverstone/shared';
 
@@ -57,6 +58,12 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     label: 'Properties',
     icon: Building2,
     permission: 'property.read',
+  },
+  {
+    to: '/app/billing',
+    label: 'Billing',
+    icon: Wallet,
+    permission: 'billing.read',
   },
   {
     to: '/app/residents',
@@ -114,6 +121,7 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/estates')) return 'Estates';
   if (pathname.startsWith('/app/properties/')) return 'Property';
   if (pathname.startsWith('/app/properties')) return 'Properties';
+  if (pathname.startsWith('/app/billing')) return 'Billing';
   if (pathname.startsWith('/app/residents')) return 'Residents';
   if (pathname.startsWith('/app/administrators')) return 'Administrators';
   if (pathname.startsWith('/app/users')) return 'Administrators';

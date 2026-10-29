@@ -32,6 +32,11 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('SOS alerts'), { 'sos.read': true }, false)).toBe(true);
   });
 
+  it('gates billing on the billing read permission', () => {
+    expect(isNavItemVisible(item('Billing'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('Billing'), { 'billing.read': true }, false)).toBe(true);
+  });
+
   it('gates messages and complaints on their read permissions', () => {
     expect(isNavItemVisible(item('Messages'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Messages'), { 'message.read': true }, false)).toBe(true);
@@ -44,6 +49,7 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/estates/123')).toBe('Estates');
     expect(sectionLabelForPath('/app/properties/123')).toBe('Property');
     expect(sectionLabelForPath('/app/properties')).toBe('Properties');
+    expect(sectionLabelForPath('/app/billing')).toBe('Billing');
     expect(sectionLabelForPath('/app/residents')).toBe('Residents');
     expect(sectionLabelForPath('/app/administrators')).toBe('Administrators');
     // Old bookmarks redirect to Administrators but still label the header.
