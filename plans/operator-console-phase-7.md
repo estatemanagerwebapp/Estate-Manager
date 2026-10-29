@@ -491,8 +491,7 @@ details stay out of audit metadata.
 - `apps/api/src/application.ts`
 - `apps/api/src/main.ts`
 - `apps/api/src/server.ts`
-- `apps/api/src/operator-facilities.test.ts`
-- `apps/api/src/resident-facility-watches.test.ts`
+- `apps/api/src/facilities-bookings.test.ts`
 - `apps/web/src/api/client.ts`
 - `apps/web/src/api/query-keys.ts`
 - `apps/web/src/pages/FacilitiesPage.tsx`
@@ -500,12 +499,9 @@ details stay out of audit metadata.
 - `apps/web/src/pages/BookingsPage.tsx`
 - `apps/web/src/pages/BookingsPage.test.ts`
 - `apps/web/src/pages/BillingPage.tsx` (query-string invoice selection)
-- `apps/web/src/pages/BillingPage.test.ts`
 - `apps/web/src/pages/resident/ResidentFacilitiesPage.tsx`
-- `apps/web/src/pages/resident/ResidentFacilitiesPage.test.ts`
 - `apps/web/src/pages/resident/ResidentBookingsPage.tsx`
 - `apps/web/src/navigation.ts`
-- `apps/web/src/navigation.test.ts`
 - `apps/web/src/main.tsx`
 
 ## Verification
@@ -568,10 +564,7 @@ Web helper coverage:
 - facility state labels/tones, fee formatting and search;
 - booking state labels/tones, payment-state labels/tones, fee and date/time
   formatting, search;
-- valid-action visibility per booking status and payment status;
-- availability-watch status labels and search;
-- invoice query-string selection in billing;
-- navigation and section-label registration.
+- valid confirmation rules per booking status and payment status.
 
 Deployment checks after the production migration:
 

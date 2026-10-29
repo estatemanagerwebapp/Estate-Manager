@@ -764,6 +764,66 @@ describe('Phase 7 facilities and bookings', () => {
     expect(cancelled.status).toBe(200);
   });
 
+  it('notifies a waiting watch when a suspended facility is re-enabled', async () => {
+    const createdFacility = await request(app)
+      .post('/api/v1/facilities')
+      .set('Cookie', adminCookie)
+      .send({
+        name: 'Re-enable Hall',
+        description: 'Suspended then reopened.',
+        estateId,
+        usageFeeKobo: 0,
+      });
+    expect(createdFacility.status).toBe(201);
+    const facilityId = createdFacility.body.data.facility.id as string;
+
+    const watchedStart = at(24);
+    const watchedEnd = at(24, 2);
+    const created = await request(app)
+      .post('/api/v1/resident/bookings')
+      .set('Cookie', residentCookie)
+      .send({ facilityId, startsAt: watchedStart, endsAt: watchedEnd });
+    expect(created.status).toBe(201);
+    const bookingId = created.body.data.booking.id as string;
+
+    const watch = await request(app)
+      .post('/api/v1/resident/facility-watches')
+      .set('Cookie', secondResidentCookie)
+      .send({ facilityId, startsAt: watchedStart, endsAt: watchedEnd });
+    expect(watch.status).toBe(201);
+    const watchId = watch.body.data.watch.id as string;
+
+    const suspended = await request(app)
+      .patch(`/api/v1/facilities/${facilityId}`)
+      .set('Cookie', adminCookie)
+      .send({ bookable: false });
+    expect(suspended.status).toBe(200);
+
+    const cancelled = await request(app)
+      .post(`/api/v1/bookings/${bookingId}/cancel`)
+      .set('Cookie', adminCookie);
+    expect(cancelled.status).toBe(200);
+
+    const stillWaiting = await prisma.facilityAvailabilityWatch.findUnique({
+      where: { id: watchId },
+    });
+    expect(stillWaiting!.status).toBe('WAITING');
+
+    const reenabled = await request(app)
+      .patch(`/api/v1/facilities/${facilityId}`)
+      .set('Cookie', adminCookie)
+      .send({ bookable: true });
+    expect(reenabled.status).toBe(200);
+
+    const notified = await prisma.facilityAvailabilityWatch.findUnique({ where: { id: watchId } });
+    expect(notified!.status).toBe('NOTIFIED');
+    const notification = await prisma.notification.findFirst({
+      where: { organizationId, userId: secondResidentId, kind: 'BOOKING' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(notification?.body).toContain('now free');
+  });
+
   it('blocks archiving a facility with a live booking and cancels watches', async () => {
     const created = await request(app)
       .post('/api/v1/resident/bookings')
