@@ -33,9 +33,17 @@ describe('permissions', () => {
     expect(hasPermission('ESTATE_ADMIN', 'resident.manage')).toBe(true);
   });
 
-  it('limits guards to gate operations and read-only resident lookup', () => {
-    expect(permissionsForRole('GUARD')).toEqual(['gate.manage', 'gate.read', 'resident.read']);
+  it('gives guards the gate baseline plus SOS response access', () => {
+    expect(permissionsForRole('GUARD')).toEqual([
+      'gate.manage',
+      'gate.read',
+      'resident.read',
+      'sos.read',
+      'sos.manage',
+    ]);
     expect(hasPermission('GUARD', 'billing.manage')).toBe(false);
+    expect(hasPermission('GUARD', 'sos.read')).toBe(true);
+    expect(hasPermission('GUARD', 'sos.manage')).toBe(true);
   });
 
   it('limits residents to their own portal surface', () => {

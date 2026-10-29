@@ -138,6 +138,12 @@ async function buildApp(): Promise<HttpHandler> {
       notifications: deps.residentNotificationsService,
       dashboard: residentDashboardService,
     },
+    sos: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      sos: deps.operatorSosService,
+    },
   });
 
   return app as unknown as HttpHandler;

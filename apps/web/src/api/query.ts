@@ -58,12 +58,14 @@ export function useApiQuery<T>(
   queryFn: () => Promise<T>,
   fallbackError: string,
   enabled = true,
+  options: { refetchInterval?: number | false } = {},
 ) {
   const query = useQuery({
     queryKey,
     queryFn,
     enabled,
     placeholderData: keepPreviousData,
+    refetchInterval: options.refetchInterval,
   });
 
   return {

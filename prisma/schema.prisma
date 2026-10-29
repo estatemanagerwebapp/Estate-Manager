@@ -102,23 +102,25 @@ model User {
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sessions           Session[]
-  resetTokens        PasswordResetToken[]
-  auditEvents        AuditEvent[]
-  mediaFiles         MediaFile[]
-  residentOnboarding ResidentOnboarding?
-  invoices           Invoice[]
-  payments           Payment[]
-  transactions       Transaction[]
-  accessCodes        AccessCode[]
-  complaints         Complaint[]
-  complaintReplies   ComplaintReply[]
-  messageThreads     MessageThread[]
-  announcements      Announcement[]
-  bookings           Booking[]
-  sosEvents          SosEvent[]
-  notifications      Notification[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions            Session[]
+  resetTokens         PasswordResetToken[]
+  auditEvents         AuditEvent[]
+  mediaFiles          MediaFile[]
+  residentOnboarding  ResidentOnboarding?
+  invoices            Invoice[]
+  payments            Payment[]
+  transactions        Transaction[]
+  accessCodes         AccessCode[]
+  complaints          Complaint[]
+  complaintReplies    ComplaintReply[]
+  messageThreads      MessageThread[]
+  announcements       Announcement[]
+  bookings            Booking[]
+  sosEvents           SosEvent[]
+  sosAcknowledgements SosEvent[]           @relation("SosAcknowledgedBy")
+  sosResolutions      SosEvent[]           @relation("SosResolvedBy")
+  notifications       Notification[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -496,25 +498,35 @@ model Booking {
 // the row so the history reads clearly.
 
 model SosEvent {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  userId         String    @map("user_id") @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
   /// Null when the resident has no assigned property yet.
-  propertyId     String?   @map("property_id") @db.Uuid
-  note           String?   @db.VarChar(500)
+  propertyId       String?   @map("property_id") @db.Uuid
+  note             String?   @db.VarChar(500)
   /// RAISED | ACKNOWLEDGED | RESOLVED.
-  status         String    @default("RAISED") @db.VarChar(16)
-  raisedAt       DateTime  @default(now()) @map("raised_at") @db.Timestamptz(6)
-  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(6)
-  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  status           String    @default("RAISED") @db.VarChar(16)
+  raisedAt         DateTime  @default(now()) @map("raised_at") @db.Timestamptz(6)
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  /// Operator who acknowledged / resolved the alert. Kept as a nullable
+  /// reference so deleting a staff account preserves the SOS history.
+  acknowledgedById String?   @map("acknowledged_by_id") @db.Uuid
+  resolvedById     String?   @map("resolved_by_id") @db.Uuid
+  /// Internal closing note. Not exposed on the resident-facing SOS contract.
+  resolutionNote   String?   @map("resolution_note") @db.VarChar(500)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property     Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property       Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?        @relation("SosAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedBy     User?        @relation("SosResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId, userId, raisedAt])
   @@index([organizationId, status])
+  @@index([acknowledgedById])
+  @@index([resolvedById])
   @@map("sos_events")
 }
 

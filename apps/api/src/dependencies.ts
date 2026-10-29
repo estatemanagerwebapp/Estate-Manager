@@ -34,6 +34,7 @@ import { PrismaBookingRepository } from './modules/resident/bookings-repository.
 import { ResidentBookingsService } from './modules/resident/bookings.service.js';
 import { PrismaSosRepository } from './modules/resident/sos-repository.js';
 import { ResidentSosService } from './modules/resident/sos.service.js';
+import { OperatorSosService } from './modules/sos/operator-sos.service.js';
 import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
 import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 import {
@@ -102,6 +103,8 @@ export interface AppDependencies {
   residentBookingsService: ResidentBookingsService;
   /** Phase 3 (S9) — resident emergency / SOS alerts. */
   residentSosService: ResidentSosService;
+  /** Operator SOS queue and acknowledgement/resolution actions. */
+  operatorSosService: OperatorSosService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
@@ -298,6 +301,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       return draft?.propertyId ?? null;
     },
   });
+  const operatorSosService = new OperatorSosService({ sos: sosRepo, audit });
 
   const residentOnboardingService = new ResidentOnboardingService(
     users,
@@ -344,6 +348,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentCommunityService,
     residentBookingsService,
     residentSosService,
+    operatorSosService,
     residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,

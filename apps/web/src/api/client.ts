@@ -71,6 +71,9 @@ import type {
   ResidentSosEventsResponse,
   ResidentCreateSosInput,
   ResidentCreateSosResponse,
+  OperatorSosEventsResponse,
+  OperatorResolveSosInput,
+  OperatorSosMutationResponse,
   ResidentNotificationsView,
   ResidentMarkNotificationReadResponse,
   ResidentDashboardView,
@@ -208,6 +211,16 @@ export interface EstateFilter {
   search?: string;
   /** `ACTIVE` or `ARCHIVED`. */
   status?: string;
+}
+
+/** Query filters for the operator SOS queue. */
+export interface OperatorSosFilter {
+  /** `RAISED`, `ACKNOWLEDGED`, or `RESOLVED`. */
+  status?: string;
+  /** Active means RAISED + ACKNOWLEDGED. Ignored when `status` is set. */
+  active?: boolean;
+  /** Server caps at 200. */
+  limit?: number;
 }
 
 /** Query filters for the property list (paginated on the server). */
@@ -668,6 +681,31 @@ export const api = {
   /** S9: raise an SOS alert. */
   createResidentSos: (input: ResidentCreateSosInput) =>
     request<ResidentCreateSosResponse>('/api/v1/resident/sos', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // --- Operator SOS queue -----------------------------------------------------
+  /** Staff SOS queue, organization-scoped. */
+  listOperatorSos: (filter: OperatorSosFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.active !== undefined) params.set('active', String(filter.active));
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorSosEventsResponse>(`/api/v1/sos${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Acknowledge a RAISED alert. Requires `sos.manage`. */
+  acknowledgeOperatorSos: (sosEventId: string) =>
+    request<OperatorSosMutationResponse>(
+      `/api/v1/sos/${encodeURIComponent(sosEventId)}/acknowledge`,
+      { method: 'POST' },
+    ),
+
+  /** Resolve an ACKNOWLEDGED alert with an optional internal note. */
+  resolveOperatorSos: (sosEventId: string, input: OperatorResolveSosInput = {}) =>
+    request<OperatorSosMutationResponse>(`/api/v1/sos/${encodeURIComponent(sosEventId)}/resolve`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),

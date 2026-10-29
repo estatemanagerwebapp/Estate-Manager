@@ -91,7 +91,7 @@ const USER_ADMIN_PERMISSIONS: readonly Permission[] = ['user.manage'];
 export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
   SUPER_ADMIN: ALL_PERMISSIONS,
   ESTATE_ADMIN: [...ADMIN_PERMISSIONS, ...USER_ADMIN_PERMISSIONS],
-  GUARD: ['gate.manage', 'gate.read', 'resident.read'],
+  GUARD: ['gate.manage', 'gate.read', 'resident.read', 'sos.read', 'sos.manage'],
   RESIDENT: [
     'portal.access.self',
     'profile.view',

@@ -186,6 +186,6 @@ No table, column or stored account data is changed by a rollback.
 
 ## Next
 
-Phase 3 (SOS Alerts) remains blocked pending confirmation that alert handling
-is in-app polling rather than an external integration. Phase 6 also still
-needs the meaning of “Verification Logs” confirmed before implementation.
+Phase 3 (SOS Alerts) is implemented separately; see
+`plans/operator-console-phase-3.md`. Phase 6 still needs the meaning of
+“Verification Logs” confirmed before implementation.

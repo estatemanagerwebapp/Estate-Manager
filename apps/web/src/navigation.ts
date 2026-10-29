@@ -1,5 +1,13 @@
 import type { LucideIcon } from 'lucide-react';
-import { Building2, Home, KeyRound, LayoutDashboard, ShieldCheck, UserRound } from 'lucide-react';
+import {
+  Building2,
+  Home,
+  KeyRound,
+  LayoutDashboard,
+  ShieldCheck,
+  Siren,
+  UserRound,
+} from 'lucide-react';
 import type { Permission } from '@silverstone/shared';
 
 /**
@@ -60,6 +68,12 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     icon: ShieldCheck,
     requiresUserManage: true,
   },
+  {
+    to: '/app/sos',
+    label: 'SOS alerts',
+    icon: Siren,
+    permission: 'sos.read',
+  },
 ];
 
 export const SETTINGS_SECTION_LABEL = 'Settings';
@@ -89,6 +103,7 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/residents')) return 'Residents';
   if (pathname.startsWith('/app/administrators')) return 'Administrators';
   if (pathname.startsWith('/app/users')) return 'Administrators';
+  if (pathname.startsWith('/app/sos')) return 'SOS alerts';
   if (pathname.startsWith('/app/activity')) return 'Activity';
   if (pathname.startsWith('/app/account')) return 'Settings';
   return 'Overview';

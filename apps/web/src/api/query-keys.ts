@@ -1,4 +1,4 @@
-import type { UserFilter } from './client';
+import type { OperatorSosFilter, UserFilter } from './client';
 
 /**
  * Query-key registry for the operator console.
@@ -76,7 +76,7 @@ export const queryKeys = {
   },
   sos: {
     all: ['sos'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['sos', filter] as const,
+    list: (filter: OperatorSosFilter = {}) => ['sos', filter] as const,
   },
   administrators: {
     all: ['administrators'] as const,

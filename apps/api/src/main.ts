@@ -119,6 +119,12 @@ async function main(): Promise<void> {
       notifications: deps.residentNotificationsService,
       dashboard: residentDashboardService,
     },
+    sos: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      sos: deps.operatorSosService,
+    },
   });
 
   const server = http.createServer(app);

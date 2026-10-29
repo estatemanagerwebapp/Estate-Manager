@@ -31,6 +31,10 @@ import {
   createResidentRouter,
   type ResidentRouteOptions,
 } from './modules/resident/resident.routes.js';
+import {
+  createOperatorSosRouter,
+  type OperatorSosRouteOptions,
+} from './modules/sos/operator-sos.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -61,6 +65,8 @@ export interface AppOptions {
   dashboard?: DashboardRouteOptions;
   /** Phase 3 resident portal (`/resident/*`), self-scoped. */
   resident?: ResidentRouteOptions;
+  /** Operator SOS queue and acknowledge/resolve actions (`/sos/*`). */
+  sos?: OperatorSosRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -108,6 +114,7 @@ export function createApp(options: AppOptions = {}): Express {
     media: options.media,
     dashboard: options.dashboard,
     resident: options.resident,
+    sos: options.sos,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -132,6 +139,7 @@ function createVersionedRoutes(options: {
   media?: MediaRouteOptions;
   dashboard?: DashboardRouteOptions;
   resident?: ResidentRouteOptions;
+  sos?: OperatorSosRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
   const {
@@ -145,6 +153,7 @@ function createVersionedRoutes(options: {
     media,
     dashboard,
     resident,
+    sos,
   } = options;
 
   router.use(
@@ -201,6 +210,11 @@ function createVersionedRoutes(options: {
   if (resident) {
     // Phase 3: resident portal (self-scoped), mounted at /resident.
     router.use('/resident', createResidentRouter(resident));
+  }
+
+  if (sos) {
+    // Operator SOS queue (staff-scoped), mounted at /sos.
+    router.use('/sos', createOperatorSosRouter(sos));
   }
 
   return router;

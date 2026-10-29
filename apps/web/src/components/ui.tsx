@@ -133,9 +133,14 @@ export function statusTone(status: string): BadgeTone {
     case 'ACTIVE':
     case 'COMMITTED':
     case 'CREATED':
+    case 'RESOLVED':
       return 'success';
     case 'ARCHIVED':
       return 'neutral';
+    case 'ACKNOWLEDGED':
+      return 'warning';
+    case 'RAISED':
+      return 'danger';
     case 'PREVIEWED':
     case 'VALID':
       return 'info';

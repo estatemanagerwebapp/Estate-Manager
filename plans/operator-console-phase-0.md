@@ -67,7 +67,8 @@ Role baseline policy:
 - `ESTATE_ADMIN`: all operator capabilities except `organization.manage` and
   `config.manage`, plus `user.manage` (existing behavior).
 - `AUDITOR`: add the new read capabilities to the existing read-only baseline.
-- `GUARD`: unchanged in Phase 0. SOS/gate policy is decided when those modules ship.
+- `GUARD`: unchanged in Phase 0. Phase 3 added `sos.read` and `sos.manage` to
+  the guard baseline; gate policy is decided when that module ships.
 - `RESIDENT`: unchanged. No operator capability leaks into the resident role.
 
 The server remains authoritative. The web uses the same catalogue only to hide or show

@@ -340,6 +340,58 @@ export interface ResidentCreateSosResponse {
   event: SosEventDto;
 }
 
+/**
+ * Operator-facing SOS shape. It carries the resident/property context and the
+ * staff actors, plus the internal resolution note. The resident-facing
+ * `SosEventDto` deliberately omits the internal note.
+ */
+export interface SosOperatorResidentDto {
+  id: string;
+  fullName: string | null;
+  email: string;
+  phone: string | null;
+}
+
+export interface SosOperatorPropertyDto {
+  id: string;
+  identifier: string;
+  name: string | null;
+  estate: { id: string; name: string; slug: string };
+}
+
+export interface SosOperatorActorDto {
+  id: string;
+  fullName: string | null;
+  email: string;
+}
+
+export interface SosOperatorEventDto {
+  id: string;
+  note: string | null;
+  status: SosStatus;
+  raisedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
+  resident: SosOperatorResidentDto | null;
+  property: SosOperatorPropertyDto | null;
+  acknowledgedBy: SosOperatorActorDto | null;
+  resolvedBy: SosOperatorActorDto | null;
+}
+
+export interface OperatorSosEventsResponse {
+  events: SosOperatorEventDto[];
+}
+
+export interface OperatorResolveSosInput {
+  resolutionNote?: string;
+}
+
+export interface OperatorSosMutationResponse {
+  ok: true;
+  event: SosOperatorEventDto;
+}
+
 // --- Notifications (S10) ---------------------------------------------------------------
 
 export interface ResidentNotificationDto {

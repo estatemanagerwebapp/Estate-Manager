@@ -17,6 +17,7 @@ import { ActivityPage } from './pages/activity/ActivityPage';
 import { AccountPage } from './pages/AccountPage';
 import { AdministratorsPage } from './pages/AdministratorsPage';
 import { ResidentsPage } from './pages/ResidentsPage';
+import { SosAlertsPage } from './pages/SosAlertsPage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
 import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
@@ -117,6 +118,14 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="user.manage">
                       <ResidentsPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/sos"
+                  element={
+                    <RequirePermission permission="sos.read">
+                      <SosAlertsPage />
                     </RequirePermission>
                   }
                 />

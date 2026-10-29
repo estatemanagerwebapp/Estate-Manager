@@ -27,6 +27,11 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('Administrators'), {}, true)).toBe(true);
   });
 
+  it('gates SOS alerts on the SOS read permission', () => {
+    expect(isNavItemVisible(item('SOS alerts'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('SOS alerts'), { 'sos.read': true }, false)).toBe(true);
+  });
+
   it('derives the sticky-header section from the current path', () => {
     expect(sectionLabelForPath('/app')).toBe('Overview');
     expect(sectionLabelForPath('/app/estates/123')).toBe('Estates');
@@ -36,6 +41,7 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/administrators')).toBe('Administrators');
     // Old bookmarks redirect to Administrators but still label the header.
     expect(sectionLabelForPath('/app/users')).toBe('Administrators');
+    expect(sectionLabelForPath('/app/sos')).toBe('SOS alerts');
     expect(sectionLabelForPath('/app/activity')).toBe('Activity');
     expect(sectionLabelForPath('/app/account')).toBe('Settings');
   });
