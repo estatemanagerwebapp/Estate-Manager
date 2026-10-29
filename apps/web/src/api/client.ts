@@ -68,6 +68,21 @@ import type {
   ResidentCreateBookingInput,
   ResidentCreateBookingResponse,
   ResidentCancelBookingResponse,
+  ResidentFacilityWatchesResponse,
+  ResidentCreateFacilityWatchInput,
+  ResidentCreateFacilityWatchResponse,
+  ResidentCancelFacilityWatchResponse,
+  OperatorFacilitiesResponse,
+  OperatorFacilityResponse,
+  OperatorCreateFacilityInput,
+  OperatorUpdateFacilityInput,
+  OperatorBookingsResponse,
+  OperatorBookingResponse,
+  OperatorConfirmBookingPaymentInput,
+  OperatorConfirmBookingPaymentResponse,
+  BookingPaymentStatus,
+  BookingStatus,
+  OperatorFacilityStatus,
   ResidentSosEventsResponse,
   ResidentCreateSosInput,
   ResidentCreateSosResponse,
@@ -284,6 +299,26 @@ export interface OperatorAccessCodeFilter {
 export interface AccessVerificationFilter {
   outcome?: AccessVerificationOutcome;
   gate?: AccessVerificationGate;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the Phase 7 facility register. */
+export interface OperatorFacilityFilter {
+  status?: OperatorFacilityStatus;
+  estateId?: string;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the Phase 7 booking queue. */
+export interface OperatorBookingFilter {
+  status?: BookingStatus;
+  paymentStatus?: BookingPaymentStatus;
+  facilityId?: string;
+  /** ISO timestamps; both filter on startsAt. */
+  from?: string;
+  to?: string;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -740,6 +775,24 @@ export const api = {
       { method: 'POST' },
     ),
 
+  /** S8 (Phase 7): the resident's own date/time-specific availability alerts. */
+  getResidentFacilityWatches: () =>
+    request<ResidentFacilityWatchesResponse>('/api/v1/resident/facility-watches'),
+
+  /** S8 (Phase 7): watch an occupied facility window. */
+  createResidentFacilityWatch: (input: ResidentCreateFacilityWatchInput) =>
+    request<ResidentCreateFacilityWatchResponse>('/api/v1/resident/facility-watches', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** S8 (Phase 7): cancel one of the resident's own waiting alerts. */
+  cancelResidentFacilityWatch: (watchId: string) =>
+    request<ResidentCancelFacilityWatchResponse>(
+      `/api/v1/resident/facility-watches/${encodeURIComponent(watchId)}/cancel`,
+      { method: 'POST' },
+    ),
+
   /** S9: the resident's own SOS history. */
   getResidentSosEvents: () => request<ResidentSosEventsResponse>('/api/v1/resident/sos'),
 
@@ -901,6 +954,76 @@ export const api = {
     request<OperatorVerifyAccessCodeResponse>('/api/v1/verifications', {
       method: 'POST',
       body: JSON.stringify(input),
+    }),
+
+  // --- Operator facilities & bookings (Phase 7) ------------------------------
+  /** Organization-scoped facility register. Requires `facility.read`. */
+  listOperatorFacilities: (filter: OperatorFacilityFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.estateId) params.set('estateId', filter.estateId);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorFacilitiesResponse>(`/api/v1/facilities${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Create an estate-scoped facility. Requires `facility.manage`. */
+  createOperatorFacility: (input: OperatorCreateFacilityInput) =>
+    request<OperatorFacilityResponse>('/api/v1/facilities', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** Edit a facility, including its estate and fee. Requires `facility.manage`. */
+  updateOperatorFacility: (facilityId: string, input: OperatorUpdateFacilityInput) =>
+    request<OperatorFacilityResponse>(`/api/v1/facilities/${encodeURIComponent(facilityId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  /** Archive a facility with no live bookings. Requires `facility.manage`. */
+  archiveOperatorFacility: (facilityId: string) =>
+    request<OperatorFacilityResponse>(
+      `/api/v1/facilities/${encodeURIComponent(facilityId)}/archive`,
+      { method: 'POST' },
+    ),
+
+  /** Organization-scoped booking queue. Requires `booking.read`. */
+  listOperatorBookings: (filter: OperatorBookingFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.paymentStatus) params.set('paymentStatus', filter.paymentStatus);
+    if (filter.facilityId) params.set('facilityId', filter.facilityId);
+    if (filter.from) params.set('from', filter.from);
+    if (filter.to) params.set('to', filter.to);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorBookingsResponse>(`/api/v1/bookings${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Confirm a settled request. Requires `booking.manage`. */
+  confirmOperatorBooking: (bookingId: string) =>
+    request<OperatorBookingResponse>(`/api/v1/bookings/${encodeURIComponent(bookingId)}/confirm`, {
+      method: 'POST',
+    }),
+
+  /** Verify a manual booking payment and create the paid invoice. */
+  confirmOperatorBookingPayment: (bookingId: string, input: OperatorConfirmBookingPaymentInput) =>
+    request<OperatorConfirmBookingPaymentResponse>(
+      `/api/v1/bookings/${encodeURIComponent(bookingId)}/payment`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+
+  /** Decline a request or cancel a confirmed booking. Requires `booking.manage`. */
+  cancelOperatorBooking: (bookingId: string) =>
+    request<OperatorBookingResponse>(`/api/v1/bookings/${encodeURIComponent(bookingId)}/cancel`, {
+      method: 'POST',
+    }),
+
+  /** Complete an ended, settled confirmed booking. Requires `booking.manage`. */
+  completeOperatorBooking: (bookingId: string) =>
+    request<OperatorBookingResponse>(`/api/v1/bookings/${encodeURIComponent(bookingId)}/complete`, {
+      method: 'POST',
     }),
 
   /** S10: the resident's notification inbox plus their upcoming bookings. */

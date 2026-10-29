@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CalendarDays, Ban } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { BookingDto } from '@silverstone/shared';
+import { formatNaira, type BookingDto, type BookingPaymentStatus } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
@@ -141,13 +141,17 @@ function BookingRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200/80 px-3 py-3">
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-(--color-ink)">{booking.facilityName}</span>
           <Badge tone={statusTone(booking.status)}>{booking.status}</Badge>
+          <Badge tone={paymentStatusTone(booking.paymentStatus)}>
+            {paymentStatusLabel(booking.paymentStatus)}
+          </Badge>
         </div>
         <p className="mt-1 text-xs text-(--color-ink-muted)">
           {formatWindow(booking)}
-          {booking.attendees ? ` · ${booking.attendees} attendees` : ''}
+          {booking.attendees ? ` · ${booking.attendees} attendees` : ''} ·{' '}
+          {booking.feeKobo === 0 ? 'Free' : formatNaira(booking.feeKobo)}
         </p>
       </div>
       {onCancel && (
@@ -164,6 +168,18 @@ function statusTone(status: BookingDto['status']) {
   if (status === 'CONFIRMED') return 'success' as const;
   if (status === 'REQUESTED') return 'warning' as const;
   if (status === 'CANCELLED') return 'danger' as const;
+  return 'neutral' as const;
+}
+
+function paymentStatusLabel(status: BookingPaymentStatus): string {
+  if (status === 'UNPAID') return 'Payment pending';
+  if (status === 'PAID') return 'Paid';
+  return 'No payment required';
+}
+
+function paymentStatusTone(status: BookingPaymentStatus) {
+  if (status === 'PAID') return 'success' as const;
+  if (status === 'UNPAID') return 'warning' as const;
   return 'neutral' as const;
 }
 

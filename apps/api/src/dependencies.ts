@@ -40,6 +40,11 @@ import { OperatorComplaintsService } from './modules/complaints/operator-complai
 import { OperatorBillingService } from './modules/billing/operator-billing.service.js';
 import { PrismaGateRepository } from './modules/gate/gate-repository.js';
 import { OperatorGateService } from './modules/gate/gate.service.js';
+import { PrismaFacilitiesRepository } from './modules/facilities/facilities-repository.js';
+import { OperatorFacilitiesService } from './modules/facilities/facilities.service.js';
+import { OperatorBookingsService } from './modules/facilities/bookings.service.js';
+import { AvailabilityService } from './modules/facilities/availability.service.js';
+import { BookingPaymentService } from './modules/facilities/booking-payment.service.js';
 import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
 import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 import {
@@ -118,6 +123,12 @@ export interface AppDependencies {
   operatorBillingService: OperatorBillingService;
   /** Operator gate access: access-code register and verification history. */
   operatorGateService: OperatorGateService;
+  /** Phase 7 — operator facility register. */
+  operatorFacilitiesService: OperatorFacilitiesService;
+  /** Phase 7 — operator booking queue and lifecycle. */
+  operatorBookingsService: OperatorBookingsService;
+  /** Phase 7 — manual booking-payment verification and invoice creation. */
+  bookingPaymentService: BookingPaymentService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
@@ -296,9 +307,15 @@ export async function createAppDependencies(): Promise<AppDependencies> {
   });
 
   const bookingRepo = new PrismaBookingRepository(prisma);
+  const availabilityService = new AvailabilityService({
+    bookings: bookingRepo,
+    notify: (organizationId, userId, input) =>
+      residentNotificationsService.notify(organizationId, userId, input),
+  });
   const residentBookingsService = new ResidentBookingsService({
     bookings: bookingRepo,
     audit,
+    availability: availabilityService,
     loadEstateId: async (organizationId, userId) => {
       const draft = await residentDrafts.findByUser(userId);
       if (!draft?.propertyId) return null;
@@ -314,6 +331,23 @@ export async function createAppDependencies(): Promise<AppDependencies> {
         linkTo: '/resident/app/bookings',
       });
     },
+  });
+
+  const facilitiesRepo = new PrismaFacilitiesRepository(prisma);
+  const operatorFacilitiesService = new OperatorFacilitiesService({
+    facilities: facilitiesRepo,
+    audit,
+    availability: availabilityService,
+  });
+  const operatorBookingsService = new OperatorBookingsService({
+    bookings: facilitiesRepo,
+    audit,
+    availability: availabilityService,
+  });
+  const bookingPaymentService = new BookingPaymentService({
+    bookings: facilitiesRepo,
+    finance: financeRepo,
+    audit,
   });
 
   const sosRepo = new PrismaSosRepository(prisma);
@@ -377,6 +411,9 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     operatorComplaintsService,
     operatorBillingService,
     operatorGateService,
+    operatorFacilitiesService,
+    operatorBookingsService,
+    bookingPaymentService,
     residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,

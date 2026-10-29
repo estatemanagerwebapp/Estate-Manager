@@ -149,6 +149,19 @@ async function main(): Promise<void> {
       organizationId: deps.organizationId,
       gate: deps.operatorGateService,
     },
+    facilities: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      facilities: deps.operatorFacilitiesService,
+    },
+    bookings: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      bookings: deps.operatorBookingsService,
+      payment: deps.bookingPaymentService,
+    },
   });
 
   const server = http.createServer(app);

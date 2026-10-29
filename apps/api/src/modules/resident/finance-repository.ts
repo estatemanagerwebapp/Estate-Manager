@@ -150,6 +150,26 @@ export interface RecordManualPaymentInput {
   recordedById: string;
 }
 
+export interface CreatePaidBookingInvoiceInput {
+  organizationId: string;
+  bookingId: string;
+  userId: string;
+  propertyId: string | null;
+  facilityId: string;
+  facilityName: string;
+  amountKobo: number;
+  period: string;
+  method: string;
+  reference: string | null;
+  paidAt: Date;
+  recordedById: string;
+}
+
+export interface CreatePaidBookingInvoiceResult {
+  invoiceId: string;
+  paymentId: string;
+}
+
 type PrismaInvoiceRow = Prisma.InvoiceGetPayload<Prisma.InvoiceDefaultArgs>;
 type PrismaPaymentRow = Prisma.PaymentGetPayload<Prisma.PaymentDefaultArgs>;
 type PrismaTransactionRow = Prisma.TransactionGetPayload<Prisma.TransactionDefaultArgs>;
@@ -323,6 +343,89 @@ export class PrismaFinanceRepository {
       });
 
       return toPayment(payment);
+    });
+  }
+
+  /**
+   * Phase 7: atomically claim an unpaid booking, create its paid invoice,
+   * record the payment, write both ledger entries and link the invoice.
+   *
+   * Returns null when another request already paid the booking or the booking
+   * stopped being a REQUESTED, UNPAID paid-fee request. No invoice is created
+   * in that case.
+   */
+  async createPaidBookingInvoice(
+    input: CreatePaidBookingInvoiceInput,
+  ): Promise<CreatePaidBookingInvoiceResult | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.booking.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          id: input.bookingId,
+          status: 'REQUESTED',
+          paymentStatus: 'UNPAID',
+          feeKobo: input.amountKobo,
+        },
+        data: { paymentStatus: 'PAID' },
+      });
+      if (claimed.count === 0) return null;
+
+      const invoice = await transaction.invoice.create({
+        data: {
+          organizationId: input.organizationId,
+          userId: input.userId,
+          propertyId: input.propertyId,
+          period: input.period,
+          amountKobo: input.amountKobo,
+          currency: 'NGN',
+          status: 'PAID',
+          dueAt: input.paidAt,
+          createdById: input.recordedById,
+        },
+      });
+
+      const payment = await transaction.payment.create({
+        data: {
+          organizationId: input.organizationId,
+          userId: input.userId,
+          invoiceId: invoice.id,
+          amountKobo: input.amountKobo,
+          method: input.method,
+          reference: input.reference,
+          paidAt: input.paidAt,
+          recordedById: input.recordedById,
+        },
+      });
+
+      await transaction.booking.update({
+        where: { id: input.bookingId },
+        data: { invoiceId: invoice.id },
+      });
+
+      await transaction.transaction.createMany({
+        data: [
+          {
+            organizationId: input.organizationId,
+            userId: input.userId,
+            kind: 'PAYMENT',
+            amountKobo: input.amountKobo,
+            signed: input.amountKobo,
+            memo: `Payment against ${input.period}`,
+            reference: payment.id,
+          },
+          {
+            organizationId: input.organizationId,
+            userId: input.userId,
+            kind: 'INVOICE',
+            amountKobo: input.amountKobo,
+            signed: -input.amountKobo,
+            memo: `${input.period} settled`,
+            reference: invoice.id,
+          },
+        ],
+      });
+
+      return { invoiceId: invoice.id, paymentId: payment.id };
     });
   }
 

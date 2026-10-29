@@ -675,6 +675,90 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
     }),
   );
 
+  // --- S8 (Phase 7): facility availability watches --------------------------------
+  // GET  /facility-watches         — the resident's own watches.
+  // POST /facility-watches         — watch an occupied window.
+  // POST /facility-watches/:id/cancel — cancel one of the resident's own waits.
+
+  router.get(
+    '/facility-watches',
+    authGuard,
+    residentGuard,
+    bookingGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.bookings) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+        return;
+      }
+      const response = await options.bookings.listWatches(organizationId, ctx.userId);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/facility-watches',
+    authGuard,
+    residentGuard,
+    bookingGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.bookings) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+        return;
+      }
+      const body = z
+        .object({
+          facilityId: z.string().trim().min(1),
+          startsAt: z.string().trim().min(1),
+          endsAt: z.string().trim().min(1),
+        })
+        .safeParse(req.body ?? {});
+      if (!body.success) {
+        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid availability alert input'));
+        return;
+      }
+      const response = await options.bookings.createWatch(organizationId, ctx.userId, {
+        facilityId: body.data.facilityId,
+        startsAt: body.data.startsAt,
+        endsAt: body.data.endsAt,
+      });
+      res.status(201).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/facility-watches/:id/cancel',
+    authGuard,
+    residentGuard,
+    bookingGuard,
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!options.bookings) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+        return;
+      }
+      const response = await options.bookings.cancelWatch(
+        organizationId,
+        ctx.userId,
+        String(req.params.id),
+      );
+      res.status(200).json({ data: response });
+    }),
+  );
+
   // --- S9: Emergency / SOS -----------------------------------------------------------
   // GET  /sos — the acting resident's own SOS history.
   // POST /sos — raise an SOS alert against their own property.

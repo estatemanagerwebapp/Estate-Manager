@@ -1,6 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  Building,
   Building2,
+  CalendarDays,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -67,6 +69,18 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     permission: 'billing.read',
   },
   {
+    to: '/app/facilities',
+    label: 'Facilities',
+    icon: Building,
+    permission: 'facility.read',
+  },
+  {
+    to: '/app/bookings',
+    label: 'Bookings',
+    icon: CalendarDays,
+    permission: 'booking.read',
+  },
+  {
     to: '/app/residents',
     label: 'Residents',
     icon: UserRound,
@@ -129,6 +143,8 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/properties/')) return 'Property';
   if (pathname.startsWith('/app/properties')) return 'Properties';
   if (pathname.startsWith('/app/billing')) return 'Billing';
+  if (pathname.startsWith('/app/facilities')) return 'Facilities';
+  if (pathname.startsWith('/app/bookings')) return 'Bookings';
   if (pathname.startsWith('/app/residents')) return 'Residents';
   if (pathname.startsWith('/app/administrators')) return 'Administrators';
   if (pathname.startsWith('/app/users')) return 'Administrators';

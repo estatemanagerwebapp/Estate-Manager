@@ -49,7 +49,7 @@ export class OperatorBillingService {
     filter: OperatorInvoiceFilter,
   ): Promise<OperatorInvoicesResponse> {
     const records = await this.options.finance.listInvoicesForOrganization(organizationId, filter);
-    return { invoices: records.map((record) => this.toInvoiceDto(record)) };
+    return { invoices: records.map((record) => toOperatorInvoiceDto(record, this.now())) };
   }
 
   async createInvoice(
@@ -111,7 +111,7 @@ export class OperatorBillingService {
       },
     });
 
-    return { ok: true, invoice: this.toInvoiceDto(record) };
+    return { ok: true, invoice: toOperatorInvoiceDto(record, this.now()) };
   }
 
   async voidInvoice(
@@ -154,7 +154,7 @@ export class OperatorBillingService {
       },
     });
 
-    return { ok: true, invoice: this.toInvoiceDto(updated) };
+    return { ok: true, invoice: toOperatorInvoiceDto(updated, this.now()) };
   }
 
   async listPayments(
@@ -162,7 +162,7 @@ export class OperatorBillingService {
     filter: OperatorPaymentFilter,
   ): Promise<OperatorPaymentsResponse> {
     const records = await this.options.finance.listPaymentsForOrganization(organizationId, filter);
-    return { payments: records.map((record) => this.toPaymentDto(record)) };
+    return { payments: records.map((record) => toOperatorPaymentDto(record)) };
   }
 
   async recordPayment(
@@ -238,8 +238,8 @@ export class OperatorBillingService {
 
     return {
       ok: true,
-      payment: this.toPaymentDto(savedPayment),
-      invoice: this.toInvoiceDto(savedInvoice),
+      payment: toOperatorPaymentDto(savedPayment),
+      invoice: toOperatorInvoiceDto(savedInvoice, this.now()),
     };
   }
 
@@ -252,50 +252,50 @@ export class OperatorBillingService {
     }
   }
 
-  private toInvoiceDto(record: OperatorInvoiceRecord): OperatorInvoiceDto {
-    const overdue =
-      record.status === 'OVERDUE' ||
-      (record.status === 'UNPAID' && record.dueAt.getTime() < this.now().getTime());
-    return {
-      id: record.id,
-      period: record.period,
-      amountKobo: record.amountKobo,
-      currency: record.currency,
-      status: record.status as ResidentInvoiceStatus,
-      dueAt: record.dueAt.toISOString(),
-      issuedAt: record.issuedAt.toISOString(),
-      createdAt: record.createdAt.toISOString(),
-      updatedAt: record.updatedAt.toISOString(),
-      overdue,
-      resident: record.resident,
-      property: record.property,
-      paidKobo: record.paidKobo,
-      paymentCount: record.paymentCount,
-      createdBy: record.createdBy,
-      voidedAt: record.voidedAt ? record.voidedAt.toISOString() : null,
-      voidedBy: record.voidedBy,
-    };
-  }
-
-  private toPaymentDto(record: OperatorPaymentRecord): OperatorPaymentDto {
-    return {
-      id: record.id,
-      invoiceId: record.invoiceId,
-      period: record.period,
-      amountKobo: record.amountKobo,
-      method: record.method,
-      reference: record.reference,
-      paidAt: record.paidAt.toISOString(),
-      createdAt: record.createdAt.toISOString(),
-      resident: record.resident,
-      property: record.property,
-      recordedBy: record.recordedBy,
-    };
-  }
-
   private now(): Date {
     return this.options.now?.() ?? new Date();
   }
+}
+
+export function toOperatorInvoiceDto(record: OperatorInvoiceRecord, now: Date): OperatorInvoiceDto {
+  const overdue =
+    record.status === 'OVERDUE' ||
+    (record.status === 'UNPAID' && record.dueAt.getTime() < now.getTime());
+  return {
+    id: record.id,
+    period: record.period,
+    amountKobo: record.amountKobo,
+    currency: record.currency,
+    status: record.status as ResidentInvoiceStatus,
+    dueAt: record.dueAt.toISOString(),
+    issuedAt: record.issuedAt.toISOString(),
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+    overdue,
+    resident: record.resident,
+    property: record.property,
+    paidKobo: record.paidKobo,
+    paymentCount: record.paymentCount,
+    createdBy: record.createdBy,
+    voidedAt: record.voidedAt ? record.voidedAt.toISOString() : null,
+    voidedBy: record.voidedBy,
+  };
+}
+
+export function toOperatorPaymentDto(record: OperatorPaymentRecord): OperatorPaymentDto {
+  return {
+    id: record.id,
+    invoiceId: record.invoiceId,
+    period: record.period,
+    amountKobo: record.amountKobo,
+    method: record.method,
+    reference: record.reference,
+    paidAt: record.paidAt.toISOString(),
+    createdAt: record.createdAt.toISOString(),
+    resident: record.resident,
+    property: record.property,
+    recordedBy: record.recordedBy,
+  };
 }
 
 function requireActor(context: AuthAuditContext): string {

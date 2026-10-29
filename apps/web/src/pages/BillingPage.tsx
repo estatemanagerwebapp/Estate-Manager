@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Banknote, Plus, ReceiptText, RefreshCw, Search, Wallet } from 'lucide-react';
 import {
   OPERATOR_PAYMENT_METHODS,
@@ -167,11 +168,18 @@ export function BillingPage() {
   const [paymentTarget, setPaymentTarget] = useState<OperatorInvoiceDto | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedInvoiceId = searchParams.get('invoice');
 
   const canManage = can['billing.manage'] === true;
   const canVerifyPayments = can['payment.verify'] === true;
 
-  const invoiceFilter = useMemo(() => invoiceFilterForView(invoiceView), [invoiceView]);
+  const invoiceFilter = useMemo(() => {
+    const filter = invoiceFilterForView(invoiceView);
+    // A booking-payment link can point at an invoice outside the first page
+    // of the default queue; ask for the larger window while linked.
+    return linkedInvoiceId ? { ...filter, limit: 200 } : filter;
+  }, [invoiceView, linkedInvoiceId]);
   const paymentFilter: OperatorPaymentFilter = { limit: 200 };
 
   const invoicesQuery = useApiQuery(
@@ -201,6 +209,14 @@ export function BillingPage() {
     : payments;
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null;
 
+  useEffect(() => {
+    if (!linkedInvoiceId) return;
+    setTab('invoices');
+    setInvoiceView('ALL');
+    setSearch('');
+    setSelectedInvoiceId(linkedInvoiceId);
+  }, [linkedInvoiceId]);
+
   const outstandingKobo = invoices
     .filter((invoice) => invoice.status === 'UNPAID' || invoice.status === 'OVERDUE')
     .reduce((total, invoice) => total + Math.max(invoice.amountKobo - invoice.paidKobo, 0), 0);
@@ -219,10 +235,18 @@ export function BillingPage() {
     await Promise.all([invoicesQuery.refresh(), paymentsQuery.refresh()]);
   }
 
+  function clearLinkedInvoice() {
+    if (!linkedInvoiceId) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('invoice');
+    setSearchParams(next, { replace: true });
+  }
+
   function selectTab(next: BillingTab) {
     setTab(next);
     setSearch('');
     setSelectedInvoiceId(null);
+    clearLinkedInvoice();
   }
 
   async function createInvoice(input: {
@@ -677,6 +701,7 @@ export function BillingPage() {
         onClose={() => {
           setSelectedInvoiceId(null);
           setActionError(null);
+          clearLinkedInvoice();
         }}
         title={selectedInvoice?.period ?? 'Invoice'}
         subtitle={

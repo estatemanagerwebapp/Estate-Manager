@@ -520,10 +520,18 @@ export interface FacilityDto {
   name: string;
   description: string;
   bookable: boolean;
+  /** The facility's estate. Residents only see facilities on their own estate. */
+  estate: { id: string; name: string; slug: string };
+  /** Flat fee for one booking, in kobo. 0 = free. */
+  usageFeeKobo: number;
 }
 
 export const BOOKING_STATUSES = ['REQUESTED', 'CONFIRMED', 'CANCELLED', 'COMPLETED'] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+
+/** Manual payment state. Provider settlement is out of scope. */
+export const BOOKING_PAYMENT_STATUSES = ['UNPAID', 'PAID', 'NOT_REQUIRED'] as const;
+export type BookingPaymentStatus = (typeof BOOKING_PAYMENT_STATUSES)[number];
 
 export interface BookingDto {
   id: string;
@@ -533,6 +541,10 @@ export interface BookingDto {
   endsAt: string;
   attendees: number | null;
   status: BookingStatus;
+  /** Flat facility fee snapshot taken at request time. */
+  feeKobo: number;
+  paymentStatus: BookingPaymentStatus;
+  invoiceId: string | null;
 }
 
 export interface ResidentBookingsView {
@@ -557,6 +569,125 @@ export interface ResidentCreateBookingResponse {
 export interface ResidentCancelBookingResponse {
   ok: true;
   booking: BookingDto;
+}
+
+// --- Operator facilities & bookings (Phase 7) ---------------------------------------
+
+/** Active facilities appear in the register; archived ones are retained. */
+export const OPERATOR_FACILITY_STATUSES = ['ACTIVE', 'ARCHIVED'] as const;
+export type OperatorFacilityStatus = (typeof OPERATOR_FACILITY_STATUSES)[number];
+
+export interface OperatorFacilityDto {
+  id: string;
+  name: string;
+  description: string;
+  estate: { id: string; name: string; slug: string };
+  bookable: boolean;
+  usageFeeKobo: number;
+  archivedAt: string | null;
+  liveBookingCount: number;
+  waitingWatchCount: number;
+  createdAt: string;
+}
+
+export interface OperatorFacilitiesResponse {
+  facilities: OperatorFacilityDto[];
+}
+
+export interface OperatorCreateFacilityInput {
+  name: string;
+  description: string;
+  estateId: string;
+  usageFeeKobo?: number;
+  bookable?: boolean;
+}
+
+export interface OperatorUpdateFacilityInput {
+  name?: string;
+  description?: string;
+  estateId?: string;
+  usageFeeKobo?: number;
+  bookable?: boolean;
+}
+
+export interface OperatorFacilityResponse {
+  ok: true;
+  facility: OperatorFacilityDto;
+}
+
+export interface OperatorBookingDto {
+  id: string;
+  facilityId: string;
+  facilityName: string;
+  estate: { id: string; name: string; slug: string };
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  startsAt: string;
+  endsAt: string;
+  attendees: number | null;
+  feeKobo: number;
+  paymentStatus: BookingPaymentStatus;
+  invoiceId: string | null;
+  status: BookingStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperatorBookingsResponse {
+  bookings: OperatorBookingDto[];
+}
+
+export interface OperatorBookingResponse {
+  ok: true;
+  booking: OperatorBookingDto;
+}
+
+export interface OperatorConfirmBookingPaymentInput {
+  method: OperatorPaymentMethod;
+  reference?: string;
+  paidAt?: string;
+}
+
+export interface OperatorConfirmBookingPaymentResponse {
+  ok: true;
+  booking: OperatorBookingDto;
+  invoice: OperatorInvoiceDto;
+  payment: OperatorPaymentDto;
+}
+
+/** Stored watch states. A past WAITING watch is displayed as EXPIRED. */
+export const FACILITY_WATCH_STATUSES = ['WAITING', 'NOTIFIED', 'CANCELLED', 'EXPIRED'] as const;
+export type FacilityWatchStatus = (typeof FACILITY_WATCH_STATUSES)[number];
+
+export interface ResidentFacilityWatchDto {
+  id: string;
+  facilityId: string;
+  facilityName: string;
+  startsAt: string;
+  endsAt: string;
+  status: FacilityWatchStatus;
+  notifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface ResidentFacilityWatchesResponse {
+  watches: ResidentFacilityWatchDto[];
+}
+
+export interface ResidentCreateFacilityWatchInput {
+  facilityId: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface ResidentCreateFacilityWatchResponse {
+  ok: true;
+  watch: ResidentFacilityWatchDto;
+}
+
+export interface ResidentCancelFacilityWatchResponse {
+  ok: true;
+  watch: ResidentFacilityWatchDto;
 }
 
 // --- Emergency / SOS (S9) -------------------------------------------------------------

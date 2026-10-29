@@ -21,6 +21,8 @@ import { SosAlertsPage } from './pages/SosAlertsPage';
 import { MessagesPage } from './pages/MessagesPage';
 import { ComplaintsPage } from './pages/ComplaintsPage';
 import { BillingPage } from './pages/BillingPage';
+import { FacilitiesPage } from './pages/FacilitiesPage';
+import { BookingsPage } from './pages/BookingsPage';
 import { GatePage } from './pages/GatePage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
@@ -130,6 +132,22 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="billing.read">
                       <BillingPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/facilities"
+                  element={
+                    <RequirePermission permission="facility.read">
+                      <FacilitiesPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/bookings"
+                  element={
+                    <RequirePermission permission="booking.read">
+                      <BookingsPage />
                     </RequirePermission>
                   }
                 />

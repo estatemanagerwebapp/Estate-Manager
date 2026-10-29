@@ -53,6 +53,12 @@ import {
   createOperatorPaymentRouter,
   type OperatorBillingRouteOptions,
 } from './modules/billing/operator-billing.routes.js';
+import {
+  createOperatorBookingRouter,
+  createOperatorFacilityRouter,
+  type OperatorBookingRouteOptions,
+  type OperatorFacilityRouteOptions,
+} from './modules/facilities/facilities.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -93,6 +99,10 @@ export interface AppOptions {
   billing?: OperatorBillingRouteOptions;
   /** Operator gate access (`/access-codes` and `/verifications`). */
   gate?: OperatorGateRouteOptions;
+  /** Phase 7 operator facility register (`/facilities/*`). */
+  facilities?: OperatorFacilityRouteOptions;
+  /** Phase 7 operator booking queue and lifecycle (`/bookings/*`). */
+  bookings?: OperatorBookingRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -145,6 +155,8 @@ export function createApp(options: AppOptions = {}): Express {
     complaints: options.complaints,
     billing: options.billing,
     gate: options.gate,
+    facilities: options.facilities,
+    bookings: options.bookings,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -174,6 +186,8 @@ function createVersionedRoutes(options: {
   complaints?: OperatorComplaintsRouteOptions;
   billing?: OperatorBillingRouteOptions;
   gate?: OperatorGateRouteOptions;
+  facilities?: OperatorFacilityRouteOptions;
+  bookings?: OperatorBookingRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
   const {
@@ -192,6 +206,8 @@ function createVersionedRoutes(options: {
     complaints,
     billing,
     gate,
+    facilities,
+    bookings,
   } = options;
 
   router.use(
@@ -275,6 +291,16 @@ function createVersionedRoutes(options: {
     // Gate access: organization-wide access codes and verification history.
     router.use('/access-codes', createOperatorAccessCodeRouter(gate));
     router.use('/verifications', createOperatorVerificationRouter(gate));
+  }
+
+  if (facilities) {
+    // Phase 7: estate-scoped facility register.
+    router.use('/facilities', createOperatorFacilityRouter(facilities));
+  }
+
+  if (bookings) {
+    // Phase 7: booking queue, lifecycle and manual payment verification.
+    router.use('/bookings', createOperatorBookingRouter(bookings));
   }
 
   return router;

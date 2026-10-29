@@ -49,6 +49,7 @@ model Organization {
   estateBroadcasts    EstateBroadcast[]
   facilities          Facility[]
   bookings            Booking[]
+  facilityWatches     FacilityAvailabilityWatch[]
   sosEvents           SosEvent[]
   notifications       Notification[]
 
@@ -124,6 +125,7 @@ model User {
   messages                Message[]
   announcements           Announcement[]
   bookings                Booking[]
+  facilityWatches         FacilityAvailabilityWatch[]
   sosEvents               SosEvent[]
   sosAcknowledgements     SosEvent[]           @relation("SosAcknowledgedBy")
   sosResolutions          SosEvent[]           @relation("SosResolvedBy")
@@ -263,6 +265,7 @@ model Invoice {
   createdBy    User?        @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   voidedBy     User?        @relation("InvoiceVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
   payments     Payment[]
+  booking      Booking?
 
   @@index([organizationId, userId, status])
   @@index([createdById])
@@ -515,25 +518,31 @@ model EstateBroadcast {
 }
 
 // --- Phase 3 — facilities & bookings (S8) -----------------------------------------
-// Facilities are listed per estate (or organization-wide when estateId is
-// null) and may be bookable. Bookings are owned by the resident who made
-// them and carry a window plus a status.
+// Facilities belong to exactly one estate and may be bookable. Bookings are
+// owned by the resident who made them and carry a window, a fee snapshot, a
+// payment status and a status. Phase 7 adds the operator register, archives,
+// flat usage fees and date/time-specific availability watches.
 
 model Facility {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  /// Null = available to every estate in the organization.
-  estateId       String?  @map("estate_id") @db.Uuid
-  name           String   @db.VarChar(160)
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  estateId       String    @map("estate_id") @db.Uuid
+  name           String    @db.VarChar(160)
   description    String
-  bookable       Boolean  @default(true)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  bookable       Boolean   @default(true)
+  /// Flat fee for one booking, in kobo. 0 = free.
+  usageFeeKobo   Int       @default(0) @map("usage_fee_kobo")
+  /// Null = active. Set when the facility is retired from the register.
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  estate       Estate?      @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estate       Estate                     @relation(fields: [estateId], references: [id], onDelete: Cascade)
   bookings     Booking[]
+  watches      FacilityAvailabilityWatch[]
 
   @@index([organizationId, estateId])
+  @@index([organizationId, estateId, archivedAt])
   @@map("facilities")
 }
 
@@ -547,16 +556,52 @@ model Booking {
   attendees      Int?
   /// REQUESTED | CONFIRMED | CANCELLED | COMPLETED.
   status         String   @default("REQUESTED") @db.VarChar(16)
+  /// Flat facility fee snapshot taken when the booking is requested.
+  feeKobo        Int      @default(0) @map("fee_kobo")
+  /// UNPAID | PAID | NOT_REQUIRED.
+  paymentStatus  String   @default("UNPAID") @map("payment_status") @db.VarChar(16)
+  /// The paid invoice created when an operator verifies the booking payment.
+  invoiceId      String?  @unique @map("invoice_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, userId, startsAt])
   @@index([facilityId, startsAt, endsAt])
+  @@index([organizationId, status, createdAt(sort: Desc)])
+  @@index([organizationId, paymentStatus, createdAt(sort: Desc)])
   @@map("bookings")
+}
+
+// --- Phase 7 — facility availability watches ---------------------------------------
+// A resident asks to be told when an occupied facility window becomes free.
+// A watch is not a reservation; it stores the exact desired window and is
+// fulfilled only after a re-check finds no remaining live booking.
+
+model FacilityAvailabilityWatch {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  facilityId     String    @map("facility_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  startsAt       DateTime  @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime  @map("ends_at") @db.Timestamptz(6)
+  /// WAITING | NOTIFIED | CANCELLED.
+  status         String    @default("WAITING") @db.VarChar(16)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  notifiedAt     DateTime? @map("notified_at") @db.Timestamptz(6)
+  cancelledAt    DateTime? @map("cancelled_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, facilityId, startsAt, endsAt])
+  @@index([organizationId, userId, createdAt(sort: Desc)])
+  @@map("facility_availability_watches")
 }
 
 // --- Phase 3 — resident emergency / SOS (S9) ----------------------------------------
