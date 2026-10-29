@@ -125,11 +125,11 @@ export async function loadDashboardSummary(
     held.has('user.manage') && residentsEnabled
       ? users.countActiveByRole(organizationId, 'RESIDENT')
       : Promise.resolve(null),
-    held.has('resident.manage') && residentsEnabled
+    held.has('user.manage') && residentsEnabled
       ? residentOnboarding.countPending(organizationId)
       : Promise.resolve(null),
     held.has('user.manage') ? users.countAll(organizationId) : Promise.resolve(null),
-    held.has('resident.manage')
+    held.has('user.manage')
       ? residentOnboarding.countActive(organizationId)
       : Promise.resolve(null),
     held.has('billing.read') && billingEnabled
