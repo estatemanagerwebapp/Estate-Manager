@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Banknote, Plus, ReceiptText, RefreshCw, Search, Wallet } from 'lucide-react';
 import {
   OPERATOR_PAYMENT_METHODS,
@@ -18,6 +19,7 @@ import {
 } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
+import { invalidateNavigationCounts } from '../api/navigation';
 import { useCan } from '../auth/useCan';
 import { useToast } from '../toast/Toast';
 import { Modal, useConfirm } from '../components/dialog';
@@ -159,6 +161,7 @@ export function paymentMatchesSearch(payment: OperatorPaymentDto, rawQuery: stri
 export function BillingPage() {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [tab, setTab] = useState<BillingTab>('invoices');
   const [invoiceView, setInvoiceView] = useState<InvoiceView>('ALL');
@@ -232,7 +235,11 @@ export function BillingPage() {
       : invoicesQuery.error;
 
   async function refreshAll() {
-    await Promise.all([invoicesQuery.refresh(), paymentsQuery.refresh()]);
+    await Promise.all([
+      invoicesQuery.refresh(),
+      paymentsQuery.refresh(),
+      invalidateNavigationCounts(queryClient),
+    ]);
   }
 
   function clearLinkedInvoice() {

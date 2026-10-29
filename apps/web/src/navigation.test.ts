@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PRIMARY_NAV, SETTINGS_NAV, isNavItemVisible, sectionLabelForPath } from './navigation';
+import {
+  NAV_SECTIONS,
+  PRIMARY_NAV,
+  SETTINGS_NAV,
+  isNavItemVisible,
+  sectionLabelForPath,
+} from './navigation';
 
 function item(label: string) {
   const found = [...PRIMARY_NAV, ...SETTINGS_NAV].find((entry) => entry.label === label);
@@ -35,6 +41,36 @@ describe('operator navigation registry', () => {
   it('gates data import on import.manage', () => {
     expect(isNavItemVisible(item('Data import'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Data import'), { 'import.manage': true }, false)).toBe(true);
+  });
+
+  it('groups destinations into the approved operator sections', () => {
+    expect(NAV_SECTIONS.map((section) => section.label ?? section.id)).toEqual([
+      'overview',
+      'Front desk',
+      'Portfolio',
+      'Operations',
+      'Administration',
+    ]);
+
+    const labels = (id: string) =>
+      NAV_SECTIONS.find((section) => section.id === id)?.items.map((entry) => entry.label);
+
+    expect(labels('front-desk')).toEqual(['SOS alerts', 'Messages', 'Complaints']);
+    expect(labels('portfolio')).toEqual(['Estates', 'Properties', 'Residents']);
+    expect(labels('operations')).toEqual(['Billing', 'Facilities', 'Bookings', 'Gate access']);
+    expect(labels('administration')).toEqual(['Activity', 'Data import', 'Administrators']);
+  });
+
+  it('assigns counters only to actionable destinations', () => {
+    expect(item('SOS alerts').badge).toBe('sosAlerts');
+    expect(item('Messages').badge).toBe('unreadMessages');
+    expect(item('Complaints').badge).toBe('openComplaints');
+    expect(item('Residents').badge).toBe('pendingResidents');
+    expect(item('Billing').badge).toBe('overdueInvoices');
+    expect(item('Facilities').badge).toBe('facilityWaitlist');
+    expect(item('Bookings').badge).toBe('requestedBookings');
+    expect(item('Data import').badge).toBeUndefined();
+    expect(item('Gate access').badge).toBeUndefined();
   });
 
   it('gates SOS alerts on the SOS read permission', () => {

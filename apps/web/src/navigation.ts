@@ -17,7 +17,7 @@ import {
   UserRound,
   Wallet,
 } from 'lucide-react';
-import type { Permission } from '@silverstone/shared';
+import type { NavCounterKey, Permission } from '@silverstone/shared';
 
 /**
  * Operator navigation registry.
@@ -38,6 +38,8 @@ export interface NavItem {
   end?: boolean;
   permission?: Permission;
   requiresUserManage?: boolean;
+  /** Sidebar counter key. Omitted for destinations with no actionable queue. */
+  badge?: NavCounterKey;
 }
 
 export interface NavSection {
@@ -46,92 +48,141 @@ export interface NavSection {
   items: readonly NavItem[];
 }
 
-export const PRIMARY_NAV: readonly NavItem[] = [
+/**
+ * Primary destinations grouped by operator intent.
+ *
+ * Front desk queues come first because they are the daily work surface.
+ * Portfolio and operations follow, and occasional administration tools sit at
+ * the bottom. Empty groups are dropped by the shell for restricted roles.
+ */
+export const NAV_SECTIONS: readonly NavSection[] = [
   {
-    to: '/app',
-    label: 'Overview',
-    icon: LayoutDashboard,
-    end: true,
+    id: 'overview',
+    items: [
+      {
+        to: '/app',
+        label: 'Overview',
+        icon: LayoutDashboard,
+        end: true,
+      },
+    ],
   },
   {
-    to: '/app/activity',
-    label: 'Activity',
-    icon: History,
-    permission: 'audit.read',
+    id: 'front-desk',
+    label: 'Front desk',
+    items: [
+      {
+        to: '/app/sos',
+        label: 'SOS alerts',
+        icon: Siren,
+        permission: 'sos.read',
+        badge: 'sosAlerts',
+      },
+      {
+        to: '/app/messages',
+        label: 'Messages',
+        icon: Mail,
+        permission: 'message.read',
+        badge: 'unreadMessages',
+      },
+      {
+        to: '/app/complaints',
+        label: 'Complaints',
+        icon: MessageSquareWarning,
+        permission: 'complaint.read',
+        badge: 'openComplaints',
+      },
+    ],
   },
   {
-    to: '/app/estates',
-    label: 'Estates',
-    icon: Home,
-    permission: 'estate.read',
+    id: 'portfolio',
+    label: 'Portfolio',
+    items: [
+      {
+        to: '/app/estates',
+        label: 'Estates',
+        icon: Home,
+        permission: 'estate.read',
+      },
+      {
+        to: '/app/properties',
+        label: 'Properties',
+        icon: Building2,
+        permission: 'property.read',
+      },
+      {
+        to: '/app/residents',
+        label: 'Residents',
+        icon: UserRound,
+        requiresUserManage: true,
+        badge: 'pendingResidents',
+      },
+    ],
   },
   {
-    to: '/app/properties',
-    label: 'Properties',
-    icon: Building2,
-    permission: 'property.read',
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      {
+        to: '/app/billing',
+        label: 'Billing',
+        icon: Wallet,
+        permission: 'billing.read',
+        badge: 'overdueInvoices',
+      },
+      {
+        to: '/app/facilities',
+        label: 'Facilities',
+        icon: Building,
+        permission: 'facility.read',
+        badge: 'facilityWaitlist',
+      },
+      {
+        to: '/app/bookings',
+        label: 'Bookings',
+        icon: CalendarDays,
+        permission: 'booking.read',
+        badge: 'requestedBookings',
+      },
+      {
+        to: '/app/gate',
+        label: 'Gate access',
+        icon: ScanLine,
+        permission: 'verification.read',
+      },
+    ],
   },
   {
-    to: '/app/imports',
-    label: 'Data import',
-    icon: FileSpreadsheet,
-    permission: 'import.manage',
-  },
-  {
-    to: '/app/billing',
-    label: 'Billing',
-    icon: Wallet,
-    permission: 'billing.read',
-  },
-  {
-    to: '/app/facilities',
-    label: 'Facilities',
-    icon: Building,
-    permission: 'facility.read',
-  },
-  {
-    to: '/app/bookings',
-    label: 'Bookings',
-    icon: CalendarDays,
-    permission: 'booking.read',
-  },
-  {
-    to: '/app/residents',
-    label: 'Residents',
-    icon: UserRound,
-    requiresUserManage: true,
-  },
-  {
-    to: '/app/administrators',
-    label: 'Administrators',
-    icon: ShieldCheck,
-    requiresUserManage: true,
-  },
-  {
-    to: '/app/sos',
-    label: 'SOS alerts',
-    icon: Siren,
-    permission: 'sos.read',
-  },
-  {
-    to: '/app/messages',
-    label: 'Messages',
-    icon: Mail,
-    permission: 'message.read',
-  },
-  {
-    to: '/app/complaints',
-    label: 'Complaints',
-    icon: MessageSquareWarning,
-    permission: 'complaint.read',
-  },
-  {
-    to: '/app/gate',
-    label: 'Gate access',
-    icon: ScanLine,
-    permission: 'verification.read',
+    id: 'administration',
+    label: 'Administration',
+    items: [
+      {
+        to: '/app/activity',
+        label: 'Activity',
+        icon: History,
+        permission: 'audit.read',
+      },
+      {
+        to: '/app/imports',
+        label: 'Data import',
+        icon: FileSpreadsheet,
+        permission: 'import.manage',
+      },
+      {
+        to: '/app/administrators',
+        label: 'Administrators',
+        icon: ShieldCheck,
+        requiresUserManage: true,
+      },
+    ],
   },
 ];
+
+/**
+ * Flattened view retained for callers that only need to resolve a destination
+ * (tests, path helpers). The shell renders the grouped sections instead.
+ */
+export const PRIMARY_NAV: readonly NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
 export const SETTINGS_SECTION_LABEL = 'Settings';
 

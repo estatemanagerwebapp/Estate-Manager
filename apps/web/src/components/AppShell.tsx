@@ -3,14 +3,55 @@ import { Building2, KeyRound, LogOut, Settings } from 'lucide-react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
 import { useCan } from '../auth/useCan';
 import { RefreshButton } from './RefreshButton';
-import { ROLE_LABELS } from '@silverstone/shared';
+import { ROLE_LABELS, type NavCounterKey, type NavCountsDto } from '@silverstone/shared';
 import {
-  PRIMARY_NAV,
+  NAV_SECTIONS,
   SETTINGS_NAV,
   SETTINGS_SECTION_LABEL,
   isNavItemVisible,
   sectionLabelForPath,
+  type NavItem,
 } from '../navigation';
+import { useNavigationCounts } from '../api/navigation';
+
+const BADGE_LABELS: Record<NavCounterKey, string> = {
+  sosAlerts: 'active',
+  unreadMessages: 'unread',
+  openComplaints: 'open',
+  requestedBookings: 'awaiting action',
+  overdueInvoices: 'overdue',
+  pendingResidents: 'pending onboarding',
+  facilityWaitlist: 'waiting for a slot',
+};
+
+const BADGE_TONES: Record<NavCounterKey, string> = {
+  sosAlerts: 'bg-rose-100 text-rose-700',
+  unreadMessages: 'bg-sky-100 text-sky-700',
+  openComplaints: 'bg-amber-100 text-amber-800',
+  requestedBookings: 'bg-amber-100 text-amber-800',
+  overdueInvoices: 'bg-amber-100 text-amber-800',
+  pendingResidents: 'bg-amber-100 text-amber-800',
+  facilityWaitlist: 'bg-slate-100 text-slate-700',
+};
+
+function badgeText(count: number | null | undefined): string | null {
+  if (typeof count !== 'number' || count <= 0) return null;
+  return count > 99 ? '99+' : String(count);
+}
+
+function NavBadge({ item, counts }: { item: NavItem; counts: NavCountsDto | null }) {
+  if (!item.badge) return null;
+  const text = badgeText(counts?.[item.badge]);
+  if (!text) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${BADGE_TONES[item.badge]}`}
+    >
+      {text}
+    </span>
+  );
+}
 
 /**
  * Application shell for signed-in operators. Sidebar navigation is
@@ -24,6 +65,7 @@ export function AppShell() {
   const userCanManage = canManageUsers(user);
   const navigate = useNavigate();
   const location = useLocation();
+  const { data: navCounts } = useNavigationCounts();
 
   async function handleLogout() {
     await logout();
@@ -36,6 +78,29 @@ export function AppShell() {
         ? 'bg-(--color-primary-soft) text-(--color-ink)'
         : 'text-(--color-ink-muted) hover:bg-(--color-surface) hover:text-(--color-ink)'
     }`;
+
+  function renderNavItem(item: NavItem) {
+    const Icon = item.icon;
+    const text = item.badge ? badgeText(navCounts?.[item.badge]) : null;
+    const ariaLabel =
+      item.badge && text ? `${item.label}, ${text} ${BADGE_LABELS[item.badge]}` : undefined;
+
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        end={item.end}
+        className={navClasses}
+        aria-label={ariaLabel}
+      >
+        <span className="text-(--color-primary)">
+          <Icon aria-hidden size={16} />
+        </span>
+        {item.label}
+        <NavBadge item={item} counts={navCounts} />
+      </NavLink>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -50,18 +115,33 @@ export function AppShell() {
           </div>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1 px-3" aria-label="Primary">
-          {PRIMARY_NAV.filter((item) => isNavItemVisible(item, can, userCanManage)).map((item) => {
-            const Icon = item.icon;
+        <nav className="flex flex-1 flex-col gap-3 px-3" aria-label="Primary">
+          {NAV_SECTIONS.map((section) => {
+            const items = section.items.filter((item) =>
+              isNavItemVisible(item, can, userCanManage),
+            );
+            if (items.length === 0) return null;
+            const labelId = `nav-section-${section.id}`;
+
             return (
-              <NavLink key={item.to} to={item.to} end={item.end} className={navClasses}>
-                <span className="text-(--color-primary)">
-                  <Icon aria-hidden size={16} />
-                </span>
-                {item.label}
-              </NavLink>
+              <div
+                key={section.id}
+                role={section.label ? 'group' : undefined}
+                aria-labelledby={section.label ? labelId : undefined}
+              >
+                {section.label ? (
+                  <p
+                    id={labelId}
+                    className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)"
+                  >
+                    {section.label}
+                  </p>
+                ) : null}
+                <div className="flex flex-col gap-1">{items.map(renderNavItem)}</div>
+              </div>
             );
           })}
+
           <div className="mt-auto border-t border-slate-200/80 pt-3">
             <p
               id="nav-settings"
@@ -71,17 +151,7 @@ export function AppShell() {
             </p>
             <div role="group" aria-labelledby="nav-settings" className="flex flex-col gap-1">
               {SETTINGS_NAV.filter((item) => isNavItemVisible(item, can, userCanManage)).map(
-                (item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink key={item.to} to={item.to} className={navClasses}>
-                      <span className="text-(--color-primary)">
-                        <Icon aria-hidden size={16} />
-                      </span>
-                      {item.label}
-                    </NavLink>
-                  );
-                },
+                renderNavItem,
               )}
             </div>
           </div>

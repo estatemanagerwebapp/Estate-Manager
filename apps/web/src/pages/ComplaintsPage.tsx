@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { MessageSquareWarning, RefreshCw, Search, Send } from 'lucide-react';
 import type { ComplaintStatus, OperatorComplaintDto } from '@silverstone/shared';
 import { api, ApiRequestError, type OperatorComplaintFilter } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
+import { invalidateNavigationCounts } from '../api/navigation';
 import { useCan } from '../auth/useCan';
 import { useToast } from '../toast/Toast';
 import { Button, Field, inputClass, selectClass } from '../components/ui';
@@ -111,6 +113,7 @@ export function complaintMatchesSearch(complaint: OperatorComplaintDto, rawQuery
 export function ComplaintsPage() {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<ComplaintView>('ALL');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -188,7 +191,7 @@ export function ComplaintsPage() {
     try {
       await api.setOperatorComplaintStatus(selected.id, { status: statusDraft });
       toast.success(`Complaint marked ${complaintStatusLabel(statusDraft).toLowerCase()}.`);
-      await refresh();
+      await Promise.all([refresh(), invalidateNavigationCounts(queryClient)]);
     } catch (error) {
       setActionError(
         error instanceof ApiRequestError ? error.message : 'Could not update the complaint.',

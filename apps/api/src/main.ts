@@ -113,6 +113,18 @@ async function main(): Promise<void> {
       organizationId: deps.organizationId,
       loadModules: deps.loadModules,
     },
+    navigation: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      residentOnboarding: deps.residentOnboarding,
+      finance: deps.finance,
+      complaints: deps.complaints,
+      messages: deps.messages,
+      bookings: deps.bookings,
+      sos: deps.sos,
+      organizationId: deps.organizationId,
+      loadModules: deps.loadModules,
+    },
     audit: {
       sessions: deps.auth.sessions,
       permissions: deps.auth.permissions,

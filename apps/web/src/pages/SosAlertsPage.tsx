@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, CheckCircle2, Mail, Phone, RefreshCw, Search, Siren } from 'lucide-react';
 import {
   SOS_CONTACT_CATEGORY_LABELS,
@@ -8,6 +9,7 @@ import {
 import { api, ApiRequestError, type OperatorSosFilter } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
+import { invalidateNavigationCounts } from '../api/navigation';
 import { useCan } from '../auth/useCan';
 import { useToast } from '../toast/Toast';
 import { Modal } from '../components/dialog';
@@ -101,6 +103,7 @@ export function sosMatchesSearch(event: SosOperatorEventDto, rawQuery: string): 
 export function SosAlertsPage() {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<SosView>('ACTIVE');
   const [search, setSearch] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -137,7 +140,7 @@ export function SosAlertsPage() {
     try {
       await api.acknowledgeOperatorSos(event.id);
       toast.success(`Acknowledged the SOS alert for ${sosResidentLabel(event)}.`);
-      await refresh();
+      await Promise.all([refresh(), invalidateNavigationCounts(queryClient)]);
     } catch (err) {
       setActionError(
         err instanceof ApiRequestError ? err.message : 'Could not acknowledge the alert.',
@@ -150,7 +153,7 @@ export function SosAlertsPage() {
   function resolved(updated: SosOperatorEventDto) {
     setResolving(null);
     toast.success(`Resolved the SOS alert for ${sosResidentLabel(updated)}.`);
-    void refresh();
+    void Promise.all([refresh(), invalidateNavigationCounts(queryClient)]);
   }
 
   return (

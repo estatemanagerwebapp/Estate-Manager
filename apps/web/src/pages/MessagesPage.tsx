@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   Inbox,
@@ -14,6 +15,7 @@ import type { MessageThreadStatus, OperatorMessageThreadDto } from '@silverstone
 import { api, ApiRequestError, type OperatorMessageFilter } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
+import { invalidateNavigationCounts } from '../api/navigation';
 import { useCan } from '../auth/useCan';
 import { useToast } from '../toast/Toast';
 import {
@@ -90,6 +92,7 @@ export function threadMatchesSearch(thread: OperatorMessageThreadDto, rawQuery: 
 export function MessagesPage() {
   const can = useCan();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<MessageView>('OPEN');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -132,7 +135,7 @@ export function MessagesPage() {
     if (!canManage || thread.unreadCount === 0) return;
     try {
       await api.markOperatorMessageRead(thread.id);
-      await refresh();
+      await Promise.all([refresh(), invalidateNavigationCounts(queryClient)]);
     } catch (error) {
       setActionError(
         error instanceof ApiRequestError ? error.message : 'Could not mark the conversation read.',
@@ -174,7 +177,7 @@ export function MessagesPage() {
         await api.reopenOperatorMessage(selected.id);
         toast.success('Conversation reopened.');
       }
-      await refresh();
+      await Promise.all([refresh(), invalidateNavigationCounts(queryClient)]);
     } catch (error) {
       setActionError(
         error instanceof ApiRequestError ? error.message : 'Could not update the conversation.',

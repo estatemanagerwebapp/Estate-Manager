@@ -29,6 +29,10 @@ export const queryKeys = {
     kpis: ['dashboard', 'kpis'] as const,
     activity: (limit: number) => ['dashboard', 'activity', limit] as const,
   },
+  navigation: {
+    all: ['navigation'] as const,
+    counts: ['navigation', 'counts'] as const,
+  },
   houseTypes: ['house-types'] as const,
   estates: {
     all: ['estates'] as const,

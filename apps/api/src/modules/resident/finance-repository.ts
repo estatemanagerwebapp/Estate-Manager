@@ -537,6 +537,16 @@ export class PrismaFinanceRepository {
    * invoice rows; a deployment with thousands of invoices still costs three
    * index-backed queries.
    */
+  /** Invoices stored as OVERDUE or still UNPAID past their due date. */
+  async countOverdueInvoices(organizationId: string): Promise<number> {
+    return this.prisma.invoice.count({
+      where: {
+        organizationId,
+        OR: [{ status: 'OVERDUE' }, { status: 'UNPAID', dueAt: { lt: new Date() } }],
+      },
+    });
+  }
+
   async summarizeOutstanding(organizationId: string): Promise<OutstandingInvoiceSummary> {
     const outstandingWhere = {
       organizationId,

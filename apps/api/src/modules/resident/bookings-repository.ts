@@ -148,6 +148,13 @@ export class PrismaBookingRepository {
     return rows.map(toBookingRecord);
   }
 
+  /** Bookings still waiting for an operator decision. */
+  async countRequestedBookings(organizationId: string): Promise<number> {
+    return this.prisma.booking.count({
+      where: { organizationId, status: 'REQUESTED' },
+    });
+  }
+
   /** Any overlapping, still-live booking for the same facility. */
   async findOverlappingBooking(
     facilityId: string,
@@ -291,6 +298,21 @@ export class PrismaBookingRepository {
       data: { status: 'CANCELLED', cancelledAt },
     });
     return this.findWatchById(organizationId, userId, watchId);
+  }
+
+  /**
+   * Future WAITING watches across the organization. Past windows are excluded
+   * so the sidebar badge reflects residents still waiting on a bookable slot,
+   * not stale requests whose window has already passed.
+   */
+  async countUpcomingWaitingWatches(organizationId: string, now: Date): Promise<number> {
+    return this.prisma.facilityAvailabilityWatch.count({
+      where: {
+        organizationId,
+        status: 'WAITING',
+        startsAt: { gt: now },
+      },
+    });
   }
 
   /** Future WAITING watches for one facility, used after a cancellation. */

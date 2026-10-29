@@ -29,6 +29,7 @@ import {
 import { api, ApiRequestError } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
+import { invalidateNavigationCounts } from '../api/navigation';
 import { useToast } from '../toast/Toast';
 import { Modal, useConfirm } from '../components/dialog';
 import { FilterBar, OperatorPageHeader } from '../components/operator';
@@ -106,6 +107,7 @@ export function ResidentsPage() {
       }
       void queryClient.invalidateQueries({ queryKey: ['users'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void invalidateNavigationCounts(queryClient);
       await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not record the payment.');
@@ -126,6 +128,7 @@ export function ResidentsPage() {
       syncResident(response.resident);
       toast.success(`Archived ${resident.firstName}.`);
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void invalidateNavigationCounts(queryClient);
       await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not archive the resident.');
@@ -141,6 +144,7 @@ export function ResidentsPage() {
       syncResident(response.resident);
       toast.success(`Restored ${resident.firstName}.`);
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void invalidateNavigationCounts(queryClient);
       await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not restore the resident.');
@@ -193,6 +197,7 @@ export function ResidentsPage() {
       if (detail?.id === resident.id) setDetail(null);
       toast.success(`Deleted ${resident.firstName}.`);
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void invalidateNavigationCounts(queryClient);
       await refresh();
     } catch (err) {
       toast.error(err instanceof ApiRequestError ? err.message : 'Could not delete the resident.');
@@ -338,6 +343,7 @@ export function ResidentsPage() {
             setRegisterOpen(false);
             setIssuedCode(result);
             void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            void invalidateNavigationCounts(queryClient);
             void refresh();
           }}
         />
@@ -359,6 +365,7 @@ export function ResidentsPage() {
             toast.success(`Updated ${updated.firstName}.`);
             void queryClient.invalidateQueries({ queryKey: ['users'] });
             void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            void invalidateNavigationCounts(queryClient);
             void refresh();
           }}
         />

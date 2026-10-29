@@ -100,6 +100,8 @@ export interface AppDependencies {
   /** Billing, complaint and SOS aggregates for the operator dashboard. */
   finance: PrismaFinanceRepository;
   complaints: PrismaComplaintRepository;
+  messages: PrismaMessageRepository;
+  bookings: PrismaBookingRepository;
   sos: PrismaSosRepository;
   /** Live module flags from the resolved organization configuration. */
   loadModules: () => Promise<ModuleFlags>;
@@ -457,6 +459,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     properties,
     finance: financeRepo,
     complaints: complaintRepo,
+    messages: messageRepo,
+    bookings: bookingRepo,
     sos: sosRepo,
     loadModules: async () => (await configService.resolve()).config.modules,
     organizationId: await resolveOrganizationId(prisma, configService),

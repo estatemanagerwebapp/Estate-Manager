@@ -51,6 +51,7 @@ import type {
   AuditEventFilter,
   AuditEventsResponse,
   DashboardSummaryResponse,
+  NavCountsDto,
   ResidentProfileView,
   ResidentProfileUpdateInput,
   ResidentProfileUpdateResponse,
@@ -628,6 +629,12 @@ export const api = {
    * see.
    */
   getDashboardKpis: () => request<DashboardSummaryResponse>('/api/v1/dashboard/kpis'),
+
+  /**
+   * Sidebar counters. Fields the signed-in role cannot read are `null`; the
+   * shell hides those badges rather than rendering a zero.
+   */
+  getNavigationCounts: () => request<NavCountsDto>('/api/v1/navigation/counts'),
 
   /**
    * Most-recent audit events for the dashboard activity feed and the full

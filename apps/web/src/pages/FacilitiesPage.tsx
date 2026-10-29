@@ -10,6 +10,7 @@ import {
 import { api, ApiRequestError, type OperatorFacilityFilter } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
+import { invalidateNavigationCounts } from '../api/navigation';
 import { useCan } from '../auth/useCan';
 import { useToast } from '../toast/Toast';
 import { Modal, useConfirm } from '../components/dialog';
@@ -220,6 +221,7 @@ export function FacilitiesPage() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.facilities.all }),
       queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all }),
+      invalidateNavigationCounts(queryClient),
     ]);
   }
 

@@ -92,6 +92,9 @@ export type {
   DashboardSummaryResponse,
 } from './dashboard-contract.js';
 
+export { NAV_COUNTER_KEYS } from './navigation-contract.js';
+export type { NavCounterKey, NavCountsDto } from './navigation-contract.js';
+
 export { ERROR_CODES } from './api-contract.js';
 export type {
   ApiErrorBody,

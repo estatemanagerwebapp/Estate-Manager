@@ -31,6 +31,10 @@ import {
   createDashboardRouter,
   type DashboardRouteOptions,
 } from './modules/dashboard/dashboard.routes.js';
+import {
+  createNavigationRouter,
+  type NavigationRouteOptions,
+} from './modules/navigation/navigation.routes.js';
 import { createAuditRouter, type AuditRouteOptions } from './modules/audit/audit.routes.js';
 import {
   createResidentRouter,
@@ -98,6 +102,8 @@ export interface AppOptions {
   media?: MediaRouteOptions;
   /** Dashboard KPI + activity aggregates (operator overview). */
   dashboard?: DashboardRouteOptions;
+  /** Sidebar counters for the operator shell (`/navigation/counts`). */
+  navigation?: NavigationRouteOptions;
   /** Organisation-wide audit log and CSV export (`/audit/*`). */
   audit?: AuditRouteOptions;
   /** Phase 3 resident portal (`/resident/*`), self-scoped. */
@@ -165,6 +171,7 @@ export function createApp(options: AppOptions = {}): Express {
     onboarding: options.onboarding,
     media: options.media,
     dashboard: options.dashboard,
+    navigation: options.navigation,
     audit: options.audit,
     resident: options.resident,
     sos: options.sos,
@@ -199,6 +206,7 @@ function createVersionedRoutes(options: {
   onboarding?: OnboardingRouteOptions;
   media?: MediaRouteOptions;
   dashboard?: DashboardRouteOptions;
+  navigation?: NavigationRouteOptions;
   audit?: AuditRouteOptions;
   resident?: ResidentRouteOptions;
   sos?: OperatorSosRouteOptions;
@@ -222,6 +230,7 @@ function createVersionedRoutes(options: {
     onboarding,
     media,
     dashboard,
+    navigation,
     audit,
     resident,
     sos,
@@ -288,6 +297,11 @@ function createVersionedRoutes(options: {
 
   if (dashboard) {
     router.use('/dashboard', createDashboardRouter(dashboard));
+  }
+
+  if (navigation) {
+    // Lightweight sidebar counters, gated field-by-field by permission/module.
+    router.use('/navigation', createNavigationRouter(navigation));
   }
 
   if (audit) {

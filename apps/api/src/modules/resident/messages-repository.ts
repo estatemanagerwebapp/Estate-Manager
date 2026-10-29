@@ -233,6 +233,32 @@ export class PrismaMessageRepository {
     return row ? toOperatorThreadRecord(row) : null;
   }
 
+  /**
+   * Open threads with at least one resident message newer than the shared
+   * staff read marker. A null marker means every resident message is unread.
+   *
+   * Counting threads (not messages) keeps the sidebar badge aligned with the
+   * inbox: one conversation is one item to open. The query compares two
+   * columns inside the database, which Prisma's find/count filters cannot
+   * express, so it stays a single index-backed raw count.
+   */
+  async countUnreadThreads(organizationId: string): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM message_threads t
+      WHERE t.organization_id = ${organizationId}::uuid
+        AND t.status = 'OPEN'
+        AND EXISTS (
+          SELECT 1
+          FROM messages m
+          WHERE m.thread_id = t.id
+            AND m.sender_role = 'RESIDENT'
+            AND m.created_at > COALESCE(t.staff_last_read_at, '-infinity'::timestamptz)
+        )
+    `;
+    return rows[0]?.count ?? 0;
+  }
+
   /** Mark the shared estate-office read position. */
   async markReadByStaff(organizationId: string, threadId: string, readAt: Date): Promise<boolean> {
     const result = await this.prisma.messageThread.updateMany({
