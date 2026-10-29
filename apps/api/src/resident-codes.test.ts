@@ -311,7 +311,8 @@ describe('resident access codes (S4)', () => {
     const response = await request(app).get('/api/v1/resident/codes').set('Cookie', residentCookie);
     expect(response.status).toBe(200);
 
-    const { codes } = response.body.data;
+    const { codes, defaultDurationDays } = response.body.data;
+    expect(defaultDurationDays).toBe(30);
     expect(codes.length).toBe(1);
     expect(codes[0].kind).toBe('ENTRY');
     expect(codes[0].status).toBe('ACTIVE');

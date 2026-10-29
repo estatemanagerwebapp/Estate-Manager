@@ -162,6 +162,12 @@ async function main(): Promise<void> {
       bookings: deps.operatorBookingsService,
       payment: deps.bookingPaymentService,
     },
+    settings: {
+      settingsService: deps.settingsService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+    },
   });
 
   const server = http.createServer(app);

@@ -1,6 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Check, CheckCircle2, Mail, Phone, RefreshCw, Search, Siren } from 'lucide-react';
-import type { SosOperatorEventDto, SosStatus } from '@silverstone/shared';
+import {
+  SOS_CONTACT_CATEGORY_LABELS,
+  type SosOperatorEventDto,
+  type SosStatus,
+} from '@silverstone/shared';
 import { api, ApiRequestError, type OperatorSosFilter } from '../api/client';
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
@@ -117,6 +121,7 @@ export function SosAlertsPage() {
   });
 
   const events = data?.events ?? [];
+  const contacts = data?.contacts ?? [];
   const visibleEvents = search.trim()
     ? events.filter((event) => sosMatchesSearch(event, search))
     : events;
@@ -175,6 +180,30 @@ export function SosAlertsPage() {
           </>
         }
       />
+
+      {contacts.length > 0 && (
+        <div className="mt-4 rounded-md border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)">
+            Emergency contacts
+          </p>
+          <ul className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5">
+            {contacts.map((contact) => (
+              <li key={contact.id} className="text-xs">
+                <span className="text-(--color-ink-muted)">
+                  {SOS_CONTACT_CATEGORY_LABELS[contact.category]}:
+                </span>{' '}
+                <a
+                  href={`tel:${contact.phone.replace(/[^+\d]/g, '')}`}
+                  className="inline-flex items-center gap-1 font-medium text-(--color-primary) hover:underline"
+                >
+                  <Phone aria-hidden size={11} />
+                  {contact.label} · {contact.phone}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <FilterBar
         summary={

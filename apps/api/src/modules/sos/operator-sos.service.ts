@@ -10,6 +10,7 @@ import type {
   OperatorResolveSosInput,
   OperatorSosEventsResponse,
   OperatorSosMutationResponse,
+  SosContactDto,
   SosOperatorEventDto,
 } from '@silverstone/shared';
 
@@ -24,6 +25,8 @@ export interface OperatorSosFilter {
 export interface OperatorSosServiceOptions {
   sos: PrismaSosRepository;
   audit: PrismaAuditRepository;
+  /** Active predefined emergency contacts, when configured. */
+  contacts?: () => Promise<SosContactDto[]>;
 }
 
 /**
@@ -41,13 +44,16 @@ export class OperatorSosService {
     organizationId: string,
     filter: OperatorSosFilter,
   ): Promise<OperatorSosEventsResponse> {
-    const records = await this.options.sos.listForOrganization({
-      organizationId,
-      status: filter.status,
-      activeOnly: filter.activeOnly,
-      limit: filter.limit,
-    });
-    return { events: records.map(toDto) };
+    const [records, contacts] = await Promise.all([
+      this.options.sos.listForOrganization({
+        organizationId,
+        status: filter.status,
+        activeOnly: filter.activeOnly,
+        limit: filter.limit,
+      }),
+      this.options.contacts ? this.options.contacts() : Promise.resolve([]),
+    ]);
+    return { events: records.map(toDto), contacts };
   }
 
   async acknowledge(

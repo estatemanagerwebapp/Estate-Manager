@@ -93,6 +93,15 @@ export type {
   SystemInfo,
 } from './api-contract.js';
 
+export { SOS_CONTACT_CATEGORIES, SOS_CONTACT_CATEGORY_LABELS } from './settings-contract.js';
+export type {
+  BankTransferDetailsDto,
+  OrganizationSettingsUpdateInput,
+  OrganizationSettingsView,
+  SosContactCategory,
+  SosContactDto,
+} from './settings-contract.js';
+
 export {
   ESTATE_STATUSES,
   PROPERTY_STATUSES,
@@ -243,6 +252,7 @@ export type {
   ResidentSosEventsResponse,
   ResidentCreateSosInput,
   ResidentCreateSosResponse,
+  ResidentAccessCodesResponse,
   SosOperatorEventDto,
   OperatorSosEventsResponse,
   OperatorResolveSosInput,

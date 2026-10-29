@@ -50,6 +50,9 @@ describe('baseline configuration', () => {
     expect(config.modules.estates).toBe(true);
     expect(config.fees.registration.amountKobo).toBe(0);
     expect(config.onboarding.residentCode.persistent).toBe(true);
+    expect(config.accessCodes.defaultDurationDays).toBe(30);
+    expect(config.payments.bankTransfer.bankName).toBeNull();
+    expect(config.sos.contacts).toEqual([]);
     expect(config.customFields).toEqual([]);
   });
 
@@ -68,6 +71,8 @@ describe('baseline configuration', () => {
     expect(config.organization.slug).toBe('silverstone');
     expect(config.fees.registration.amountKobo).toBe(5_000_000);
     expect(config.payments.provider).toBe('NONE');
+    expect(config.accessCodes.defaultDurationDays).toBe(30);
+    expect(config.sos.contacts).toEqual([]);
     // No payment integration or account activation may be enabled in Phase 0.
     expect(config.onboarding.createAccountOnlyAfterVerifiedPayment).toBe(true);
   });
@@ -200,6 +205,53 @@ describe('configuration validation', () => {
       },
     };
     expect(issuePaths(document)).toContain('roles.grants.1.role');
+  });
+
+  it('rejects access-code durations outside the supported window', () => {
+    expect(issuePaths({ ...validDocument(), accessCodes: { defaultDurationDays: 0 } })).toContain(
+      'accessCodes.defaultDurationDays',
+    );
+    expect(issuePaths({ ...validDocument(), accessCodes: { defaultDurationDays: 366 } })).toContain(
+      'accessCodes.defaultDurationDays',
+    );
+  });
+
+  it('requires complete bank-transfer details when any bank field is set', () => {
+    const partial = {
+      ...validDocument(),
+      payments: { bankTransfer: { bankName: 'Example Bank' } },
+    };
+    expect(issuePaths(partial)).toContain('payments.bankTransfer.accountName');
+    expect(issuePaths(partial)).toContain('payments.bankTransfer.accountNumber');
+  });
+
+  it('rejects malformed emergency contacts', () => {
+    const malformed = {
+      ...validDocument(),
+      sos: {
+        contacts: [
+          {
+            id: 'contact-1',
+            label: 'Security',
+            phone: 'call-us',
+          },
+        ],
+      },
+    };
+    expect(issuePaths(malformed)).toContain('sos.contacts.0.phone');
+  });
+
+  it('rejects duplicate emergency contact ids', () => {
+    const duplicate = {
+      ...validDocument(),
+      sos: {
+        contacts: [
+          { id: 'contact-1', label: 'Security', phone: '+2348000000001' },
+          { id: 'contact-1', label: 'Clinic', phone: '+2348000000002' },
+        ],
+      },
+    };
+    expect(issuePaths(duplicate)).toContain('sos.contacts.1.id');
   });
 
   it('refuses configuration that would weaken payment invariants', () => {

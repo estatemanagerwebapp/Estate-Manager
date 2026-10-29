@@ -5,6 +5,7 @@ import {
 } from './parse.js';
 import {
   CONFIG_SCHEMA_VERSION,
+  type AccessCodesConfig,
   type AssetModel,
   type Branding,
   type CustomField,
@@ -16,6 +17,7 @@ import {
   type PaymentsConfig,
   type PropertyOptions,
   type RolesConfig,
+  type SosConfig,
 } from './organization-config.schema.js';
 
 /**
@@ -34,7 +36,9 @@ export interface StoredConfigPayload {
   modules: ModulesConfig;
   fees: FeesConfig;
   onboarding: OnboardingConfig;
+  accessCodes: AccessCodesConfig;
   payments: PaymentsConfig;
+  sos: SosConfig;
   roles: RolesConfig;
   customFields: CustomField[];
 }
@@ -110,7 +114,9 @@ export function toStoredPayload(config: OrganizationConfig): StoredConfigPayload
     modules: config.modules,
     fees: config.fees,
     onboarding: config.onboarding,
+    accessCodes: config.accessCodes,
     payments: config.payments,
+    sos: config.sos,
     roles: config.roles,
     customFields: config.customFields,
     schemaVersion: CONFIG_SCHEMA_VERSION,

@@ -3,6 +3,7 @@ import type { PrismaAccessCodeRepository, AccessCodeRecord } from './codes-repos
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   ResidentAccessCodeDto,
+  ResidentAccessCodesResponse,
   ResidentGenerateAccessCodeInput,
   ResidentGenerateAccessCodeResponse,
   ResidentExtendAccessCodeResponse,
@@ -23,15 +24,17 @@ export interface ResidentCodesServiceOptions {
   audit: PrismaAuditRepository;
   /** Resolves the acting resident's assigned property (may be null). */
   loadPropertyId: (organizationId: string, userId: string) => Promise<string | null>;
+  /** Configured default validity; falls back to 30 days when absent. */
+  loadDefaultDurationDays?: () => Promise<number>;
 }
 
 /**
  * Resident access codes (S4).
  *
  * Codes are persistent — no TTL, no attempt cap — but they carry a validity
- * window (30 days by default) that the resident can extend, and they can be
- * deactivated at any time. The full code is returned exactly once, at
- * generation; the API only ever exposes the prefix afterwards.
+ * window (configured by the estate office) that the resident can extend, and
+ * they can be deactivated at any time. The full code is returned exactly once,
+ * at generation; the API only ever exposes the prefix afterwards.
  */
 export class ResidentCodesService {
   constructor(private readonly options: ResidentCodesServiceOptions) {}
@@ -41,11 +44,15 @@ export class ResidentCodesService {
    * revoked ones as REVOKED) so the list stays truthful without mutating
    * rows on read.
    */
-  async list(organizationId: string, userId: string): Promise<{ codes: ResidentAccessCodeDto[] }> {
-    const records = await this.options.codes.listByUser(organizationId, userId);
+  async list(organizationId: string, userId: string): Promise<ResidentAccessCodesResponse> {
+    const [records, defaultDurationDays] = await Promise.all([
+      this.options.codes.listByUser(organizationId, userId),
+      this.defaultDurationDays(),
+    ]);
     const now = new Date();
     return {
       codes: records.map((record) => toDto(withDerivedStatus(record, now))),
+      defaultDurationDays,
     };
   }
 
@@ -59,7 +66,7 @@ export class ResidentCodesService {
     input: ResidentGenerateAccessCodeInput,
     requestId: string | null,
   ): Promise<ResidentGenerateAccessCodeResponse> {
-    const durationDays = resolveDurationDays(input.durationDays);
+    const durationDays = resolveDurationDays(input.durationDays, await this.defaultDurationDays());
     const validUntil = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
     const propertyId = await this.options.loadPropertyId(organizationId, userId);
 
@@ -110,7 +117,7 @@ export class ResidentCodesService {
       throw new AppError(409, 'CONFLICT', 'This access code has been deactivated');
     }
 
-    const days = resolveDurationDays(durationDays);
+    const days = resolveDurationDays(durationDays, await this.defaultDurationDays());
     const candidate = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const current = record.validUntil ? record.validUntil.getTime() : 0;
     const validUntil = new Date(Math.max(candidate.getTime(), current));
@@ -171,11 +178,19 @@ export class ResidentCodesService {
 
     return { ok: true, code: toDto(updated) };
   }
+
+  private async defaultDurationDays(): Promise<number> {
+    if (!this.options.loadDefaultDurationDays) return DEFAULT_CODE_DURATION_DAYS;
+    return this.options.loadDefaultDurationDays();
+  }
 }
 
-/** Clamp + validate the requested duration; default 30 days. */
-function resolveDurationDays(requested: number | undefined): number {
-  if (requested === undefined || requested === null) return DEFAULT_CODE_DURATION_DAYS;
+/** Clamp + validate the requested duration; default is configured by the estate. */
+function resolveDurationDays(
+  requested: number | undefined,
+  defaultDurationDays = DEFAULT_CODE_DURATION_DAYS,
+): number {
+  if (requested === undefined || requested === null) return defaultDurationDays;
   if (!Number.isInteger(requested)) {
     throw new AppError(400, 'VALIDATION_ERROR', 'Duration must be a whole number of days');
   }

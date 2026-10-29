@@ -13,6 +13,11 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('Account & password'), {}, false)).toBe(true);
   });
 
+  it('gates estate settings on the config manage permission', () => {
+    expect(isNavItemVisible(item('Estate settings'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('Estate settings'), { 'config.manage': true }, false)).toBe(true);
+  });
+
   it('gates estate and property links on their read permissions', () => {
     expect(isNavItemVisible(item('Estates'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Estates'), { 'estate.read': true }, false)).toBe(true);
@@ -64,6 +69,7 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/complaints')).toBe('Complaints');
     expect(sectionLabelForPath('/app/gate')).toBe('Gate access');
     expect(sectionLabelForPath('/app/activity')).toBe('Activity');
+    expect(sectionLabelForPath('/app/settings')).toBe('Settings');
     expect(sectionLabelForPath('/app/account')).toBe('Settings');
   });
 });

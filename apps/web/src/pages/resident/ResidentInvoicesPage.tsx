@@ -21,6 +21,7 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../../components/ui';
+import { PaymentDetailsPanel } from '../../components/PaymentDetails';
 
 /**
  * Resident finance page (S3).
@@ -121,6 +122,10 @@ export function ResidentInvoicesPage() {
       <PageHeading />
 
       {error && <ErrorBanner message={error} />}
+
+      {outstanding.length > 0 && view?.paymentDetails && (
+        <PaymentDetailsPanel details={view.paymentDetails} heading="How to pay" />
+      )}
 
       {/* Outstanding bills */}
       <Card>

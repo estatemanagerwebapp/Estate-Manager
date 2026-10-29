@@ -51,7 +51,7 @@ import type {
   ResidentFinanceView,
   ResidentCreatePaymentInput,
   ResidentCreatePaymentResponse,
-  ResidentAccessCodeDto,
+  ResidentAccessCodesResponse,
   ResidentGenerateAccessCodeInput,
   ResidentGenerateAccessCodeResponse,
   ResidentExtendAccessCodeResponse,
@@ -115,6 +115,8 @@ import type {
   ResidentNotificationsView,
   ResidentMarkNotificationReadResponse,
   ResidentDashboardView,
+  OrganizationSettingsView,
+  OrganizationSettingsUpdateInput,
 } from '@silverstone/shared';
 
 /**
@@ -706,7 +708,7 @@ export const api = {
     }),
 
   /** S4: the acting resident's access codes (prefix + validity, never the secret). */
-  getResidentCodes: () => request<{ codes: ResidentAccessCodeDto[] }>('/api/v1/resident/codes'),
+  getResidentCodes: () => request<ResidentAccessCodesResponse>('/api/v1/resident/codes'),
 
   /** S4: generate an access code. The full code is returned exactly once. */
   generateResidentAccessCode: (input: ResidentGenerateAccessCodeInput) =>
@@ -1039,6 +1041,15 @@ export const api = {
 
   /** S11: the dashboard home aggregate. */
   getResidentDashboard: () => request<ResidentDashboardView>('/api/v1/resident/dashboard'),
+
+  // --- Operational settings ------------------------------------------------
+  getSettings: () => request<OrganizationSettingsView>('/api/v1/settings'),
+
+  updateSettings: (input: OrganizationSettingsUpdateInput) =>
+    request<OrganizationSettingsView>('/api/v1/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
 
   downloadImportTemplate: async (estateId: string): Promise<Blob> => {
     const response = await fetch(

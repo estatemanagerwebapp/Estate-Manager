@@ -1,5 +1,6 @@
 import type { RoleKey, StaffRole } from './roles.js';
 import type { Permission } from './permissions.js';
+import type { BankTransferDetailsDto } from './settings-contract.js';
 
 /**
  * Phase 1 identity, authentication and user-management wire contracts.
@@ -206,6 +207,8 @@ export interface OnboardingGuestView {
   resident: ResidentOnboardingDto;
   /** The configured registration fee the resident will pay. */
   registrationFee: { amountKobo: number; currency: string };
+  /** Bank-transfer instructions, when the estate office has configured them. */
+  paymentDetails: BankTransferDetailsDto | null;
 }
 
 /** Autosave of resident-provided fields (idempotent, resumable). */

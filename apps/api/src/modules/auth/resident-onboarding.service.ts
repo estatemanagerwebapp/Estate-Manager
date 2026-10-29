@@ -23,9 +23,11 @@ import type {
   ResidentMutationResponse,
   ResidentOnboardingDto,
   UserListItemDto,
+  BankTransferDetailsDto,
 } from '@silverstone/shared';
 import type { AuthAuditContext } from './auth.service.js';
 import type { OrganizationConfig, Fee } from '@silverstone/config-schema';
+import { bankTransferDetailsFromConfig } from '../settings/settings.mapper.js';
 import { GENDERS, MARITAL_STATUSES, RESIDENT_ID_TYPES } from '@silverstone/shared';
 
 /**
@@ -48,6 +50,7 @@ import { GENDERS, MARITAL_STATUSES, RESIDENT_ID_TYPES } from '@silverstone/share
 export interface ResidentOnboardingConfigSnapshot {
   codeLength: number;
   fee: Fee;
+  paymentDetails: BankTransferDetailsDto | null;
 }
 
 export function residentOnboardingConfigFromConfig(
@@ -56,6 +59,7 @@ export function residentOnboardingConfigFromConfig(
   return {
     codeLength: config.onboarding?.residentCode?.length ?? 10,
     fee: config.fees?.registration ?? ({ amountKobo: 0 } as unknown as Fee),
+    paymentDetails: bankTransferDetailsFromConfig(config),
   };
 }
 
@@ -182,6 +186,7 @@ export class ResidentOnboardingService {
     return {
       resident: await this.toDto(record, property),
       registrationFee: { amountKobo: policy.fee.amountKobo, currency: 'NGN' },
+      paymentDetails: policy.paymentDetails,
     };
   }
 

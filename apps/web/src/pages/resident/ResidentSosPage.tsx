@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Siren, PhoneCall, ShieldCheck } from 'lucide-react';
-import type { SosEventDto } from '@silverstone/shared';
+import { Phone, PhoneCall, ShieldCheck, Siren } from 'lucide-react';
+import { SOS_CONTACT_CATEGORY_LABELS, type SosEventDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
@@ -61,6 +61,8 @@ export function ResidentSosPage() {
     }
   }
 
+  const contacts = data?.contacts ?? [];
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -76,6 +78,37 @@ export function ResidentSosPage() {
       <PageHeading />
 
       {error && <ErrorBanner message={error} onRetry={() => void refresh()} />}
+
+      {contacts.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Emergency contacts"
+            subtitle="Call the right line directly if you can."
+          />
+          <CardBody>
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {contacts.map((contact) => (
+                <li key={contact.id} className="rounded-md border border-slate-200/80 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)">
+                    {SOS_CONTACT_CATEGORY_LABELS[contact.category]}
+                  </p>
+                  <p className="text-sm font-medium text-(--color-ink)">{contact.label}</p>
+                  <a
+                    href={`tel:${contact.phone.replace(/[^+\d]/g, '')}`}
+                    className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-(--color-primary) hover:underline"
+                  >
+                    <Phone aria-hidden size={13} />
+                    {contact.phone}
+                  </a>
+                  {contact.notes && (
+                    <p className="mt-1 text-xs text-(--color-ink-muted)">{contact.notes}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardHeader

@@ -5,6 +5,7 @@ import type {
   ResidentCreateSosInput,
   ResidentCreateSosResponse,
   ResidentSosEventsResponse,
+  SosContactDto,
   SosEventDto,
 } from '@silverstone/shared';
 
@@ -20,6 +21,8 @@ export interface ResidentSosServiceOptions {
    * an id in the request.
    */
   loadPropertyId: (organizationId: string, userId: string) => Promise<string | null>;
+  /** Active predefined emergency contacts, when configured. */
+  contacts?: () => Promise<SosContactDto[]>;
 }
 
 /**
@@ -33,8 +36,11 @@ export class ResidentSosService {
 
   /** The resident's own SOS history, most recent first. */
   async list(organizationId: string, userId: string): Promise<ResidentSosEventsResponse> {
-    const records = await this.options.sos.listByUser(organizationId, userId);
-    return { events: records.map(toDto) };
+    const [records, contacts] = await Promise.all([
+      this.options.sos.listByUser(organizationId, userId),
+      this.options.contacts ? this.options.contacts() : Promise.resolve([]),
+    ]);
+    return { events: records.map(toDto), contacts };
   }
 
   /** Raise an SOS event for the acting resident. */

@@ -19,6 +19,7 @@ import {
 } from '@silverstone/shared';
 import { api, ApiRequestError } from '../api/client';
 import { Button, inputClass, selectClass } from '../components/ui';
+import { PaymentDetailsPanel } from '../components/PaymentDetails';
 import { Modal } from '../components/dialog';
 
 /**
@@ -635,6 +636,12 @@ export function OnboardPage() {
           </p>
         </div>
       </div>
+
+      {!paid && view!.paymentDetails && (
+        <div className="mt-4">
+          <PaymentDetailsPanel details={view!.paymentDetails} />
+        </div>
+      )}
 
       {!paid && (
         <div className="mt-4 rounded-md border border-slate-200 p-4">

@@ -7,6 +7,7 @@ import type {
 } from './finance-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
+  BankTransferDetailsDto,
   ResidentFinanceView,
   ResidentInvoiceDto,
   ResidentPaymentDto,
@@ -24,6 +25,8 @@ export interface ResidentFinanceServiceOptions {
   audit: PrismaAuditRepository;
   /** The configured registration fee (amount + currency). 0 = free onboarding. */
   registrationFee: () => Promise<RegistrationFee>;
+  /** Bank-transfer instructions, when the estate office has configured them. */
+  paymentDetails?: () => Promise<BankTransferDetailsDto | null>;
 }
 
 /**
@@ -46,11 +49,12 @@ export class ResidentFinanceService {
    * invoices, paid invoices, payment history and the transaction ledger.
    */
   async view(organizationId: string, userId: string): Promise<ResidentFinanceView> {
-    const [outstanding, paid, payments, transactions] = await Promise.all([
+    const [outstanding, paid, payments, transactions, paymentDetails] = await Promise.all([
       this.options.finance.listInvoicesByStatus(organizationId, userId, 'UNPAID'),
       this.options.finance.listInvoicesByStatus(organizationId, userId, 'PAID'),
       this.options.finance.listPayments(organizationId, userId),
       this.options.finance.listTransactions(organizationId, userId),
+      this.options.paymentDetails ? this.options.paymentDetails() : Promise.resolve(null),
     ]);
 
     return {
@@ -58,6 +62,7 @@ export class ResidentFinanceService {
       paid: paid.map(toInvoiceDto),
       payments: payments.map(toPaymentDto),
       transactions: transactions.map(toTransactionDto),
+      paymentDetails,
     };
   }
 

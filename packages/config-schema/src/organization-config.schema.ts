@@ -1,4 +1,4 @@
-import { MODULE_KEYS, PERMISSIONS, ROLE_KEYS } from '@silverstone/shared';
+import { MODULE_KEYS, PERMISSIONS, ROLE_KEYS, SOS_CONTACT_CATEGORIES } from '@silverstone/shared';
 import { z } from 'zod';
 
 /**
@@ -270,6 +270,38 @@ export const OnboardingFields = z.object({
 
 export const OnboardingSchema = defaulted(OnboardingFields);
 
+/** Bounds for a resident-issued gate access code. */
+export const ACCESS_CODE_DURATION_MIN_DAYS = 1;
+export const ACCESS_CODE_DURATION_MAX_DAYS = 365;
+export const DEFAULT_ACCESS_CODE_DURATION_DAYS = 30;
+
+export const AccessCodesFields = z.object({
+  /** Default validity when a resident generates a code without a duration. */
+  defaultDurationDays: z
+    .number()
+    .int('Duration must be a whole number of days')
+    .min(ACCESS_CODE_DURATION_MIN_DAYS)
+    .max(ACCESS_CODE_DURATION_MAX_DAYS)
+    .default(DEFAULT_ACCESS_CODE_DURATION_DAYS),
+});
+
+export const AccessCodesSchema = defaulted(AccessCodesFields);
+
+export const BankTransferDetailsFields = z.object({
+  bankName: z.string().trim().max(120).nullable().default(null),
+  accountName: z.string().trim().max(120).nullable().default(null),
+  accountNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{10,20}$/, 'Account number must be 10–20 digits')
+    .nullable()
+    .default(null),
+  sortCode: z.string().trim().max(20).nullable().default(null),
+  instructions: z.string().trim().max(500).nullable().default(null),
+});
+
+export const BankTransferDetailsSchema = defaulted(BankTransferDetailsFields);
+
 export const PaymentsFields = z.object({
   provider: z.enum(PAYMENT_PROVIDERS).default('NONE'),
   environment: z.enum(PAYMENT_ENVIRONMENTS).default('TEST'),
@@ -278,9 +310,33 @@ export const PaymentsFields = z.object({
    * Encoded as a literal so a client can never request its own price.
    */
   serverControlledAmounts: z.literal(true).default(true),
+  /** Instructions shown to residents who pay by bank transfer. */
+  bankTransfer: BankTransferDetailsSchema,
 });
 
 export const PaymentsSchema = defaulted(PaymentsFields);
+
+export const SosContactSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  label: z.string().trim().min(1, 'Contact label is required').max(80),
+  phone: z
+    .string()
+    .trim()
+    .min(3, 'Phone number is required')
+    .max(32)
+    .regex(/^[+0-9()\-\s]+$/, 'Phone number contains invalid characters'),
+  category: z.enum(SOS_CONTACT_CATEGORIES).default('OTHER'),
+  notes: z.string().trim().max(200).nullable().default(null),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(100).default(0),
+});
+
+export const SosFields = z.object({
+  /** Predefined emergency numbers shown on the SOS surfaces. */
+  contacts: z.array(SosContactSchema).max(12, 'At most 12 emergency contacts').default([]),
+});
+
+export const SosSchema = defaulted(SosFields);
 
 // --- Roles and custom fields -------------------------------------------------
 
@@ -430,7 +486,9 @@ export const OrganizationConfigSchema = z
     modules: ModulesSchema,
     fees: FeesSchema,
     onboarding: OnboardingSchema,
+    accessCodes: AccessCodesSchema,
     payments: PaymentsSchema,
+    sos: SosSchema,
     roles: RolesSchema,
     customFields: z.array(CustomFieldSchema).default([]),
   })
@@ -588,6 +646,40 @@ export const OrganizationConfigSchema = z
       }
     }
 
+    const contactIds = new Set<string>();
+    for (const [index, contact] of (
+      (config.sos?.contacts ?? []) as z.output<typeof SosContactSchema>[]
+    ).entries()) {
+      if (contactIds.has(contact.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sos', 'contacts', index, 'id'],
+          message: `Duplicate emergency contact id "${contact.id}"`,
+        });
+      }
+      contactIds.add(contact.id);
+    }
+
+    // Bank-transfer details are all-or-nothing: a half-configured account
+    // would show a resident an unusable payment instruction.
+    const bankTransfer = config.payments.bankTransfer;
+    const bankFields = [
+      ['bankName', bankTransfer.bankName],
+      ['accountName', bankTransfer.accountName],
+      ['accountNumber', bankTransfer.accountNumber],
+    ] as const;
+    if (bankFields.some(([, value]) => typeof value === 'string' && value.trim().length > 0)) {
+      for (const [field, value] of bankFields) {
+        if (typeof value !== 'string' || value.trim().length === 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['payments', 'bankTransfer', field],
+            message: 'Bank name, account name and account number are required together',
+          });
+        }
+      }
+    }
+
     const grantedRoles = new Set<string>();
     for (const [index, grant] of (
       (config.roles?.grants ?? []) as z.output<typeof RoleGrantSchema>[]
@@ -625,7 +717,11 @@ export type Fee = z.output<typeof FeeSchema>;
 export type FeesConfig = z.output<typeof FeesSchema>;
 export type ModulesConfig = z.output<typeof ModulesSchema>;
 export type OnboardingConfig = z.output<typeof OnboardingSchema>;
+export type AccessCodesConfig = z.output<typeof AccessCodesSchema>;
+export type BankTransferDetails = z.output<typeof BankTransferDetailsSchema>;
 export type PaymentsConfig = z.output<typeof PaymentsSchema>;
+export type SosContact = z.output<typeof SosContactSchema>;
+export type SosConfig = z.output<typeof SosSchema>;
 export type RolesConfig = z.output<typeof RolesSchema>;
 export type AssetModel = z.output<typeof AssetModelSchema>;
 export type PropertyOptions = z.output<typeof PropertyOptionsSchema>;

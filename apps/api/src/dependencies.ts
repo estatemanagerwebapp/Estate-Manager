@@ -15,6 +15,11 @@ import {
   PrismaOrganizationConfigRepository,
   OrganizationConfigService,
 } from './modules/organization/config.service.js';
+import { OrganizationSettingsService } from './modules/settings/settings.service.js';
+import {
+  activeSosContactsFromConfig,
+  bankTransferDetailsFromConfig,
+} from './modules/settings/settings.mapper.js';
 import { createEmailAdapter } from './modules/auth/email-adapter-factory.js';
 import { PrismaUserRepository } from './modules/auth/user-repository.js';
 import { PrismaSessionRepository } from './modules/auth/session-repository.js';
@@ -131,6 +136,8 @@ export interface AppDependencies {
   bookingPaymentService: BookingPaymentService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
+  /** Phase 8 — curated operational settings. */
+  settingsService: OrganizationSettingsService;
   /** Phase 2 — local media storage (ID document uploads). */
   mediaStorage: MediaStorage;
   loadPropertyDetail: (
@@ -160,6 +167,12 @@ export async function createAppDependencies(): Promise<AppDependencies> {
   const audit = new PrismaAuditRepository(prisma);
 
   const permissions = new PermissionResolver(() => loadOrganizationGrants(configService));
+  const settingsService = new OrganizationSettingsService(configService, audit);
+
+  const loadBankTransferDetails = async () =>
+    bankTransferDetailsFromConfig((await configService.resolve()).config);
+  const loadSosContacts = async () =>
+    activeSosContactsFromConfig((await configService.resolve()).config);
 
   const email = createEmailAdapter(env);
 
@@ -247,6 +260,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       const config = (await configService.resolve()).config;
       return config.fees?.registration ?? { amountKobo: 0, currency: 'NGN' };
     },
+    paymentDetails: loadBankTransferDetails,
   });
   const operatorBillingService = new OperatorBillingService({ finance: financeRepo, audit });
   const gateRepo = new PrismaGateRepository(prisma);
@@ -262,6 +276,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       const draft = await residentDrafts.findByUser(userId);
       return draft?.propertyId ?? null;
     },
+    loadDefaultDurationDays: async () =>
+      (await configService.resolve()).config.accessCodes.defaultDurationDays,
   });
 
   const complaintRepo = new PrismaComplaintRepository(prisma);
@@ -358,8 +374,13 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       const draft = await residentDrafts.findByUser(userId);
       return draft?.propertyId ?? null;
     },
+    contacts: loadSosContacts,
   });
-  const operatorSosService = new OperatorSosService({ sos: sosRepo, audit });
+  const operatorSosService = new OperatorSosService({
+    sos: sosRepo,
+    audit,
+    contacts: loadSosContacts,
+  });
 
   const residentOnboardingService = new ResidentOnboardingService(
     users,
@@ -415,6 +436,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     operatorBookingsService,
     bookingPaymentService,
     residentNotificationsService,
+    settingsService,
     mediaStorage,
     loadPropertyDetail,
     loadConfigVersion,

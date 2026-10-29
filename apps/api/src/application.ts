@@ -60,6 +60,10 @@ import {
   type OperatorFacilityRouteOptions,
 } from './modules/facilities/facilities.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
+import {
+  createSettingsRouter,
+  type SettingsRouteOptions,
+} from './modules/settings/settings.routes.js';
 
 export interface AppOptions {
   /**
@@ -103,6 +107,8 @@ export interface AppOptions {
   facilities?: OperatorFacilityRouteOptions;
   /** Phase 7 operator booking queue and lifecycle (`/bookings/*`). */
   bookings?: OperatorBookingRouteOptions;
+  /** Phase 8 curated operational settings (`/settings`). */
+  settings?: SettingsRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -157,6 +163,7 @@ export function createApp(options: AppOptions = {}): Express {
     gate: options.gate,
     facilities: options.facilities,
     bookings: options.bookings,
+    settings: options.settings,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -188,6 +195,7 @@ function createVersionedRoutes(options: {
   gate?: OperatorGateRouteOptions;
   facilities?: OperatorFacilityRouteOptions;
   bookings?: OperatorBookingRouteOptions;
+  settings?: SettingsRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
   const {
@@ -208,6 +216,7 @@ function createVersionedRoutes(options: {
     gate,
     facilities,
     bookings,
+    settings,
   } = options;
 
   router.use(
@@ -301,6 +310,11 @@ function createVersionedRoutes(options: {
   if (bookings) {
     // Phase 7: booking queue, lifecycle and manual payment verification.
     router.use('/bookings', createOperatorBookingRouter(bookings));
+  }
+
+  if (settings) {
+    // Phase 8: curated operational settings (fees, codes, payments, SOS).
+    router.use('/settings', createSettingsRouter(settings));
   }
 
   return router;

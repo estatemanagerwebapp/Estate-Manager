@@ -140,10 +140,23 @@
     "maxDependants": 5,
     "createAccountOnlyAfterVerifiedPayment": true
   },
+  "accessCodes": {
+    "defaultDurationDays": 30
+  },
   "payments": {
     "provider": "NONE",
     "environment": "TEST",
-    "serverControlledAmounts": true
+    "serverControlledAmounts": true,
+    "bankTransfer": {
+      "bankName": null,
+      "accountName": null,
+      "accountNumber": null,
+      "sortCode": null,
+      "instructions": null
+    }
+  },
+  "sos": {
+    "contacts": []
   },
   "roles": {
     "grants": []

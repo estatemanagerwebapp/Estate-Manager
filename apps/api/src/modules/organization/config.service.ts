@@ -69,6 +69,8 @@ export class PrismaOrganizationConfigRepository {
     organizationSlug: string;
     config: OrganizationConfig;
     createdBy?: string;
+    /** Optimistic-concurrency guard for settings writes. */
+    expectedVersion?: number;
   }): Promise<StoredConfigRecord> {
     const payload: StoredConfigPayload = toStoredPayload(input.config);
 
@@ -85,6 +87,15 @@ export class PrismaOrganizationConfigRepository {
         select: { version: true },
       });
 
+      const currentVersion = latest?.version ?? 0;
+      if (input.expectedVersion !== undefined && input.expectedVersion !== currentVersion) {
+        throw new AppError(
+          409,
+          'CONFLICT',
+          'Settings changed since they were loaded. Refresh and try again.',
+        );
+      }
+
       await tx.organizationConfig.updateMany({
         where: { organizationId: organization.id, status: 'ACTIVE' },
         data: { status: 'ARCHIVED' },
@@ -93,7 +104,7 @@ export class PrismaOrganizationConfigRepository {
       return tx.organizationConfig.create({
         data: {
           organizationId: organization.id,
-          version: (latest?.version ?? 0) + 1,
+          version: currentVersion + 1,
           status: 'ACTIVE',
           schemaVersion: payload.schemaVersion,
           payload: payload as unknown as Prisma.InputJsonValue,
@@ -223,6 +234,25 @@ export class OrganizationConfigService {
       organizationSlug: this.organizationSlug,
       config: bootstrap,
       createdBy,
+    });
+    this.invalidate();
+    return created;
+  }
+
+  /**
+   * Writes the next versioned configuration document. `config` must already be
+   * validated by the config-schema package; the repository only serialises it.
+   */
+  async save(
+    config: OrganizationConfig,
+    createdBy?: string,
+    options: { expectedVersion?: number } = {},
+  ): Promise<StoredConfigRecord> {
+    const created = await this.repository.createRecord({
+      organizationSlug: this.organizationSlug,
+      config,
+      createdBy,
+      expectedVersion: options.expectedVersion,
     });
     this.invalidate();
     return created;

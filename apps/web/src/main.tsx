@@ -16,6 +16,7 @@ import { OverviewPage } from './pages/OverviewPage';
 import { ActivityPage } from './pages/activity/ActivityPage';
 import { AccountPage } from './pages/AccountPage';
 import { AdministratorsPage } from './pages/AdministratorsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { ResidentsPage } from './pages/ResidentsPage';
 import { SosAlertsPage } from './pages/SosAlertsPage';
 import { MessagesPage } from './pages/MessagesPage';
@@ -180,6 +181,14 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="complaint.read">
                       <ComplaintsPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/settings"
+                  element={
+                    <RequirePermission permission="config.manage">
+                      <SettingsPage />
                     </RequirePermission>
                   }
                 />

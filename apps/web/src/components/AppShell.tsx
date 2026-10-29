@@ -70,17 +70,19 @@ export function AppShell() {
               {SETTINGS_SECTION_LABEL}
             </p>
             <div role="group" aria-labelledby="nav-settings" className="flex flex-col gap-1">
-              {SETTINGS_NAV.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink key={item.to} to={item.to} className={navClasses}>
-                    <span className="text-(--color-primary)">
-                      <Icon aria-hidden size={16} />
-                    </span>
-                    {item.label}
-                  </NavLink>
-                );
-              })}
+              {SETTINGS_NAV.filter((item) => isNavItemVisible(item, can, userCanManage)).map(
+                (item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink key={item.to} to={item.to} className={navClasses}>
+                      <span className="text-(--color-primary)">
+                        <Icon aria-hidden size={16} />
+                      </span>
+                      {item.label}
+                    </NavLink>
+                  );
+                },
+              )}
             </div>
           </div>
         </nav>

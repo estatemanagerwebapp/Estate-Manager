@@ -9,6 +9,8 @@
  * here are the wire shapes only.
  */
 
+import type { BankTransferDetailsDto, SosContactDto } from './settings-contract.js';
+
 // --- Profile (S1) -------------------------------------------------------------
 
 export interface ResidentProfileDto {
@@ -115,6 +117,8 @@ export interface ResidentFinanceView {
   paid: ResidentInvoiceDto[];
   payments: ResidentPaymentDto[];
   transactions: ResidentTransactionDto[];
+  /** Bank-transfer instructions, when the estate office has configured them. */
+  paymentDetails: BankTransferDetailsDto | null;
 }
 
 export interface ResidentCreatePaymentInput {
@@ -147,9 +151,15 @@ export interface ResidentAccessCodeDto {
   revokedAt: string | null;
 }
 
+export interface ResidentAccessCodesResponse {
+  codes: ResidentAccessCodeDto[];
+  /** The estate's configured default validity for a newly generated code. */
+  defaultDurationDays: number;
+}
+
 export interface ResidentGenerateAccessCodeInput {
   kind: AccessCodeKind;
-  /** Validity window in days; defaults to 30 when omitted. */
+  /** Validity window in days; defaults to the estate setting when omitted. */
   durationDays?: number;
 }
 
@@ -706,6 +716,8 @@ export interface SosEventDto {
 
 export interface ResidentSosEventsResponse {
   events: SosEventDto[];
+  /** Active predefined emergency contacts configured by the estate office. */
+  contacts: SosContactDto[];
 }
 
 export interface ResidentCreateSosInput {
@@ -758,6 +770,8 @@ export interface SosOperatorEventDto {
 
 export interface OperatorSosEventsResponse {
   events: SosOperatorEventDto[];
+  /** Active predefined emergency contacts configured by the estate office. */
+  contacts: SosContactDto[];
 }
 
 export interface OperatorResolveSosInput {

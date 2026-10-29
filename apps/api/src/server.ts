@@ -181,6 +181,12 @@ async function buildApp(): Promise<HttpHandler> {
       bookings: deps.operatorBookingsService,
       payment: deps.bookingPaymentService,
     },
+    settings: {
+      settingsService: deps.settingsService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+    },
   });
 
   return app as unknown as HttpHandler;

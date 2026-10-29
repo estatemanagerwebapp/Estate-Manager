@@ -98,4 +98,7 @@ export const queryKeys = {
     all: ['administrators'] as const,
     list: (filter: UserFilter = {}) => ['administrators', filter] as const,
   },
+  settings: {
+    all: ['settings'] as const,
+  },
 };

@@ -11,6 +11,7 @@ import {
   ScanLine,
   ShieldCheck,
   Siren,
+  SlidersHorizontal,
   UserRound,
   Wallet,
 } from 'lucide-react';
@@ -122,6 +123,12 @@ export const SETTINGS_SECTION_LABEL = 'Settings';
 
 export const SETTINGS_NAV: readonly NavItem[] = [
   {
+    to: '/app/settings',
+    label: 'Estate settings',
+    icon: SlidersHorizontal,
+    permission: 'config.manage',
+  },
+  {
     to: '/app/account',
     label: 'Account & password',
     icon: KeyRound,
@@ -153,6 +160,7 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/complaints')) return 'Complaints';
   if (pathname.startsWith('/app/gate')) return 'Gate access';
   if (pathname.startsWith('/app/activity')) return 'Activity';
+  if (pathname.startsWith('/app/settings')) return 'Settings';
   if (pathname.startsWith('/app/account')) return 'Settings';
   return 'Overview';
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound, Copy, Check, Plus, TimerReset, Ban } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ResidentAccessCodeDto, AccessCodeKind } from '@silverstone/shared';
@@ -37,7 +37,7 @@ export function ResidentCodesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [kind, setKind] = useState<AccessCodeKind>('ENTRY');
-  const [durationDays, setDurationDays] = useState('30');
+  const [durationDays, setDurationDays] = useState('');
   const [generating, setGenerating] = useState(false);
 
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
@@ -57,6 +57,12 @@ export function ResidentCodesPage() {
   );
   const codes = data?.codes ?? [];
   const error = actionError ?? queryError;
+
+  // Reflect the estate's configured default without overwriting an edit.
+  useEffect(() => {
+    if (!data) return;
+    setDurationDays((current) => (current === '' ? String(data.defaultDurationDays) : current));
+  }, [data]);
 
   async function generate() {
     setGenerating(true);
