@@ -23,6 +23,7 @@ export const PERMISSIONS = [
   'maintenance.read',
   'audit.read',
   'user.manage',
+  'import.manage',
   'portal.access.self',
   // Resident dashboard capabilities (additive; granted to RESIDENT by default).
   'profile.view',

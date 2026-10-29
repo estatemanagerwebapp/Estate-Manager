@@ -72,6 +72,8 @@ import { PrismaHouseTypeRepository } from './modules/properties/house-type-repos
 import { PropertyService } from './modules/properties/property.service.js';
 import { PrismaImportRepository } from './modules/imports/import-repository.js';
 import { ImportService } from './modules/imports/import.service.js';
+import { PrismaOrgImportRepository } from './modules/org-imports/org-import.repository.js';
+import { OrgImportService } from './modules/org-imports/org-import.service.js';
 import type { ModuleFlags } from '@silverstone/shared';
 
 export interface AppDependencies {
@@ -109,6 +111,8 @@ export interface AppDependencies {
   propertyService: PropertyService;
   /** Phase 2 — bulk import. */
   importService: ImportService;
+  /** Organization-level multi-sheet data import. */
+  orgImportService: OrgImportService;
   /** Phase 2 — resident onboarding (persistent code, payment-gated). */
   residentOnboardingService: ResidentOnboardingService;
   /** Phase 3 (S3) — resident finance (invoices, payments, transactions). */
@@ -214,6 +218,19 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     audit,
     prisma,
   );
+
+  const orgImportRepo = new PrismaOrgImportRepository(prisma);
+  const orgImportService = new OrgImportService({
+    prisma,
+    imports: orgImportRepo,
+    properties,
+    houseTypes,
+    audit,
+    loadResidentCodeLength: async () => {
+      const onboarding = (await configService.resolve()).config.onboarding;
+      return onboarding?.residentCode?.length ?? 10;
+    },
+  });
 
   const loadConfigVersion = async (): Promise<number> => {
     const resolved = await configService.resolve();
@@ -446,6 +463,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     estateService,
     propertyService,
     importService,
+    orgImportService,
     residentOnboardingService,
     residentFinanceService,
     residentCodesService,

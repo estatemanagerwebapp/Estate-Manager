@@ -23,6 +23,7 @@ import { MessagesPage } from './pages/MessagesPage';
 import { ComplaintsPage } from './pages/ComplaintsPage';
 import { BillingPage } from './pages/BillingPage';
 import { FacilitiesPage } from './pages/FacilitiesPage';
+import { OrgImportsPage } from './pages/imports/OrgImportsPage';
 import { BookingsPage } from './pages/BookingsPage';
 import { GatePage } from './pages/GatePage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
@@ -234,6 +235,14 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="property.read">
                       <PropertyDetailPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/imports"
+                  element={
+                    <RequirePermission permission="import.manage">
+                      <OrgImportsPage />
                     </RequirePermission>
                   }
                 />

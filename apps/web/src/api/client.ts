@@ -32,6 +32,10 @@ import type {
   ImportCommitResponse,
   ImportBatchDto,
   ImportRowDto,
+  OrgImportPreviewResponse,
+  OrgImportCommitResponse,
+  OrgImportDetailResponse,
+  OrgImportListResponse,
   EstateDto,
   PropertyDto,
   ResidentOnboardingDto,
@@ -737,10 +741,45 @@ export const api = {
       body: JSON.stringify({ confirmLegacySampleRows }),
     }),
 
-  /**
-   * Download the server-generated .xlsx template for an estate.
-   * Returns a `Blob` the caller can wrap in `URL.createObjectURL`.
-   */
+  // --- Organization-level data import ---------------------------------------
+  /** Upload the multi-sheet organization workbook and create a preview batch. */
+  uploadOrgImport: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<OrgImportPreviewResponse>('/api/v1/org-imports', {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  /** List recent organization import batches (most recent first). */
+  listOrgImportBatches: () => request<OrgImportListResponse>('/api/v1/org-imports'),
+
+  /** Batch detail with persisted row results. */
+  getOrgImportBatch: (batchId: string) =>
+    request<OrgImportDetailResponse>(`/api/v1/org-imports/${encodeURIComponent(batchId)}`),
+
+  /** Commit a PREVIEWED organization import batch. */
+  commitOrgImport: (batchId: string) =>
+    request<OrgImportCommitResponse>(`/api/v1/org-imports/${encodeURIComponent(batchId)}/commit`, {
+      method: 'POST',
+    }),
+
+  /** Download the generated multi-sheet organization workbook template. */
+  downloadOrgImportTemplate: async (): Promise<Blob> => {
+    const response = await fetch('/api/v1/org-imports/template', {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new ApiRequestError(
+        'INTERNAL_ERROR',
+        `Template download failed with status ${response.status}`,
+        { status: response.status },
+      );
+    }
+    return response.blob();
+  },
+
   // --- Phase 3: resident dashboard -------------------------------------------------
   /** The acting resident's own profile (user + onboarding + assigned property). */
   getResidentProfile: () => request<ResidentProfileView>('/api/v1/resident/profile'),

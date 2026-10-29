@@ -33,25 +33,26 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  configs             OrganizationConfig[]
-  users               User[]
-  estates             Estate[]
-  residentOnboardings ResidentOnboarding[]
-  mediaFiles          MediaFile[]
-  invoices            Invoice[]
-  payments            Payment[]
-  transactions        Transaction[]
-  accessCodes         AccessCode[]
-  accessVerifications AccessVerification[]
-  complaints          Complaint[]
-  messageThreads      MessageThread[]
-  announcements       Announcement[]
-  estateBroadcasts    EstateBroadcast[]
-  facilities          Facility[]
-  bookings            Booking[]
-  facilityWatches     FacilityAvailabilityWatch[]
-  sosEvents           SosEvent[]
-  notifications       Notification[]
+  configs                   OrganizationConfig[]
+  users                     User[]
+  estates                   Estate[]
+  residentOnboardings       ResidentOnboarding[]
+  mediaFiles                MediaFile[]
+  invoices                  Invoice[]
+  payments                  Payment[]
+  transactions              Transaction[]
+  accessCodes               AccessCode[]
+  accessVerifications       AccessVerification[]
+  complaints                Complaint[]
+  messageThreads            MessageThread[]
+  announcements             Announcement[]
+  estateBroadcasts          EstateBroadcast[]
+  facilities                Facility[]
+  bookings                  Booking[]
+  facilityWatches           FacilityAvailabilityWatch[]
+  sosEvents                 SosEvent[]
+  notifications             Notification[]
+  organizationImportBatches OrganizationImportBatch[]
 
   @@map("organizations")
 }
@@ -104,21 +105,21 @@ model User {
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization            Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   sessions                Session[]
   resetTokens             PasswordResetToken[]
   auditEvents             AuditEvent[]
   mediaFiles              MediaFile[]
   residentOnboarding      ResidentOnboarding?
   invoices                Invoice[]
-  invoicesCreated         Invoice[]            @relation("InvoiceCreatedBy")
-  invoicesVoided          Invoice[]            @relation("InvoiceVoidedBy")
+  invoicesCreated         Invoice[]                   @relation("InvoiceCreatedBy")
+  invoicesVoided          Invoice[]                   @relation("InvoiceVoidedBy")
   payments                Payment[]
-  paymentsRecorded        Payment[]            @relation("PaymentRecordedBy")
+  paymentsRecorded        Payment[]                   @relation("PaymentRecordedBy")
   transactions            Transaction[]
   accessCodes             AccessCode[]
-  verificationsAsResident AccessVerification[] @relation("VerificationResident")
-  verificationsPerformed  AccessVerification[] @relation("VerificationActor")
+  verificationsAsResident AccessVerification[]        @relation("VerificationResident")
+  verificationsPerformed  AccessVerification[]        @relation("VerificationActor")
   complaints              Complaint[]
   complaintReplies        ComplaintReply[]
   messageThreads          MessageThread[]
@@ -127,8 +128,8 @@ model User {
   bookings                Booking[]
   facilityWatches         FacilityAvailabilityWatch[]
   sosEvents               SosEvent[]
-  sosAcknowledgements     SosEvent[]           @relation("SosAcknowledgedBy")
-  sosResolutions          SosEvent[]           @relation("SosResolvedBy")
+  sosAcknowledgements     SosEvent[]                  @relation("SosAcknowledgedBy")
+  sosResolutions          SosEvent[]                  @relation("SosResolvedBy")
   notifications           Notification[]
 
   @@unique([organizationId, email])
@@ -542,8 +543,8 @@ model Facility {
   archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  estate       Estate                     @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  estate       Estate                      @relation(fields: [estateId], references: [id], onDelete: Cascade)
   bookings     Booking[]
   watches      FacilityAvailabilityWatch[]
 
@@ -923,6 +924,56 @@ model ImportRow {
   @@unique([batchId, rowNumber])
   @@index([batchId, status])
   @@map("import_rows")
+}
+
+/// Organization-level, multi-sheet import batch. Unlike `ImportBatch` this is
+/// not tied to one estate: one workbook may create estates, properties,
+/// facilities, resident onboarding drafts and invoices. Create-only and
+/// preview-first like the estate importer.
+model OrganizationImportBatch {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  filename       String    @db.VarChar(255)
+  /// SHA-256 hex fingerprint of the raw workbook bytes. Idempotency key per org.
+  fingerprint    String    @db.VarChar(64)
+  /// PREVIEWED | COMMITTED | COMMIT_FAILED | FAILED
+  status         String    @default("PREVIEWED") @db.VarChar(20)
+  /// Whole-batch counters plus a per-sheet breakdown.
+  counts         Json      @default("{}")
+  uploadedById   String    @map("uploaded_by_id") @db.Uuid
+  uploadedAt     DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  committedAt    DateTime? @map("committed_at") @db.Timestamptz(6)
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rows         OrganizationImportRow[]
+
+  @@unique([organizationId, fingerprint])
+  @@index([organizationId, uploadedAt(sort: Desc)])
+  @@map("organization_import_batches")
+}
+
+/// One row from one worksheet of an organization import workbook.
+model OrganizationImportRow {
+  id         String  @id @default(uuid()) @db.Uuid
+  batchId    String  @map("batch_id") @db.Uuid
+  /// Estates | Properties | Facilities | Residents | Billing
+  sheet      String  @db.VarChar(24)
+  rowNumber  Int     @map("row_number")
+  /// VALID | ERROR | DUPLICATE_IN_FILE | COLLISION | CREATED
+  status     String  @default("VALID") @db.VarChar(24)
+  errors     Json    @default("[]")
+  /// Normalized row payload used by the commit path; never exposed raw.
+  data       Json    @default("{}")
+  /// Short human-readable reference shown to the operator.
+  reference  String  @db.VarChar(255)
+  entityType String? @map("entity_type") @db.VarChar(24)
+  entityId   String? @map("entity_id") @db.Uuid
+
+  batch OrganizationImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, sheet, rowNumber])
+  @@index([batchId, sheet, status])
+  @@map("organization_import_rows")
 }
 
 /// Outcome of an audited action. Values are `success` / `failure` to match

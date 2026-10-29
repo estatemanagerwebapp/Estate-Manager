@@ -26,6 +26,8 @@ export type CreatePropertyInput = {
   plotName: string | null;
   /** Human-facing property name; null when not supplied (import path). */
   name: string | null;
+  /** Defaults to ACTIVE; org imports may create archived records. */
+  status?: string;
 };
 
 export type UpdatePropertyInput = {
@@ -152,7 +154,7 @@ export class PrismaPropertyRepository {
         ${input.plotNumber},
         ${input.plotName},
         ${input.name},
-        'ACTIVE',
+        ${input.status ?? 'ACTIVE'},
         now(),
         now()
       )

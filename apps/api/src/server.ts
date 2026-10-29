@@ -98,6 +98,12 @@ async function buildApp(): Promise<HttpHandler> {
       organizationId: deps.organizationId,
       loadConfigVersion: deps.loadConfigVersion,
     },
+    orgImports: {
+      orgImportService: deps.orgImportService,
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+    },
     onboarding: {
       residentOnboarding: deps.residentOnboardingService,
       sessions: deps.auth.sessions,

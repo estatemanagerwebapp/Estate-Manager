@@ -92,6 +92,14 @@ describe('permissions', () => {
     expect(hasPermission('ESTATE_ADMIN', 'config.manage')).toBe(false);
   });
 
+  it('gates organization data import to administrators', () => {
+    expect(hasPermission('SUPER_ADMIN', 'import.manage')).toBe(true);
+    expect(hasPermission('ESTATE_ADMIN', 'import.manage')).toBe(true);
+    expect(hasPermission('AUDITOR', 'import.manage')).toBe(false);
+    expect(hasPermission('GUARD', 'import.manage')).toBe(false);
+    expect(hasPermission('RESIDENT', 'import.manage')).toBe(false);
+  });
+
   it('keeps operator capabilities out of the resident role', () => {
     expect(hasPermission('RESIDENT', 'complaint.read')).toBe(false);
     expect(hasPermission('RESIDENT', 'message.manage')).toBe(false);

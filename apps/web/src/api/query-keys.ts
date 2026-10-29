@@ -49,6 +49,10 @@ export const queryKeys = {
     all: ['activity'] as const,
     list: (filter: AuditEventFilter = {}) => ['activity', filter] as const,
   },
+  orgImports: {
+    all: ['org-imports'] as const,
+    detail: (batchId: string) => ['org-import', batchId] as const,
+  },
   // Operator modules added in later phases. Keeping the names here makes the
   // invalidation convention visible before the screens exist.
   messages: {

@@ -32,6 +32,11 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('Administrators'), {}, true)).toBe(true);
   });
 
+  it('gates data import on import.manage', () => {
+    expect(isNavItemVisible(item('Data import'), {}, false)).toBe(false);
+    expect(isNavItemVisible(item('Data import'), { 'import.manage': true }, false)).toBe(true);
+  });
+
   it('gates SOS alerts on the SOS read permission', () => {
     expect(isNavItemVisible(item('SOS alerts'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('SOS alerts'), { 'sos.read': true }, false)).toBe(true);
@@ -64,6 +69,7 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/estates/123')).toBe('Estates');
     expect(sectionLabelForPath('/app/properties/123')).toBe('Property');
     expect(sectionLabelForPath('/app/properties')).toBe('Properties');
+    expect(sectionLabelForPath('/app/imports')).toBe('Data import');
     expect(sectionLabelForPath('/app/billing')).toBe('Billing');
     expect(sectionLabelForPath('/app/residents')).toBe('Residents');
     expect(sectionLabelForPath('/app/administrators')).toBe('Administrators');

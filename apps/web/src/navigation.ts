@@ -3,6 +3,7 @@ import {
   Building,
   Building2,
   CalendarDays,
+  FileSpreadsheet,
   History,
   Home,
   KeyRound,
@@ -69,6 +70,12 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     label: 'Properties',
     icon: Building2,
     permission: 'property.read',
+  },
+  {
+    to: '/app/imports',
+    label: 'Data import',
+    icon: FileSpreadsheet,
+    permission: 'import.manage',
   },
   {
     to: '/app/billing',
@@ -156,6 +163,7 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/estates')) return 'Estates';
   if (pathname.startsWith('/app/properties/')) return 'Property';
   if (pathname.startsWith('/app/properties')) return 'Properties';
+  if (pathname.startsWith('/app/imports')) return 'Data import';
   if (pathname.startsWith('/app/billing')) return 'Billing';
   if (pathname.startsWith('/app/facilities')) return 'Facilities';
   if (pathname.startsWith('/app/bookings')) return 'Bookings';
