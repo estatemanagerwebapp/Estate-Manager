@@ -53,7 +53,7 @@ parsing.
 ```json
 {
   "accessCodes": {
-    "defaultDurationDays": 30
+    "defaultDurationHours": 720
   },
   "payments": {
     "bankTransfer": {
@@ -72,7 +72,9 @@ parsing.
 
 Rules:
 
-- `accessCodes.defaultDurationDays` is an integer from 1 to 365.
+- `accessCodes.defaultDurationHours` is an integer from 1 to 8760 (a year).
+  The previous `defaultDurationDays` field is converted on read, so a stored
+  custom window survives the unit change.
 - Bank name, account name and account number are all-or-nothing. A
   half-configured account is rejected because residents would see unusable
   instructions.
@@ -94,7 +96,7 @@ Returns the curated view:
 {
   version: number;
   onboarding: { registrationFee: { amountKobo, currency, description, refundable } };
-  accessCodes: { defaultDurationDays, minDurationDays, maxDurationDays };
+  accessCodes: { defaultDurationHours, minDurationHours, maxDurationHours };
   payments: { bankTransfer: { bankName, accountName, accountNumber, sortCode, instructions } };
   sos: { contacts: SosContactDto[] };
 }
@@ -133,9 +135,9 @@ display convenience.
   contacts in sort order, rendered as `tel:` links.
 - **Operator SOS:** `OperatorSosEventsResponse.contacts` carries the same active
   contacts in a compact strip above the queue.
-- **Access codes:** `ResidentAccessCodesResponse.defaultDurationDays` seeds the
-  resident generate form. Omitting a duration on generate or extend uses the
-  configured default server-side. Existing codes keep their issued expiry.
+- **Access codes:** `ResidentAccessCodesResponse.defaultDurationHours` seeds
+  the resident generate form. Omitting a duration on generate or extend uses
+  the configured default server-side. Existing codes keep their issued expiry.
 
 These additions reuse the existing resident queries. No duplicate resident
 endpoints or client caches were introduced.
@@ -146,7 +148,7 @@ endpoints or client caches were introduced.
 
 1. Onboarding fee — naira input converted to kobo, description and refundable
    flag.
-2. Access codes — default duration from 1 to 365 days.
+2. Access codes — default duration from 1 to 8760 hours.
 3. Payment details — bank name, account name, account number, sort code and
    instructions.
 4. Emergency contacts — add, edit, activate/deactivate and remove; the

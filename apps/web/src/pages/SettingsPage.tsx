@@ -31,7 +31,7 @@ interface SettingsDraft {
   feeNaira: string;
   feeDescription: string;
   feeRefundable: boolean;
-  codeDurationDays: string;
+  codeDurationHours: string;
   bankName: string;
   accountName: string;
   accountNumber: string;
@@ -46,7 +46,7 @@ function draftFromSettings(settings: OrganizationSettingsView): SettingsDraft {
     feeNaira: String(koboToNaira(settings.onboarding.registrationFee.amountKobo)),
     feeDescription: settings.onboarding.registrationFee.description ?? '',
     feeRefundable: settings.onboarding.registrationFee.refundable,
-    codeDurationDays: String(settings.accessCodes.defaultDurationDays),
+    codeDurationHours: String(settings.accessCodes.defaultDurationHours),
     bankName: bank.bankName ?? '',
     accountName: bank.accountName ?? '',
     accountNumber: bank.accountNumber ?? '',
@@ -157,9 +157,9 @@ export function SettingsPage() {
       return;
     }
 
-    const duration = Number(draft.codeDurationDays);
-    if (!Number.isInteger(duration) || duration < 1 || duration > 365) {
-      setActionError('Access-code duration must be a whole number between 1 and 365 days.');
+    const duration = Number(draft.codeDurationHours);
+    if (!Number.isInteger(duration) || duration < 1 || duration > 365 * 24) {
+      setActionError('Access-code duration must be a whole number between 1 and 8760 hours.');
       return;
     }
 
@@ -196,7 +196,7 @@ export function SettingsPage() {
             refundable: draft.feeRefundable,
           },
         },
-        accessCodes: { defaultDurationDays: duration },
+        accessCodes: { defaultDurationHours: duration },
         payments: {
           bankTransfer: {
             bankName,
@@ -288,21 +288,21 @@ export function SettingsPage() {
             <Card>
               <CardHeader
                 title="Access codes"
-                subtitle="Default validity for newly generated resident gate codes."
+                subtitle="Default validity in hours for newly generated resident gate codes."
               />
               <CardBody className="grid gap-4 sm:grid-cols-2">
                 <Field
-                  label="Default duration (days)"
-                  hint="Residents can request 1–365 days; this is the fallback."
+                  label="Default duration (hours)"
+                  hint="Residents can request 1–8760 hours; this is the fallback."
                 >
                   <input
                     className={inputClass}
                     type="number"
                     min={1}
-                    max={365}
-                    value={draft.codeDurationDays}
+                    max={365 * 24}
+                    value={draft.codeDurationHours}
                     onChange={(event) =>
-                      setDraft({ ...draft, codeDurationDays: event.target.value })
+                      setDraft({ ...draft, codeDurationHours: event.target.value })
                     }
                   />
                 </Field>

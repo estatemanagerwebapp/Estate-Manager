@@ -11,21 +11,22 @@ import type {
 } from '@silverstone/shared';
 
 /** Default validity window for a newly generated code. */
-export const DEFAULT_CODE_DURATION_DAYS = 30;
+export const DEFAULT_CODE_DURATION_HOURS = 30 * 24;
 /** Minimum window when a resident asks for a specific duration. */
-export const MIN_CODE_DURATION_DAYS = 1;
+export const MIN_CODE_DURATION_HOURS = 1;
 /** Maximum window — a code may not be issued for more than a year. */
-export const MAX_CODE_DURATION_DAYS = 365;
+export const MAX_CODE_DURATION_HOURS = 365 * 24;
 /** Length of the generated code. */
 export const ACCESS_CODE_LENGTH = 8;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 export interface ResidentCodesServiceOptions {
   codes: PrismaAccessCodeRepository;
   audit: PrismaAuditRepository;
   /** Resolves the acting resident's assigned property (may be null). */
   loadPropertyId: (organizationId: string, userId: string) => Promise<string | null>;
-  /** Configured default validity; falls back to 30 days when absent. */
-  loadDefaultDurationDays?: () => Promise<number>;
+  /** Configured default validity; falls back to 720 hours when absent. */
+  loadDefaultDurationHours?: () => Promise<number>;
 }
 
 /**
@@ -45,14 +46,14 @@ export class ResidentCodesService {
    * rows on read.
    */
   async list(organizationId: string, userId: string): Promise<ResidentAccessCodesResponse> {
-    const [records, defaultDurationDays] = await Promise.all([
+    const [records, defaultDurationHours] = await Promise.all([
       this.options.codes.listByUser(organizationId, userId),
-      this.defaultDurationDays(),
+      this.defaultDurationHours(),
     ]);
     const now = new Date();
     return {
       codes: records.map((record) => toDto(withDerivedStatus(record, now))),
-      defaultDurationDays,
+      defaultDurationHours,
     };
   }
 
@@ -66,8 +67,11 @@ export class ResidentCodesService {
     input: ResidentGenerateAccessCodeInput,
     requestId: string | null,
   ): Promise<ResidentGenerateAccessCodeResponse> {
-    const durationDays = resolveDurationDays(input.durationDays, await this.defaultDurationDays());
-    const validUntil = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+    const durationHours = resolveDurationHours(
+      input.durationHours,
+      await this.defaultDurationHours(),
+    );
+    const validUntil = new Date(Date.now() + durationHours * MS_PER_HOUR);
     const propertyId = await this.options.loadPropertyId(organizationId, userId);
 
     const { record, code } = await this.options.codes.create({
@@ -90,7 +94,7 @@ export class ResidentCodesService {
       metadata: {
         codeId: record.id,
         kind: record.kind,
-        durationDays,
+        durationHours,
         validUntil: validUntil.toISOString(),
       },
     });
@@ -106,7 +110,7 @@ export class ResidentCodesService {
     organizationId: string,
     userId: string,
     codeId: string,
-    durationDays: number | undefined,
+    durationHours: number | undefined,
     requestId: string | null,
   ): Promise<ResidentExtendAccessCodeResponse> {
     const record = await this.options.codes.findById(organizationId, userId, codeId);
@@ -117,8 +121,8 @@ export class ResidentCodesService {
       throw new AppError(409, 'CONFLICT', 'This access code has been deactivated');
     }
 
-    const days = resolveDurationDays(durationDays, await this.defaultDurationDays());
-    const candidate = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const hours = resolveDurationHours(durationHours, await this.defaultDurationHours());
+    const candidate = new Date(Date.now() + hours * MS_PER_HOUR);
     const current = record.validUntil ? record.validUntil.getTime() : 0;
     const validUntil = new Date(Math.max(candidate.getTime(), current));
 
@@ -137,7 +141,7 @@ export class ResidentCodesService {
       outcome: 'success',
       metadata: {
         codeId: record.id,
-        durationDays: days,
+        durationHours: hours,
         validUntil: validUntil.toISOString(),
       },
     });
@@ -179,26 +183,26 @@ export class ResidentCodesService {
     return { ok: true, code: toDto(updated) };
   }
 
-  private async defaultDurationDays(): Promise<number> {
-    if (!this.options.loadDefaultDurationDays) return DEFAULT_CODE_DURATION_DAYS;
-    return this.options.loadDefaultDurationDays();
+  private async defaultDurationHours(): Promise<number> {
+    if (!this.options.loadDefaultDurationHours) return DEFAULT_CODE_DURATION_HOURS;
+    return this.options.loadDefaultDurationHours();
   }
 }
 
 /** Clamp + validate the requested duration; default is configured by the estate. */
-function resolveDurationDays(
+function resolveDurationHours(
   requested: number | undefined,
-  defaultDurationDays = DEFAULT_CODE_DURATION_DAYS,
+  defaultDurationHours = DEFAULT_CODE_DURATION_HOURS,
 ): number {
-  if (requested === undefined || requested === null) return defaultDurationDays;
+  if (requested === undefined || requested === null) return defaultDurationHours;
   if (!Number.isInteger(requested)) {
-    throw new AppError(400, 'VALIDATION_ERROR', 'Duration must be a whole number of days');
+    throw new AppError(400, 'VALIDATION_ERROR', 'Duration must be a whole number of hours');
   }
-  if (requested < MIN_CODE_DURATION_DAYS || requested > MAX_CODE_DURATION_DAYS) {
+  if (requested < MIN_CODE_DURATION_HOURS || requested > MAX_CODE_DURATION_HOURS) {
     throw new AppError(
       400,
       'VALIDATION_ERROR',
-      `Duration must be between ${MIN_CODE_DURATION_DAYS} and ${MAX_CODE_DURATION_DAYS} days`,
+      `Duration must be between ${MIN_CODE_DURATION_HOURS} and ${MAX_CODE_DURATION_HOURS} hours`,
     );
   }
   return requested;

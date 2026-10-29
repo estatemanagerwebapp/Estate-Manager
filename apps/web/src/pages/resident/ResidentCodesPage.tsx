@@ -37,7 +37,7 @@ export function ResidentCodesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [kind, setKind] = useState<AccessCodeKind>('ENTRY');
-  const [durationDays, setDurationDays] = useState('');
+  const [durationHours, setDurationHours] = useState('');
   const [generating, setGenerating] = useState(false);
 
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
@@ -61,17 +61,17 @@ export function ResidentCodesPage() {
   // Reflect the estate's configured default without overwriting an edit.
   useEffect(() => {
     if (!data) return;
-    setDurationDays((current) => (current === '' ? String(data.defaultDurationDays) : current));
+    setDurationHours((current) => (current === '' ? String(data.defaultDurationHours) : current));
   }, [data]);
 
   async function generate() {
     setGenerating(true);
     setActionError(null);
     try {
-      const days = Number.parseInt(durationDays, 10);
+      const hours = Number.parseInt(durationHours, 10);
       const response = await api.generateResidentAccessCode({
         kind,
-        durationDays: Number.isFinite(days) && days > 0 ? days : undefined,
+        durationHours: Number.isFinite(hours) && hours > 0 ? hours : undefined,
       });
       // The full code is returned exactly once — show it now.
       setIssuedCode(response.code);
@@ -201,7 +201,7 @@ export function ResidentCodesPage() {
               Generate a code
             </span>
           }
-          subtitle="Codes are valid for 30 days by default and can be extended or deactivated at any time."
+          subtitle="Codes use the estate's configured validity window, in hours, and can be extended or deactivated at any time."
         />
         <CardBody>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -218,14 +218,14 @@ export function ResidentCodesPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Valid for (days)">
+            <Field label="Valid for (hours)">
               <input
                 className={inputClass}
                 type="number"
                 min={1}
-                max={365}
-                value={durationDays}
-                onChange={(event) => setDurationDays(event.target.value)}
+                max={365 * 24}
+                value={durationHours}
+                onChange={(event) => setDurationHours(event.target.value)}
               />
             </Field>
           </div>

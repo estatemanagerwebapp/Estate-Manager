@@ -270,22 +270,37 @@ export const OnboardingFields = z.object({
 
 export const OnboardingSchema = defaulted(OnboardingFields);
 
-/** Bounds for a resident-issued gate access code. */
-export const ACCESS_CODE_DURATION_MIN_DAYS = 1;
-export const ACCESS_CODE_DURATION_MAX_DAYS = 365;
-export const DEFAULT_ACCESS_CODE_DURATION_DAYS = 30;
+/** Bounds for a resident-issued gate access code, expressed in hours. */
+export const ACCESS_CODE_DURATION_MIN_HOURS = 1;
+/** A code may not be issued for more than a year. */
+export const ACCESS_CODE_DURATION_MAX_HOURS = 365 * 24;
+/** Thirty days, preserved as the default after moving the setting to hours. */
+export const DEFAULT_ACCESS_CODE_DURATION_HOURS = 30 * 24;
 
 export const AccessCodesFields = z.object({
   /** Default validity when a resident generates a code without a duration. */
-  defaultDurationDays: z
+  defaultDurationHours: z
     .number()
-    .int('Duration must be a whole number of days')
-    .min(ACCESS_CODE_DURATION_MIN_DAYS)
-    .max(ACCESS_CODE_DURATION_MAX_DAYS)
-    .default(DEFAULT_ACCESS_CODE_DURATION_DAYS),
+    .int('Duration must be a whole number of hours')
+    .min(ACCESS_CODE_DURATION_MIN_HOURS)
+    .max(ACCESS_CODE_DURATION_MAX_HOURS)
+    .default(DEFAULT_ACCESS_CODE_DURATION_HOURS),
 });
 
-export const AccessCodesSchema = defaulted(AccessCodesFields);
+/**
+ * Accept the pre-hours `defaultDurationDays` field from a stored document and
+ * convert it once. Without this, an estate that had customised its window
+ * would silently fall back to the schema default when this version first
+ * reads the document.
+ */
+export const AccessCodesSchema = z.preprocess((value) => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (record.defaultDurationHours === undefined && typeof record.defaultDurationDays === 'number') {
+    return { ...record, defaultDurationHours: record.defaultDurationDays * 24 };
+  }
+  return value;
+}, defaulted(AccessCodesFields));
 
 export const BankTransferDetailsFields = z.object({
   bankName: z.string().trim().max(120).nullable().default(null),

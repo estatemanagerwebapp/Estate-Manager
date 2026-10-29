@@ -342,7 +342,12 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
       const body = z
         .object({
           kind: codeKindSchema,
-          durationDays: z.number().int().min(1).max(365).optional(),
+          durationHours: z
+            .number()
+            .int()
+            .min(1)
+            .max(365 * 24)
+            .optional(),
         })
         .safeParse(req.body ?? {});
       if (!body.success) {
@@ -352,7 +357,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
       const response = await options.codes.generate(
         organizationId,
         ctx.userId,
-        { kind: body.data.kind, durationDays: body.data.durationDays },
+        { kind: body.data.kind, durationHours: body.data.durationHours },
         makeContext(req, res).requestId,
       );
       res.status(201).json({ data: response });
@@ -375,7 +380,14 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         return;
       }
       const body = z
-        .object({ durationDays: z.number().int().min(1).max(365).optional() })
+        .object({
+          durationHours: z
+            .number()
+            .int()
+            .min(1)
+            .max(365 * 24)
+            .optional(),
+        })
         .safeParse(req.body ?? {});
       if (!body.success) {
         next(new AppError(400, 'VALIDATION_ERROR', 'Invalid extend input'));
@@ -385,7 +397,7 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         organizationId,
         ctx.userId,
         String(req.params.id),
-        body.data.durationDays,
+        body.data.durationHours,
         makeContext(req, res).requestId,
       );
       res.status(200).json({ data: response });

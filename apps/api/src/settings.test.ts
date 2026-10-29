@@ -27,7 +27,7 @@ function initialConfig(): OrganizationConfig {
         refundable: false,
       },
     },
-    accessCodes: { defaultDurationDays: 30 },
+    accessCodes: { defaultDurationHours: 720 },
     payments: {
       bankTransfer: {
         bankName: 'Example Bank',
@@ -193,7 +193,7 @@ describe('operational settings', () => {
       onboarding: {
         registrationFee: { amountKobo: 5_000_000, description: 'One-off registration fee' },
       },
-      accessCodes: { defaultDurationDays: 30, minDurationDays: 1, maxDurationDays: 365 },
+      accessCodes: { defaultDurationHours: 720, minDurationHours: 1, maxDurationHours: 8760 },
       payments: { bankTransfer: { bankName: 'Example Bank', accountNumber: '0123456789' } },
       sos: { contacts: [{ id: 'contact-security', category: 'SECURITY' }] },
     });
@@ -205,7 +205,7 @@ describe('operational settings', () => {
     const response = await request(app)
       .patch('/api/v1/settings')
       .set('Cookie', ADMIN_COOKIE)
-      .send({ expectedVersion: 2, accessCodes: { defaultDurationDays: 14 } });
+      .send({ expectedVersion: 2, accessCodes: { defaultDurationHours: 14 } });
 
     expect(response.status).toBe(409);
     expect(harness.configService.save).not.toHaveBeenCalled();
@@ -220,7 +220,7 @@ describe('operational settings', () => {
         onboarding: {
           registrationFee: { amountKobo: 0, description: null, refundable: true },
         },
-        accessCodes: { defaultDurationDays: 14 },
+        accessCodes: { defaultDurationHours: 14 },
         payments: {
           bankTransfer: {
             bankName: 'New Bank',
@@ -247,7 +247,7 @@ describe('operational settings', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data.version).toBe(4);
-    expect(response.body.data.accessCodes.defaultDurationDays).toBe(14);
+    expect(response.body.data.accessCodes.defaultDurationHours).toBe(14);
     expect(response.body.data.onboarding.registrationFee.amountKobo).toBe(0);
     expect(response.body.data.sos.contacts).toHaveLength(1);
 

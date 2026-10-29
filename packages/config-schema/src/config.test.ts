@@ -50,7 +50,7 @@ describe('baseline configuration', () => {
     expect(config.modules.estates).toBe(true);
     expect(config.fees.registration.amountKobo).toBe(0);
     expect(config.onboarding.residentCode.persistent).toBe(true);
-    expect(config.accessCodes.defaultDurationDays).toBe(30);
+    expect(config.accessCodes.defaultDurationHours).toBe(720);
     expect(config.payments.bankTransfer.bankName).toBeNull();
     expect(config.sos.contacts).toEqual([]);
     expect(config.customFields).toEqual([]);
@@ -71,7 +71,7 @@ describe('baseline configuration', () => {
     expect(config.organization.slug).toBe('silverstone');
     expect(config.fees.registration.amountKobo).toBe(5_000_000);
     expect(config.payments.provider).toBe('NONE');
-    expect(config.accessCodes.defaultDurationDays).toBe(30);
+    expect(config.accessCodes.defaultDurationHours).toBe(720);
     expect(config.sos.contacts).toEqual([]);
     // No payment integration or account activation may be enabled in Phase 0.
     expect(config.onboarding.createAccountOnlyAfterVerifiedPayment).toBe(true);
@@ -208,12 +208,20 @@ describe('configuration validation', () => {
   });
 
   it('rejects access-code durations outside the supported window', () => {
-    expect(issuePaths({ ...validDocument(), accessCodes: { defaultDurationDays: 0 } })).toContain(
-      'accessCodes.defaultDurationDays',
+    expect(issuePaths({ ...validDocument(), accessCodes: { defaultDurationHours: 0 } })).toContain(
+      'accessCodes.defaultDurationHours',
     );
-    expect(issuePaths({ ...validDocument(), accessCodes: { defaultDurationDays: 366 } })).toContain(
-      'accessCodes.defaultDurationDays',
-    );
+    expect(
+      issuePaths({ ...validDocument(), accessCodes: { defaultDurationHours: 365 * 24 + 1 } }),
+    ).toContain('accessCodes.defaultDurationHours');
+  });
+
+  it('converts a legacy day-based access-code duration to hours', () => {
+    const config = parseOrganizationConfig({
+      ...validDocument(),
+      accessCodes: { defaultDurationDays: 14 },
+    });
+    expect(config.accessCodes.defaultDurationHours).toBe(14 * 24);
   });
 
   it('requires complete bank-transfer details when any bank field is set', () => {

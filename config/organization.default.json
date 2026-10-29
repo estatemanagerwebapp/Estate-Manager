@@ -141,7 +141,7 @@
     "createAccountOnlyAfterVerifiedPayment": true
   },
   "accessCodes": {
-    "defaultDurationDays": 30
+    "defaultDurationHours": 720
   },
   "payments": {
     "provider": "NONE",

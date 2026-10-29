@@ -276,8 +276,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       const draft = await residentDrafts.findByUser(userId);
       return draft?.propertyId ?? null;
     },
-    loadDefaultDurationDays: async () =>
-      (await configService.resolve()).config.accessCodes.defaultDurationDays,
+    loadDefaultDurationHours: async () =>
+      (await configService.resolve()).config.accessCodes.defaultDurationHours,
   });
 
   const complaintRepo = new PrismaComplaintRepository(prisma);

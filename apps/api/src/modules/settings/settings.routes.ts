@@ -51,7 +51,12 @@ const updateSchema = z
       .optional(),
     accessCodes: z
       .object({
-        defaultDurationDays: z.number().int().min(1).max(365).optional(),
+        defaultDurationHours: z
+          .number()
+          .int()
+          .min(1)
+          .max(365 * 24)
+          .optional(),
       })
       .strict()
       .optional(),

@@ -718,12 +718,12 @@ export const api = {
     }),
 
   /** S4: push a code's validity window further out. */
-  extendResidentAccessCode: (codeId: string, durationDays?: number) =>
+  extendResidentAccessCode: (codeId: string, durationHours?: number) =>
     request<ResidentExtendAccessCodeResponse>(
       `/api/v1/resident/codes/${encodeURIComponent(codeId)}/extend`,
       {
         method: 'POST',
-        body: JSON.stringify({ durationDays }),
+        body: JSON.stringify({ durationHours }),
       },
     ),
 

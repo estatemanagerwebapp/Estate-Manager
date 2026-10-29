@@ -58,9 +58,9 @@ export interface OrganizationSettingsView {
     };
   };
   accessCodes: {
-    defaultDurationDays: number;
-    minDurationDays: number;
-    maxDurationDays: number;
+    defaultDurationHours: number;
+    minDurationHours: number;
+    maxDurationHours: number;
   };
   payments: {
     bankTransfer: BankTransferDetailsDto;
@@ -85,7 +85,7 @@ export interface OrganizationSettingsUpdateInput {
     };
   };
   accessCodes?: {
-    defaultDurationDays?: number;
+    defaultDurationHours?: number;
   };
   payments?: {
     bankTransfer?: Partial<BankTransferDetailsDto>;

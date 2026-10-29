@@ -283,7 +283,7 @@ code (no TTL) but can be **extended** (extend = set `extendedUntil` further out)
 **Contracts:**
 
 - `AccessCodeDto` (code prefix + kind + status + validity window; never the full hash).
-- `GenerateAccessCodeInput` = `{ kind, durationDays? }`;
+- `GenerateAccessCodeInput` = `{ kind, durationHours? }`;
   `GenerateAccessCodeResponse` = `{ ok: true; code: string; codeId: string }`
   (full code returned **once**, like the onboarding demo password).
 - `ExtendAccessCodeResponse` = `{ ok: true; code: AccessCodeDto }`.
@@ -590,7 +590,7 @@ Each must be added to: `packages/shared` `AuditEventType` union **and** the Pris
 3. **Single property** per resident (bound via onboarding's `propertyId`).
    `My Properties` returns one property; the response is list-shaped so a future N is
    non-breaking.
-4. **Access codes:** have a **default validity window (30 days)** that `extend` adjusts;
+4. **Access codes:** have a **default validity window (720 hours)** that `extend` adjusts;
    codes remain revocable (`code.deactivate`). Not persistent.
 
 ## Cross-cutting implementation notes

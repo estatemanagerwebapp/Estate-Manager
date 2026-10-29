@@ -275,7 +275,7 @@ describe('resident access codes (S4)', () => {
     const response = await request(app)
       .post('/api/v1/resident/codes')
       .set('Cookie', residentCookie)
-      .send({ kind: 'ENTRY', durationDays: 30 });
+      .send({ kind: 'ENTRY', durationHours: 720 });
     expect(response.status).toBe(201);
     expect(response.body.data.ok).toBe(true);
 
@@ -296,9 +296,9 @@ describe('resident access codes (S4)', () => {
     expect(row!.codeHash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(row)).not.toContain(fullCode);
 
-    // The 30-day window is set.
-    const windowMs = (row!.validUntil!.getTime() - row!.issuedAt.getTime()) / 86_400_000;
-    expect(Math.round(windowMs)).toBe(30);
+    // The 720-hour (30-day) window is set.
+    const windowHours = (row!.validUntil!.getTime() - row!.issuedAt.getTime()) / 3_600_000;
+    expect(Math.round(windowHours)).toBe(720);
 
     // The audit event was written.
     const auditRows = await prisma.auditEvent.findMany({
@@ -311,8 +311,8 @@ describe('resident access codes (S4)', () => {
     const response = await request(app).get('/api/v1/resident/codes').set('Cookie', residentCookie);
     expect(response.status).toBe(200);
 
-    const { codes, defaultDurationDays } = response.body.data;
-    expect(defaultDurationDays).toBe(30);
+    const { codes, defaultDurationHours } = response.body.data;
+    expect(defaultDurationHours).toBe(720);
     expect(codes.length).toBe(1);
     expect(codes[0].kind).toBe('ENTRY');
     expect(codes[0].status).toBe('ACTIVE');
@@ -343,7 +343,7 @@ describe('resident access codes (S4)', () => {
     const response = await request(app)
       .post(`/api/v1/resident/codes/${before!.id}/extend`)
       .set('Cookie', residentCookie)
-      .send({ durationDays: 30 });
+      .send({ durationHours: 720 });
     expect(response.status).toBe(200);
     expect(response.body.data.ok).toBe(true);
     expect(response.body.data.code.id).toBe(before!.id);
@@ -400,7 +400,7 @@ describe('resident access codes (S4)', () => {
     const extend = await request(app)
       .post(`/api/v1/resident/codes/${secondCodeId}/extend`)
       .set('Cookie', residentCookie)
-      .send({ durationDays: 30 });
+      .send({ durationHours: 720 });
     expect(extend.status).toBe(404);
 
     // Nor deactivate it.
@@ -435,7 +435,7 @@ describe('resident access codes (S4)', () => {
     const response = await request(app)
       .post('/api/v1/resident/codes')
       .set('Cookie', residentCookie)
-      .send({ kind: 'ENTRY', durationDays: 9999 });
+      .send({ kind: 'ENTRY', durationHours: 9999 });
     expect(response.status).toBe(400);
   });
 });

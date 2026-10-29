@@ -1,6 +1,6 @@
 import {
-  ACCESS_CODE_DURATION_MAX_DAYS,
-  ACCESS_CODE_DURATION_MIN_DAYS,
+  ACCESS_CODE_DURATION_MAX_HOURS,
+  ACCESS_CODE_DURATION_MIN_HOURS,
   type OrganizationConfig,
 } from '@silverstone/config-schema';
 import type {
@@ -76,9 +76,9 @@ export function organizationSettingsViewFromConfig(
       },
     },
     accessCodes: {
-      defaultDurationDays: config.accessCodes.defaultDurationDays,
-      minDurationDays: ACCESS_CODE_DURATION_MIN_DAYS,
-      maxDurationDays: ACCESS_CODE_DURATION_MAX_DAYS,
+      defaultDurationHours: config.accessCodes.defaultDurationHours,
+      minDurationHours: ACCESS_CODE_DURATION_MIN_HOURS,
+      maxDurationHours: ACCESS_CODE_DURATION_MAX_HOURS,
     },
     payments: {
       bankTransfer: {

@@ -154,13 +154,13 @@ export interface ResidentAccessCodeDto {
 export interface ResidentAccessCodesResponse {
   codes: ResidentAccessCodeDto[];
   /** The estate's configured default validity for a newly generated code. */
-  defaultDurationDays: number;
+  defaultDurationHours: number;
 }
 
 export interface ResidentGenerateAccessCodeInput {
   kind: AccessCodeKind;
-  /** Validity window in days; defaults to the estate setting when omitted. */
-  durationDays?: number;
+  /** Validity window in hours; defaults to the estate setting when omitted. */
+  durationHours?: number;
 }
 
 export interface ResidentGenerateAccessCodeResponse {
