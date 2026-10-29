@@ -8,6 +8,9 @@ import {
   accessCodeResidentLabel,
   accessCodeStatusLabel,
   accessCodeTone,
+  accessCodeVisitorDetail,
+  accessCodeVisitorLabel,
+  idDocumentHref,
   verificationFilterForView,
   verificationMatchesSearch,
   verificationOutcomeLabel,
@@ -26,6 +29,9 @@ function code(overrides: Partial<OperatorAccessCodeDto> = {}): OperatorAccessCod
     validUntil: '2027-01-01T00:00:00.000Z',
     issuedAt: '2026-11-01T00:00:00.000Z',
     revokedAt: null,
+    visitorName: 'Chinedu Okafor',
+    carPlate: 'LAG-123-AA',
+    idDocumentUrl: '/api/v1/media/org-1/media-1',
     resident: {
       id: 'resident-1',
       fullName: 'Ada Okafor',
@@ -51,6 +57,9 @@ function verification(overrides: Partial<AccessVerificationDto> = {}): AccessVer
     reason: null,
     codePrefix: 'ABCD',
     occurredAt: '2026-11-15T08:30:00.000Z',
+    visitorName: 'Chinedu Okafor',
+    carPlate: 'LAG-123-AA',
+    idDocumentUrl: '/api/v1/media/org-1/media-1',
     resident: {
       id: 'resident-1',
       fullName: 'Ada Okafor',
@@ -138,5 +147,20 @@ describe('gate page helpers', () => {
       ),
     ).toBe(true);
     expect(verificationMatchesSearch(verification(), 'not found')).toBe(false);
+  });
+
+  it('shows visitor credentials and builds inline ID links', () => {
+    expect(accessCodeVisitorLabel(code())).toBe('Chinedu Okafor');
+    expect(accessCodeVisitorDetail(code())).toBe('Chinedu Okafor · LAG-123-AA');
+    expect(accessCodeVisitorLabel(code({ visitorName: null }))).toBe('Visitor not recorded');
+    expect(accessCodeVisitorDetail(code({ visitorName: null, carPlate: null }))).toBe('—');
+    expect(accessCodeMatchesSearch(code(), 'chinedu')).toBe(true);
+    expect(accessCodeMatchesSearch(code(), 'lag-123')).toBe(true);
+    expect(verificationMatchesSearch(verification(), 'lag-123')).toBe(true);
+    expect(idDocumentHref('/api/v1/media/org/media')).toBe('/api/v1/media/org/media?inline=1');
+    expect(idDocumentHref('/api/v1/media/org/media?x=1')).toBe(
+      '/api/v1/media/org/media?x=1&inline=1',
+    );
+    expect(idDocumentHref(null)).toBeNull();
   });
 });

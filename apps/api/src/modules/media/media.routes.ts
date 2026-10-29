@@ -119,19 +119,22 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
         throw new AppError(404, 'NOT_FOUND', 'Media file not found');
       }
       const canManageUsers = await permissions.can(auth.role, 'user.manage');
+      const canViewGateDocuments = await permissions.can(auth.role, 'gate.read');
       const relativePath = `${orgId}/${id}`;
       const file = await storage.get(relativePath, {
         organizationId,
         userId: auth.userId,
         canManageUsers,
+        canViewGateDocuments,
       });
       if (!file) {
         throw new AppError(404, 'NOT_FOUND', 'Media file not found');
       }
+      const inline = req.query.inline === '1' && file.mimeType.startsWith('image/');
       res.setHeader('Content-Type', file.mimeType);
       res.setHeader('Content-Length', file.sizeBytes);
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Disposition', 'attachment');
+      res.setHeader('Content-Disposition', inline ? 'inline' : 'attachment');
       res.setHeader('Cache-Control', 'private, no-store');
       res.status(200).send(file.buffer);
     }),

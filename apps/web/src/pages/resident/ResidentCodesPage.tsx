@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Copy, Check, Plus, TimerReset, Ban } from 'lucide-react';
+import { KeyRound, Copy, Check, Plus, TimerReset, Ban, Upload, FileCheck2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ResidentAccessCodeDto, AccessCodeKind } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
+import { Countdown } from '../../components/Countdown';
 import {
   Button,
   Card,
@@ -38,6 +39,11 @@ export function ResidentCodesPage() {
 
   const [kind, setKind] = useState<AccessCodeKind>('ENTRY');
   const [durationHours, setDurationHours] = useState('');
+  const [visitorName, setVisitorName] = useState('');
+  const [carPlate, setCarPlate] = useState('');
+  const [idDocumentUrl, setIdDocumentUrl] = useState<string | null>(null);
+  const [idDocumentName, setIdDocumentName] = useState<string | null>(null);
+  const [uploadingId, setUploadingId] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
@@ -64,18 +70,66 @@ export function ResidentCodesPage() {
     setDurationHours((current) => (current === '' ? String(data.defaultDurationHours) : current));
   }, [data]);
 
+  async function uploadIdDocument(file: File | null) {
+    if (!file) return;
+    setUploadingId(true);
+    setActionError(null);
+    try {
+      const result = await api.uploadCodeVisitorIdDocument(file);
+      setIdDocumentUrl(result.publicUrl);
+      setIdDocumentName(file.name);
+      toast.success('Visitor ID uploaded.');
+    } catch (err) {
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not upload the visitor ID.',
+      );
+      toast.error('Could not upload the visitor ID.');
+    } finally {
+      setUploadingId(false);
+    }
+  }
+
   async function generate() {
+    const trimmedVisitor = visitorName.trim();
+    if (!trimmedVisitor) {
+      setActionError('Enter the visitor’s name.');
+      return;
+    }
+    if (!idDocumentUrl) {
+      setActionError('Upload the visitor’s ID image before generating the code.');
+      return;
+    }
+    const hours = durationHours.trim() === '' ? undefined : Number(durationHours);
+    if (hours !== undefined && (!Number.isFinite(hours) || !Number.isInteger(hours))) {
+      setActionError('Validity must be a whole number of hours.');
+      return;
+    }
+    if (hours !== undefined && hours < 1) {
+      setActionError('Validity must be at least 1 hour.');
+      return;
+    }
+    if (data && hours !== undefined && hours > data.maxDurationHours) {
+      setActionError(`The estate office allows at most ${data.maxDurationHours} hours.`);
+      return;
+    }
+
     setGenerating(true);
     setActionError(null);
     try {
-      const hours = Number.parseInt(durationHours, 10);
       const response = await api.generateResidentAccessCode({
         kind,
-        durationHours: Number.isFinite(hours) && hours > 0 ? hours : undefined,
+        durationHours: hours,
+        visitorName: trimmedVisitor,
+        carPlate: carPlate.trim() || undefined,
+        idDocumentUrl,
       });
       // The full code is returned exactly once — show it now.
       setIssuedCode(response.code);
       setCopied(false);
+      setVisitorName('');
+      setCarPlate('');
+      setIdDocumentUrl(null);
+      setIdDocumentName(null);
       toast.success('Access code generated.');
       void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
       await refresh();
@@ -201,7 +255,7 @@ export function ResidentCodesPage() {
               Generate a code
             </span>
           }
-          subtitle="Codes use the estate's configured validity window, in hours, and can be extended or deactivated at any time."
+          subtitle="Add the visitor's details and ID image, then choose how long the estate office allows the code to work."
         />
         <CardBody>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -218,19 +272,79 @@ export function ResidentCodesPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Valid for (hours)">
+            <Field
+              label="Valid for (hours)"
+              hint={
+                data
+                  ? `Default ${data.defaultDurationHours} hours; maximum ${data.maxDurationHours} hours.`
+                  : undefined
+              }
+            >
               <input
                 className={inputClass}
                 type="number"
                 min={1}
-                max={365 * 24}
+                max={data?.maxDurationHours ?? 365 * 24}
                 value={durationHours}
                 onChange={(event) => setDurationHours(event.target.value)}
               />
             </Field>
+            <Field label="Visitor name" hint="Shown to the guard when the code is verified.">
+              <input
+                className={inputClass}
+                value={visitorName}
+                onChange={(event) => setVisitorName(event.target.value)}
+                maxLength={120}
+                placeholder="e.g. Chinedu Okafor"
+                required
+              />
+            </Field>
+            <Field label="Car plate (optional)" hint="For visitors arriving by vehicle.">
+              <input
+                className={inputClass}
+                value={carPlate}
+                onChange={(event) => setCarPlate(event.target.value.toUpperCase())}
+                maxLength={24}
+                placeholder="e.g. LAG-123-AA"
+                autoCapitalize="characters"
+                spellCheck={false}
+              />
+            </Field>
           </div>
+
+          <div className="mt-4">
+            <Field
+              label="Visitor ID image"
+              hint="A clear photo of the visitor's government-issued ID. Images up to 5 MB."
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-(--color-ink) hover:bg-(--color-surface)">
+                  <Upload aria-hidden size={14} />
+                  {uploadingId ? 'Uploading…' : idDocumentUrl ? 'Replace image' : 'Upload ID image'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                    className="sr-only"
+                    disabled={uploadingId}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      void uploadIdDocument(file);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+                {idDocumentUrl && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700">
+                    <FileCheck2 aria-hidden size={14} />
+                    {idDocumentName ?? 'ID image attached'}
+                  </span>
+                )}
+              </div>
+            </Field>
+          </div>
+
           <div className="mt-4 flex justify-end">
-            <Button size="sm" onClick={() => void generate()} disabled={generating}>
+            <Button size="sm" onClick={() => void generate()} disabled={generating || uploadingId}>
               {generating ? 'Generating…' : 'Generate code'}
             </Button>
           </div>
@@ -292,14 +406,20 @@ function CodeRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200/80 px-3 py-2">
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-semibold">{code.codePrefix}••••</span>
           <Badge tone={statusTone(code.status)}>{code.status}</Badge>
           <span className="text-xs text-(--color-ink-muted)">{kindLabel(code.kind)}</span>
+          <Countdown validUntil={code.validUntil} status={code.status} />
         </div>
+        <p className="mt-0.5 text-xs text-(--color-ink-muted)">
+          {code.visitorName ? `Visitor: ${code.visitorName}` : 'Visitor details not recorded'}
+          {code.carPlate ? ` · ${code.carPlate}` : ''}
+        </p>
         <p className="mt-0.5 text-xs text-(--color-ink-muted)">
           {code.validUntil ? `Valid until ${formatDate(code.validUntil)}` : 'No expiry'}
           {code.revokedAt ? ` · deactivated ${formatDate(code.revokedAt)}` : ''}
+          {code.idDocumentUrl ? ' · ID image attached' : ''}
         </p>
       </div>
       {isActive && (

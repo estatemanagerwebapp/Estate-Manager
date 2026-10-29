@@ -220,7 +220,7 @@ describe('operational settings', () => {
         onboarding: {
           registrationFee: { amountKobo: 0, description: null, refundable: true },
         },
-        accessCodes: { defaultDurationHours: 14 },
+        accessCodes: { defaultDurationHours: 14, maxDurationHours: 24 },
         payments: {
           bankTransfer: {
             bankName: 'New Bank',
@@ -248,6 +248,7 @@ describe('operational settings', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.version).toBe(4);
     expect(response.body.data.accessCodes.defaultDurationHours).toBe(14);
+    expect(response.body.data.accessCodes.maxDurationHours).toBe(24);
     expect(response.body.data.onboarding.registrationFee.amountKobo).toBe(0);
     expect(response.body.data.sos.contacts).toHaveLength(1);
 
@@ -310,6 +311,19 @@ describe('operational settings', () => {
       .send({
         expectedVersion: 3,
         payments: { bankTransfer: { bankName: 'Only a bank name' } },
+      });
+
+    expect(response.status).toBe(400);
+    expect(harness.configService.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects a default duration above the configured maximum', async () => {
+    const response = await request(app)
+      .patch('/api/v1/settings')
+      .set('Cookie', ADMIN_COOKIE)
+      .send({
+        expectedVersion: 3,
+        accessCodes: { defaultDurationHours: 100, maxDurationHours: 10 },
       });
 
     expect(response.status).toBe(400);

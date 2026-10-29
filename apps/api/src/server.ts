@@ -130,6 +130,7 @@ async function buildApp(): Promise<HttpHandler> {
       properties: residentPropertiesService,
       finance: deps.residentFinanceService,
       codes: deps.residentCodesService,
+      mediaStorage: deps.mediaStorage,
       complaints: deps.residentComplaintsService,
       messages: deps.residentMessagesService,
       community: deps.residentCommunityService,

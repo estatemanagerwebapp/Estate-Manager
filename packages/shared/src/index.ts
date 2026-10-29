@@ -179,6 +179,7 @@ export type {
   AccessVerificationReason,
   OperatorAccessCodeDto,
   OperatorAccessCodesResponse,
+  OperatorRevokeAccessCodeResponse,
   AccessVerificationDto,
   AccessVerificationsResponse,
   OperatorVerifyAccessCodeInput,

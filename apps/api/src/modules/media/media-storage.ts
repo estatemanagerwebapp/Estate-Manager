@@ -33,6 +33,12 @@ export interface MediaAccess {
   organizationId: string;
   userId: string;
   canManageUsers: boolean;
+  /**
+   * Gate readers may open files referenced by a visitor access code. This is
+   * deliberately narrower than `canManageUsers`: it never grants access to
+   * unrelated onboarding documents.
+   */
+  canViewGateDocuments?: boolean;
 }
 
 export interface MediaStorage {
@@ -223,6 +229,16 @@ async function findAuthorizedMediaRecord(
   });
   if (!row) return null;
   if (access.canManageUsers || row.uploadedById === access.userId) return row;
+  if (access.canViewGateDocuments) {
+    const gateDocument = await prisma.accessCode.findFirst({
+      where: {
+        organizationId: access.organizationId,
+        idDocumentUrl: `${publicBase}/${relativePath}`,
+      },
+      select: { id: true },
+    });
+    if (gateDocument) return row;
+  }
   const residentOwnsDocument = await prisma.residentOnboarding.findFirst({
     where: {
       organizationId: access.organizationId,

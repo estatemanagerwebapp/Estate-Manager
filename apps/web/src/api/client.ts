@@ -104,6 +104,7 @@ import type {
   OperatorRecordPaymentResponse,
   OperatorPaymentsResponse,
   OperatorAccessCodesResponse,
+  OperatorRevokeAccessCodeResponse,
   AccessVerificationsResponse,
   OperatorVerifyAccessCodeInput,
   OperatorVerifyAccessCodeResponse,
@@ -710,6 +711,19 @@ export const api = {
   /** S4: the acting resident's access codes (prefix + validity, never the secret). */
   getResidentCodes: () => request<ResidentAccessCodesResponse>('/api/v1/resident/codes'),
 
+  /** S4: upload the visitor ID image that will be attached to an access code. */
+  uploadCodeVisitorIdDocument: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<{ id: string; publicUrl: string; mimeType: string; sizeBytes: number }>(
+      '/api/v1/resident/codes/id-document',
+      {
+        method: 'POST',
+        body: form,
+      },
+    );
+  },
+
   /** S4: generate an access code. The full code is returned exactly once. */
   generateResidentAccessCode: (input: ResidentGenerateAccessCodeInput) =>
     request<ResidentGenerateAccessCodeResponse>('/api/v1/resident/codes', {
@@ -940,6 +954,13 @@ export const api = {
     const qs = params.toString();
     return request<OperatorAccessCodesResponse>(`/api/v1/access-codes${qs ? `?${qs}` : ''}`);
   },
+
+  /** Revoke a resident access code from the estate office. Requires `gate.manage`. */
+  revokeOperatorAccessCode: (codeId: string) =>
+    request<OperatorRevokeAccessCodeResponse>(
+      `/api/v1/access-codes/${encodeURIComponent(codeId)}/revoke`,
+      { method: 'POST' },
+    ),
 
   /** Gate verification history. Requires `verification.read`. */
   listAccessVerifications: (filter: AccessVerificationFilter = {}) => {

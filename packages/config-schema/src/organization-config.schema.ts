@@ -285,6 +285,16 @@ export const AccessCodesFields = z.object({
     .min(ACCESS_CODE_DURATION_MIN_HOURS)
     .max(ACCESS_CODE_DURATION_MAX_HOURS)
     .default(DEFAULT_ACCESS_CODE_DURATION_HOURS),
+  /**
+   * Ceiling the estate office allows residents to request. Residents can never
+   * issue or extend a code beyond this window.
+   */
+  maxDurationHours: z
+    .number()
+    .int('Duration must be a whole number of hours')
+    .min(ACCESS_CODE_DURATION_MIN_HOURS)
+    .max(ACCESS_CODE_DURATION_MAX_HOURS)
+    .default(ACCESS_CODE_DURATION_MAX_HOURS),
 });
 
 /**
@@ -293,14 +303,28 @@ export const AccessCodesFields = z.object({
  * would silently fall back to the schema default when this version first
  * reads the document.
  */
-export const AccessCodesSchema = z.preprocess((value) => {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
-  const record = value as Record<string, unknown>;
-  if (record.defaultDurationHours === undefined && typeof record.defaultDurationDays === 'number') {
-    return { ...record, defaultDurationHours: record.defaultDurationDays * 24 };
-  }
-  return value;
-}, defaulted(AccessCodesFields));
+export const AccessCodesSchema = z.preprocess(
+  (value) => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    if (
+      record.defaultDurationHours === undefined &&
+      typeof record.defaultDurationDays === 'number'
+    ) {
+      return { ...record, defaultDurationHours: record.defaultDurationDays * 24 };
+    }
+    return value;
+  },
+  defaulted(AccessCodesFields).superRefine((value, ctx) => {
+    if (value.defaultDurationHours > value.maxDurationHours) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['defaultDurationHours'],
+        message: 'Default duration cannot exceed the maximum duration',
+      });
+    }
+  }),
+);
 
 export const BankTransferDetailsFields = z.object({
   bankName: z.string().trim().max(120).nullable().default(null),

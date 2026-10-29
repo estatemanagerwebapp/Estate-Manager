@@ -14,19 +14,29 @@ import type {
 export const DEFAULT_CODE_DURATION_HOURS = 30 * 24;
 /** Minimum window when a resident asks for a specific duration. */
 export const MIN_CODE_DURATION_HOURS = 1;
-/** Maximum window — a code may not be issued for more than a year. */
+/** Absolute maximum window — a code may not be issued for more than a year. */
 export const MAX_CODE_DURATION_HOURS = 365 * 24;
 /** Length of the generated code. */
 export const ACCESS_CODE_LENGTH = 8;
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+export interface AccessCodeDurationLimits {
+  defaultDurationHours: number;
+  maxDurationHours: number;
+}
 
 export interface ResidentCodesServiceOptions {
   codes: PrismaAccessCodeRepository;
   audit: PrismaAuditRepository;
   /** Resolves the acting resident's assigned property (may be null). */
   loadPropertyId: (organizationId: string, userId: string) => Promise<string | null>;
-  /** Configured default validity; falls back to 720 hours when absent. */
-  loadDefaultDurationHours?: () => Promise<number>;
+  /** Configured validity limits; falls back to 720 / 8760 hours when absent. */
+  loadDurationLimits?: () => Promise<AccessCodeDurationLimits>;
+  /**
+   * Confirms an uploaded visitor ID image belongs to the acting resident.
+   * Returning false keeps an arbitrary URL from being attached to a code.
+   */
+  ownsMediaUrl?: (organizationId: string, userId: string, url: string) => Promise<boolean>;
 }
 
 /**
@@ -46,14 +56,15 @@ export class ResidentCodesService {
    * rows on read.
    */
   async list(organizationId: string, userId: string): Promise<ResidentAccessCodesResponse> {
-    const [records, defaultDurationHours] = await Promise.all([
+    const [records, limits] = await Promise.all([
       this.options.codes.listByUser(organizationId, userId),
-      this.defaultDurationHours(),
+      this.durationLimits(),
     ]);
     const now = new Date();
     return {
       codes: records.map((record) => toDto(withDerivedStatus(record, now))),
-      defaultDurationHours,
+      defaultDurationHours: limits.defaultDurationHours,
+      maxDurationHours: limits.maxDurationHours,
     };
   }
 
@@ -67,12 +78,36 @@ export class ResidentCodesService {
     input: ResidentGenerateAccessCodeInput,
     requestId: string | null,
   ): Promise<ResidentGenerateAccessCodeResponse> {
-    const durationHours = resolveDurationHours(
-      input.durationHours,
-      await this.defaultDurationHours(),
-    );
+    const limits = await this.durationLimits();
+    const durationHours = resolveDurationHours(input.durationHours, limits);
     const validUntil = new Date(Date.now() + durationHours * MS_PER_HOUR);
     const propertyId = await this.options.loadPropertyId(organizationId, userId);
+
+    const visitorName = input.visitorName?.trim() ?? '';
+    if (!visitorName) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Visitor name is required');
+    }
+    if (visitorName.length > 120) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Visitor name must be 120 characters or fewer');
+    }
+    const carPlate = input.carPlate?.trim() || null;
+    if (carPlate && carPlate.length > 24) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Car plate must be 24 characters or fewer');
+    }
+    const idDocumentUrl = input.idDocumentUrl?.trim() || null;
+    if (idDocumentUrl) {
+      if (!this.options.ownsMediaUrl) {
+        throw new AppError(
+          400,
+          'VALIDATION_ERROR',
+          'Visitor ID uploads are not available in this deployment',
+        );
+      }
+      const owned = await this.options.ownsMediaUrl(organizationId, userId, idDocumentUrl);
+      if (!owned) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'Visitor ID document could not be verified');
+      }
+    }
 
     const { record, code } = await this.options.codes.create({
       organizationId,
@@ -80,6 +115,9 @@ export class ResidentCodesService {
       propertyId,
       kind: input.kind,
       validUntil,
+      visitorName,
+      carPlate,
+      idDocumentUrl,
       codeLength: ACCESS_CODE_LENGTH,
     });
 
@@ -96,6 +134,8 @@ export class ResidentCodesService {
         kind: record.kind,
         durationHours,
         validUntil: validUntil.toISOString(),
+        hasCarPlate: Boolean(carPlate),
+        hasIdDocument: Boolean(idDocumentUrl),
       },
     });
 
@@ -121,7 +161,7 @@ export class ResidentCodesService {
       throw new AppError(409, 'CONFLICT', 'This access code has been deactivated');
     }
 
-    const hours = resolveDurationHours(durationHours, await this.defaultDurationHours());
+    const hours = resolveDurationHours(durationHours, await this.durationLimits());
     const candidate = new Date(Date.now() + hours * MS_PER_HOUR);
     const current = record.validUntil ? record.validUntil.getTime() : 0;
     const validUntil = new Date(Math.max(candidate.getTime(), current));
@@ -183,26 +223,37 @@ export class ResidentCodesService {
     return { ok: true, code: toDto(updated) };
   }
 
-  private async defaultDurationHours(): Promise<number> {
-    if (!this.options.loadDefaultDurationHours) return DEFAULT_CODE_DURATION_HOURS;
-    return this.options.loadDefaultDurationHours();
+  private async durationLimits(): Promise<AccessCodeDurationLimits> {
+    if (!this.options.loadDurationLimits) {
+      return {
+        defaultDurationHours: DEFAULT_CODE_DURATION_HOURS,
+        maxDurationHours: MAX_CODE_DURATION_HOURS,
+      };
+    }
+    return this.options.loadDurationLimits();
   }
 }
 
-/** Clamp + validate the requested duration; default is configured by the estate. */
+/** Validate the requested duration against the estate's configured ceiling. */
 function resolveDurationHours(
   requested: number | undefined,
-  defaultDurationHours = DEFAULT_CODE_DURATION_HOURS,
+  limits: AccessCodeDurationLimits,
 ): number {
-  if (requested === undefined || requested === null) return defaultDurationHours;
+  const maxHours = Math.min(
+    Math.max(limits.maxDurationHours, MIN_CODE_DURATION_HOURS),
+    MAX_CODE_DURATION_HOURS,
+  );
+  if (requested === undefined || requested === null) {
+    return Math.min(limits.defaultDurationHours, maxHours);
+  }
   if (!Number.isInteger(requested)) {
     throw new AppError(400, 'VALIDATION_ERROR', 'Duration must be a whole number of hours');
   }
-  if (requested < MIN_CODE_DURATION_HOURS || requested > MAX_CODE_DURATION_HOURS) {
+  if (requested < MIN_CODE_DURATION_HOURS || requested > maxHours) {
     throw new AppError(
       400,
       'VALIDATION_ERROR',
-      `Duration must be between ${MIN_CODE_DURATION_HOURS} and ${MAX_CODE_DURATION_HOURS} hours`,
+      `Duration must be between ${MIN_CODE_DURATION_HOURS} and ${maxHours} hours, as set by the estate office`,
     );
   }
   return requested;
@@ -229,5 +280,8 @@ function toDto(record: AccessCodeRecord): ResidentAccessCodeDto {
     validUntil: record.validUntil ? record.validUntil.toISOString() : null,
     issuedAt: record.issuedAt.toISOString(),
     revokedAt: record.revokedAt ? record.revokedAt.toISOString() : null,
+    visitorName: record.visitorName,
+    carPlate: record.carPlate,
+    idDocumentUrl: record.idDocumentUrl,
   };
 }

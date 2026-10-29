@@ -10,6 +10,7 @@ import type {
   AccessVerificationsResponse,
   OperatorAccessCodeDto,
   OperatorAccessCodesResponse,
+  OperatorRevokeAccessCodeResponse,
   OperatorVerifyAccessCodeInput,
   OperatorVerifyAccessCodeResponse,
 } from '@silverstone/shared';
@@ -58,6 +59,50 @@ export class OperatorGateService {
   ): Promise<AccessVerificationsResponse> {
     const records = await this.options.gate.listVerifications(organizationId, filter);
     return { verifications: records.map((record) => toVerificationDto(record)) };
+  }
+
+  /**
+   * Revoke a resident-issued code from the estate office. The resident can no
+   * longer present it at the gate, and the action is audited.
+   */
+  async revoke(
+    context: AuthAuditContext,
+    codeId: string,
+  ): Promise<OperatorRevokeAccessCodeResponse> {
+    const actorId = requireActor(context);
+    const organizationId = requireOrganization(context);
+
+    const record = await this.options.gate.findAccessCodeById(organizationId, codeId);
+    if (!record) {
+      throw new AppError(404, 'NOT_FOUND', 'Access code not found');
+    }
+    if (record.status === 'REVOKED') {
+      throw new AppError(409, 'CONFLICT', 'This access code is already revoked');
+    }
+
+    const now = this.now();
+    const updated = await this.options.gate.revokeAccessCode(organizationId, codeId, now);
+    if (!updated) {
+      throw new AppError(409, 'CONFLICT', 'This access code is already revoked');
+    }
+
+    await this.options.audit.record({
+      organizationId,
+      actorId,
+      eventType: 'access_code.revoked',
+      targetType: 'access_code',
+      targetId: codeId,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: {
+        residentId: record.resident?.id ?? null,
+        propertyId: record.property?.id ?? null,
+        codePrefix: record.codePrefix,
+        kind: record.kind,
+      },
+    });
+
+    return { ok: true, code: this.toAccessCodeDto(updated, now) };
   }
 
   async verify(
@@ -121,6 +166,9 @@ export class OperatorGateService {
       validUntil: record.validUntil ? record.validUntil.toISOString() : null,
       issuedAt: record.issuedAt.toISOString(),
       revokedAt: record.revokedAt ? record.revokedAt.toISOString() : null,
+      visitorName: record.visitorName,
+      carPlate: record.carPlate,
+      idDocumentUrl: record.idDocumentUrl,
       resident: record.resident,
       property: record.property,
     };
@@ -156,6 +204,9 @@ function toVerificationDto(record: AccessVerificationRecord): AccessVerification
     reason: record.reason,
     codePrefix: record.codePrefix,
     occurredAt: record.occurredAt.toISOString(),
+    visitorName: record.visitorName,
+    carPlate: record.carPlate,
+    idDocumentUrl: record.idDocumentUrl,
     resident: record.resident,
     property: record.property,
     verifiedBy: record.verifiedBy,

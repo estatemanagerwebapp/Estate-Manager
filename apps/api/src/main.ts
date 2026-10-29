@@ -111,6 +111,7 @@ async function main(): Promise<void> {
       properties: residentPropertiesService,
       finance: deps.residentFinanceService,
       codes: deps.residentCodesService,
+      mediaStorage: deps.mediaStorage,
       complaints: deps.residentComplaintsService,
       messages: deps.residentMessagesService,
       community: deps.residentCommunityService,

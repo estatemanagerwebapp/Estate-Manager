@@ -57,6 +57,12 @@ const updateSchema = z
           .min(1)
           .max(365 * 24)
           .optional(),
+        maxDurationHours: z
+          .number()
+          .int()
+          .min(1)
+          .max(365 * 24)
+          .optional(),
       })
       .strict()
       .optional(),

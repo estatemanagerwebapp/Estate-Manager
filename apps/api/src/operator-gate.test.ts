@@ -197,6 +197,9 @@ beforeAll(async () => {
     propertyId,
     kind: 'ENTRY',
     validUntil: future,
+    visitorName: 'Chinedu Okafor',
+    carPlate: 'LAG-123-AA',
+    idDocumentUrl: `/api/v1/media/${organizationId}/00000000-0000-0000-0000-000000000001`,
     codeLength: 8,
   });
   entryCode = entry.code;
@@ -310,12 +313,18 @@ describe('operator gate access', () => {
       id: string;
       status: string;
       codePrefix: string;
+      visitorName: string | null;
+      carPlate: string | null;
+      idDocumentUrl: string | null;
       resident: { fullName: string } | null;
       property: { identifier: string } | null;
     }>;
     expect(codes.length).toBe(4);
     expect(codes.some((code) => code.resident?.fullName === 'Ada Okafor')).toBe(true);
     expect(codes.some((code) => code.property?.identifier)).toBe(true);
+    const visitorCode = codes.find((code) => code.visitorName === 'Chinedu Okafor');
+    expect(visitorCode?.carPlate).toBe('LAG-123-AA');
+    expect(visitorCode?.idDocumentUrl).toContain('/api/v1/media/');
     expect(JSON.stringify(all.body)).not.toContain('codeHash');
 
     const active = await request(app)
@@ -382,6 +391,9 @@ describe('operator gate access', () => {
       reason: string | null;
       gate: string;
       codePrefix: string;
+      visitorName: string | null;
+      carPlate: string | null;
+      idDocumentUrl: string | null;
       resident: { fullName: string } | null;
       property: { identifier: string } | null;
       verifiedBy: { id: string } | null;
@@ -390,6 +402,9 @@ describe('operator gate access', () => {
     expect(verification.reason).toBeNull();
     expect(verification.gate).toBe('ENTRY');
     expect(verification.codePrefix).toBe(entryCode.slice(0, 4));
+    expect(verification.visitorName).toBe('Chinedu Okafor');
+    expect(verification.carPlate).toBe('LAG-123-AA');
+    expect(verification.idDocumentUrl).toContain('/api/v1/media/');
     expect(verification.resident?.fullName).toBe('Ada Okafor');
     expect(verification.property?.identifier).toBeTruthy();
     expect(verification.verifiedBy?.id).toBe(guardId);
@@ -467,5 +482,96 @@ describe('operator gate access', () => {
     expect(exitOnly.status).toBe(200);
     expect(exitOnly.body.data.verifications).toHaveLength(1);
     expect(exitOnly.body.data.verifications[0].gate).toBe('EXIT');
+  });
+
+  it('lets gate management revoke a code, audits it and keeps other roles out', async () => {
+    const codes = new PrismaAccessCodeRepository(prisma);
+    const created = await codes.create({
+      organizationId,
+      userId: residentId,
+      propertyId,
+      kind: 'ENTRY',
+      validUntil: new Date(Date.now() + 60 * 60 * 1000),
+      visitorName: 'Revoke Visitor',
+      carPlate: 'REV-001',
+      codeLength: 8,
+    });
+
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/access-codes/${created.record.id}/revoke`)
+          .set('Cookie', residentCookie)
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/access-codes/${created.record.id}/revoke`)
+          .set('Cookie', auditorCookie)
+      ).status,
+    ).toBe(403);
+    expect(
+      (await request(app).post(`/api/v1/access-codes/${created.record.id}/revoke`)).status,
+    ).toBe(401);
+
+    const revoked = await request(app)
+      .post(`/api/v1/access-codes/${created.record.id}/revoke`)
+      .set('Cookie', guardCookie);
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.data.code.status).toBe('REVOKED');
+    expect(revoked.body.data.code.visitorName).toBe('Revoke Visitor');
+    expect(revoked.body.data.code.revokedAt).toBeTruthy();
+
+    const row = await prisma.accessCode.findUniqueOrThrow({ where: { id: created.record.id } });
+    expect(row.status).toBe('REVOKED');
+    expect(row.revokedAt).toBeTruthy();
+
+    const audit = await prisma.auditEvent.findFirst({
+      where: {
+        organizationId,
+        targetId: created.record.id,
+        eventType: 'access_code_revoked',
+      },
+    });
+    expect(audit?.actorId).toBe(guardId);
+    expect(audit?.targetType).toBe('access_code');
+
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/access-codes/${created.record.id}/revoke`)
+          .set('Cookie', guardCookie)
+      ).status,
+    ).toBe(409);
+
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/access-codes/does-not-exist/revoke')
+          .set('Cookie', guardCookie)
+      ).status,
+    ).toBe(404);
+
+    const otherResident = await prisma.user.findFirstOrThrow({
+      where: { organizationId: otherOrganizationId, role: 'RESIDENT' },
+    });
+    const other = await codes.create({
+      organizationId: otherOrganizationId,
+      userId: otherResident.id,
+      kind: 'ENTRY',
+      validUntil: new Date(Date.now() + 60 * 60 * 1000),
+      codeLength: 8,
+    });
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/access-codes/${other.record.id}/revoke`)
+          .set('Cookie', guardCookie)
+      ).status,
+    ).toBe(404);
+    expect(
+      (await prisma.accessCode.findUniqueOrThrow({ where: { id: other.record.id } })).status,
+    ).toBe('ACTIVE');
   });
 });

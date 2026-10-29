@@ -27,6 +27,9 @@ export interface AccessCodeRecord {
   codePrefix: string;
   status: AccessCodeStatus;
   validUntil: Date | null;
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
   issuedAt: Date;
   revokedAt: Date | null;
   createdAt: Date;
@@ -39,6 +42,12 @@ export interface CreateAccessCodeInput {
   propertyId?: string | null;
   kind: AccessCodeKind;
   validUntil: Date | null;
+  /** Visitor the code is being issued for. */
+  visitorName?: string | null;
+  /** Vehicle plate presented at the gate, when supplied. */
+  carPlate?: string | null;
+  /** Uploaded visitor ID image URL, when supplied. */
+  idDocumentUrl?: string | null;
   /** Length of the generated code. */
   codeLength: number;
 }
@@ -67,6 +76,9 @@ export class PrismaAccessCodeRepository {
         codePrefix: code.slice(0, PREFIX_LENGTH),
         status: 'ACTIVE',
         validUntil: input.validUntil,
+        visitorName: input.visitorName ?? null,
+        carPlate: input.carPlate ?? null,
+        idDocumentUrl: input.idDocumentUrl ?? null,
       },
     });
     return { record: toRecord(row), code };
@@ -128,6 +140,9 @@ function toRecord(row: {
   codePrefix: string;
   status: string;
   validUntil: Date | null;
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
   issuedAt: Date;
   revokedAt: Date | null;
   createdAt: Date;
@@ -143,6 +158,9 @@ function toRecord(row: {
     codePrefix: row.codePrefix,
     status: row.status as AccessCodeStatus,
     validUntil: row.validUntil,
+    visitorName: row.visitorName,
+    carPlate: row.carPlate,
+    idDocumentUrl: row.idDocumentUrl,
     issuedAt: row.issuedAt,
     revokedAt: row.revokedAt,
     createdAt: row.createdAt,

@@ -11,6 +11,7 @@
  * dashboard aggregate.
  */
 import { Router, type Request, type Response, type RequestHandler } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
 import {
@@ -33,6 +34,7 @@ import type { ResidentBookingsService } from './bookings.service.js';
 import type { ResidentSosService } from './sos.service.js';
 import type { ResidentNotificationsService } from './notifications.service.js';
 import type { ResidentDashboardService } from './dashboard.service.js';
+import type { MediaStorage } from '../media/media-storage.js';
 
 export interface ResidentRouteOptions {
   sessions: PrismaSessionRepository;
@@ -46,6 +48,8 @@ export interface ResidentRouteOptions {
   finance?: ResidentFinanceService;
   /** S4: resident access codes — generate, extend, deactivate. */
   codes?: ResidentCodesService;
+  /** Media storage for visitor ID images attached to access codes. */
+  mediaStorage?: MediaStorage;
   /** S5: resident complaints — file and read the reply thread. */
   complaints?: ResidentComplaintsService;
   /** S6: resident messages — threads with the estate office. */
@@ -304,6 +308,75 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
 
   const codeKindSchema = z.enum(['ENTRY', 'EXIT', 'BOTH']);
 
+  const visitorIdMimeTypes = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+  ]);
+  const codeDocumentUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      // SVG is deliberately excluded: it is executable markup, not a photo.
+      if (!visitorIdMimeTypes.has(file.mimetype)) {
+        cb(
+          new AppError(
+            400,
+            'MEDIA_INVALID_FILE',
+            'Visitor ID must be a JPEG, PNG, WebP or HEIC image',
+          ),
+        );
+      } else {
+        cb(null, true);
+      }
+    },
+  });
+
+  // POST /codes/id-document — resident uploads the visitor's ID image before
+  // generating a code. The file is stored with the resident as its uploader,
+  // so only that resident and authorized gate staff can read it back.
+  router.post(
+    '/codes/id-document',
+    authGuard,
+    residentGuard,
+    codeCreateGuard,
+    (req, res, next) => {
+      codeDocumentUpload.single('file')(req, res, (err) => {
+        if (err) {
+          if (err instanceof AppError) next(err);
+          else next(new AppError(400, 'MEDIA_UPLOAD_FAILED', String(err.message ?? err)));
+          return;
+        }
+        next();
+      });
+    },
+    asyncWrap(async (req, res, next) => {
+      const ctx = getResidentContext(req);
+      if (!ctx) {
+        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+        return;
+      }
+      if (!req.file) {
+        next(new AppError(400, 'MEDIA_NO_FILE', 'No file uploaded (field name: "file")'));
+        return;
+      }
+      if (!options.mediaStorage) {
+        next(new AppError(501, 'INTERNAL_ERROR', 'Media storage not wired'));
+        return;
+      }
+      const result = await options.mediaStorage.save({
+        organizationId,
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+        uploadedById: ctx.userId,
+      });
+      res.status(201).json({ data: result });
+    }),
+  );
+
   router.get(
     '/codes',
     authGuard,
@@ -348,6 +421,9 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
             .min(1)
             .max(365 * 24)
             .optional(),
+          visitorName: z.string().trim().min(1).max(120),
+          carPlate: z.string().trim().max(24).optional(),
+          idDocumentUrl: z.string().trim().max(255).optional(),
         })
         .safeParse(req.body ?? {});
       if (!body.success) {
@@ -357,7 +433,13 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
       const response = await options.codes.generate(
         organizationId,
         ctx.userId,
-        { kind: body.data.kind, durationHours: body.data.durationHours },
+        {
+          kind: body.data.kind,
+          durationHours: body.data.durationHours,
+          visitorName: body.data.visitorName,
+          carPlate: body.data.carPlate,
+          idDocumentUrl: body.data.idDocumentUrl,
+        },
         makeContext(req, res).requestId,
       );
       res.status(201).json({ data: response });

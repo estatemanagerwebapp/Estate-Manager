@@ -32,6 +32,7 @@ interface SettingsDraft {
   feeDescription: string;
   feeRefundable: boolean;
   codeDurationHours: string;
+  codeMaxDurationHours: string;
   bankName: string;
   accountName: string;
   accountNumber: string;
@@ -47,6 +48,7 @@ function draftFromSettings(settings: OrganizationSettingsView): SettingsDraft {
     feeDescription: settings.onboarding.registrationFee.description ?? '',
     feeRefundable: settings.onboarding.registrationFee.refundable,
     codeDurationHours: String(settings.accessCodes.defaultDurationHours),
+    codeMaxDurationHours: String(settings.accessCodes.maxDurationHours),
     bankName: bank.bankName ?? '',
     accountName: bank.accountName ?? '',
     accountNumber: bank.accountNumber ?? '',
@@ -158,8 +160,21 @@ export function SettingsPage() {
     }
 
     const duration = Number(draft.codeDurationHours);
+    const maxDuration = Number(draft.codeMaxDurationHours);
     if (!Number.isInteger(duration) || duration < 1 || duration > 365 * 24) {
-      setActionError('Access-code duration must be a whole number between 1 and 8760 hours.');
+      setActionError(
+        'Default access-code duration must be a whole number between 1 and 8760 hours.',
+      );
+      return;
+    }
+    if (!Number.isInteger(maxDuration) || maxDuration < 1 || maxDuration > 365 * 24) {
+      setActionError(
+        'Maximum access-code duration must be a whole number between 1 and 8760 hours.',
+      );
+      return;
+    }
+    if (duration > maxDuration) {
+      setActionError('Default access-code duration cannot exceed the maximum.');
       return;
     }
 
@@ -196,7 +211,7 @@ export function SettingsPage() {
             refundable: draft.feeRefundable,
           },
         },
-        accessCodes: { defaultDurationHours: duration },
+        accessCodes: { defaultDurationHours: duration, maxDurationHours: maxDuration },
         payments: {
           bankTransfer: {
             bankName,
@@ -288,12 +303,12 @@ export function SettingsPage() {
             <Card>
               <CardHeader
                 title="Access codes"
-                subtitle="Default validity in hours for newly generated resident gate codes."
+                subtitle="Default and maximum validity in hours for resident gate codes."
               />
               <CardBody className="grid gap-4 sm:grid-cols-2">
                 <Field
                   label="Default duration (hours)"
-                  hint="Residents can request 1–8760 hours; this is the fallback."
+                  hint="Prefilled in the resident form when they generate a code."
                 >
                   <input
                     className={inputClass}
@@ -306,9 +321,25 @@ export function SettingsPage() {
                     }
                   />
                 </Field>
-                <div className="flex items-center gap-2 self-end text-xs text-(--color-ink-muted)">
+                <Field
+                  label="Maximum duration (hours)"
+                  hint="Residents cannot request or extend a code beyond this ceiling."
+                >
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min={1}
+                    max={365 * 24}
+                    value={draft.codeMaxDurationHours}
+                    onChange={(event) =>
+                      setDraft({ ...draft, codeMaxDurationHours: event.target.value })
+                    }
+                  />
+                </Field>
+                <div className="flex items-center gap-2 self-end text-xs text-(--color-ink-muted) sm:col-span-2">
                   <SlidersHorizontal aria-hidden size={14} />
-                  Existing codes keep the expiry they were issued with.
+                  Existing codes keep the expiry they were issued with. Administrators can revoke
+                  any code from Gate access.
                 </div>
               </CardBody>
             </Card>

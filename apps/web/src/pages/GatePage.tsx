@@ -1,5 +1,14 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { CheckCircle2, KeyRound, RefreshCw, ScanLine, Search, XCircle } from 'lucide-react';
+import {
+  Ban,
+  CheckCircle2,
+  FileText,
+  KeyRound,
+  RefreshCw,
+  ScanLine,
+  Search,
+  XCircle,
+} from 'lucide-react';
 import type {
   AccessCodeKind,
   AccessCodeStatus,
@@ -18,8 +27,10 @@ import {
 import { useApiQuery } from '../api/query';
 import { queryKeys } from '../api/query-keys';
 import { useCan } from '../auth/useCan';
-import { Modal } from '../components/dialog';
+import { Modal, useConfirm } from '../components/dialog';
 import { Button, Field, InfoBanner, inputClass, selectClass } from '../components/ui';
+import { Countdown } from '../components/Countdown';
+import { useToast } from '../toast/Toast';
 import { DataTable, FilterBar, OperatorPageHeader, StatusBadge } from '../components/operator';
 import type { BadgeTone } from '../components/ui';
 
@@ -128,6 +139,20 @@ export function accessCodePropertyLabel(code: OperatorAccessCodeDto): string {
     .join(' · ');
 }
 
+export function accessCodeVisitorLabel(code: OperatorAccessCodeDto): string {
+  return code.visitorName?.trim() || 'Visitor not recorded';
+}
+
+export function accessCodeVisitorDetail(code: OperatorAccessCodeDto): string {
+  return [code.visitorName?.trim(), code.carPlate?.trim()].filter(Boolean).join(' · ') || '—';
+}
+
+/** Media URL for inline viewing by gate staff. */
+export function idDocumentHref(url: string | null): string | null {
+  if (!url) return null;
+  return url.includes('?') ? `${url}&inline=1` : `${url}?inline=1`;
+}
+
 export function verificationResidentLabel(verification: AccessVerificationDto): string {
   return (
     verification.resident?.fullName ??
@@ -155,6 +180,8 @@ export function accessCodeMatchesSearch(code: OperatorAccessCodeDto, rawQuery: s
     code.resident?.email ?? '',
     code.resident?.phone ?? '',
     accessCodePropertyLabel(code),
+    code.visitorName ?? '',
+    code.carPlate ?? '',
     code.codePrefix,
     CODE_KIND_LABELS[code.kind],
     accessCodeStatusLabel(accessCodeDisplayStatus(code)),
@@ -176,6 +203,8 @@ export function verificationMatchesSearch(
     verification.resident?.email ?? '',
     verification.resident?.phone ?? '',
     verificationPropertyLabel(verification),
+    verification.visitorName ?? '',
+    verification.carPlate ?? '',
     verification.codePrefix ?? '',
     GATE_LABELS[verification.gate],
     verificationOutcomeLabel(verification.outcome),
@@ -198,8 +227,11 @@ export function verificationMatchesSearch(
  */
 export function GatePage() {
   const can = useCan();
+  const toast = useToast();
+  const { confirm, dialog } = useConfirm();
   const canReadCodes = can['gate.read'] === true;
-  const canVerify = can['gate.manage'] === true;
+  const canManageGate = can['gate.manage'] === true;
+  const canVerify = canManageGate;
 
   const [tab, setTab] = useState<GateTab>('log');
   const [search, setSearch] = useState('');
@@ -212,6 +244,7 @@ export function GatePage() {
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<AccessVerificationDto | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const verificationFilter = useMemo(
     () => verificationFilterForView(outcomeView, gateView),
@@ -311,6 +344,28 @@ export function GatePage() {
       );
     } finally {
       setVerifying(false);
+    }
+  }
+
+  async function revokeCode(code: OperatorAccessCodeDto) {
+    const confirmed = await confirm({
+      title: 'Revoke access code?',
+      body: `The code for ${accessCodeVisitorLabel(code)} will stop working immediately. The resident will see it as revoked.`,
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    setRevokingId(code.id);
+    try {
+      await api.revokeOperatorAccessCode(code.id);
+      toast.success('Access code revoked.');
+      await refreshAll();
+    } catch (error) {
+      toast.error(
+        error instanceof ApiRequestError ? error.message : 'Could not revoke the access code.',
+      );
+    } finally {
+      setRevokingId(null);
     }
   }
 
@@ -462,8 +517,9 @@ export function GatePage() {
       {tab === 'codes' && (
         <div className="mt-4">
           <InfoBanner>
-            Residents create, extend and revoke their own codes. Staff can inspect prefixes and
-            validity windows here, but the full code is never available to the estate office.
+            Residents attach the visitor name, car plate and ID image when they create a code. Staff
+            with gate management can inspect those details and revoke a code at any time. The full
+            code is never available to the estate office.
           </InfoBanner>
         </div>
       )}
@@ -490,6 +546,20 @@ export function GatePage() {
                   </p>
                   <p className="truncate text-[11px] text-(--color-ink-muted)">
                     {entry.resident?.email ?? 'No resident context'}
+                  </p>
+                </div>
+              ),
+            },
+            {
+              key: 'visitor',
+              header: 'Visitor',
+              cell: (entry) => (
+                <div className="min-w-0">
+                  <p className="truncate text-xs text-(--color-ink)">
+                    {entry.visitorName?.trim() || 'Not recorded'}
+                  </p>
+                  <p className="truncate text-[11px] text-(--color-ink-muted)">
+                    {entry.carPlate?.trim() || 'No vehicle'}
                   </p>
                 </div>
               ),
@@ -600,6 +670,31 @@ export function GatePage() {
               ),
             },
             {
+              key: 'visitor',
+              header: 'Visitor',
+              cell: (code) => (
+                <div className="min-w-0">
+                  <p className="truncate text-xs text-(--color-ink)">
+                    {accessCodeVisitorLabel(code)}
+                  </p>
+                  <p className="truncate text-[11px] text-(--color-ink-muted)">
+                    {code.carPlate?.trim() || 'No vehicle'}
+                  </p>
+                  {idDocumentHref(code.idDocumentUrl) && (
+                    <a
+                      href={idDocumentHref(code.idDocumentUrl)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-(--color-primary) hover:underline"
+                    >
+                      <FileText aria-hidden size={11} />
+                      View ID image
+                    </a>
+                  )}
+                </div>
+              ),
+            },
+            {
               key: 'kind',
               header: 'Direction',
               cell: (code) => (
@@ -631,11 +726,14 @@ export function GatePage() {
             },
             {
               key: 'validUntil',
-              header: 'Valid until',
+              header: 'Time left',
               cell: (code) => (
-                <span className="whitespace-nowrap text-xs text-(--color-ink-muted)">
-                  {code.validUntil ? formatDate(code.validUntil) : 'No expiry'}
-                </span>
+                <div className="whitespace-nowrap">
+                  <Countdown validUntil={code.validUntil} status={accessCodeDisplayStatus(code)} />
+                  <p className="mt-0.5 text-[11px] text-(--color-ink-muted)">
+                    {code.validUntil ? formatDate(code.validUntil) : 'No expiry'}
+                  </p>
+                </div>
               ),
             },
             {
@@ -646,6 +744,23 @@ export function GatePage() {
                   {formatDate(code.issuedAt)}
                 </span>
               ),
+            },
+            {
+              key: 'actions',
+              header: '',
+              align: 'right',
+              cell: (code) =>
+                canManageGate && accessCodeDisplayStatus(code) !== 'REVOKED' ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={revokingId === code.id}
+                    onClick={() => void revokeCode(code)}
+                  >
+                    <Ban aria-hidden size={12} />
+                    {revokingId === code.id ? 'Revoking…' : 'Revoke'}
+                  </Button>
+                ) : null,
             },
           ]}
           rows={visibleCodes}
@@ -730,6 +845,7 @@ export function GatePage() {
           </form>
         )}
       </Modal>
+      {dialog}
     </div>
   );
 }
@@ -762,6 +878,26 @@ function VerificationResult({ result }: { result: AccessVerificationDto }) {
       </div>
 
       <dl className="mt-4 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-xs">
+        <dt className="text-(--color-ink-muted)">Visitor</dt>
+        <dd className="text-(--color-ink)">{result.visitorName?.trim() || 'Not recorded'}</dd>
+        <dt className="text-(--color-ink-muted)">Car plate</dt>
+        <dd className="text-(--color-ink)">{result.carPlate?.trim() || 'No vehicle'}</dd>
+        <dt className="text-(--color-ink-muted)">ID image</dt>
+        <dd className="text-(--color-ink)">
+          {idDocumentHref(result.idDocumentUrl) ? (
+            <a
+              href={idDocumentHref(result.idDocumentUrl)!}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-medium text-(--color-primary) hover:underline"
+            >
+              <FileText aria-hidden size={12} />
+              View visitor ID
+            </a>
+          ) : (
+            'Not attached'
+          )}
+        </dd>
         <dt className="text-(--color-ink-muted)">Resident</dt>
         <dd className="text-(--color-ink)">{verificationResidentLabel(result)}</dd>
         <dt className="text-(--color-ink-muted)">Property</dt>

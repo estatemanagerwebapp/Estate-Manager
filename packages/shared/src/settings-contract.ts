@@ -86,6 +86,7 @@ export interface OrganizationSettingsUpdateInput {
   };
   accessCodes?: {
     defaultDurationHours?: number;
+    maxDurationHours?: number;
   };
   payments?: {
     bankTransfer?: Partial<BankTransferDetailsDto>;

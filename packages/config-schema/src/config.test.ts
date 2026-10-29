@@ -51,6 +51,7 @@ describe('baseline configuration', () => {
     expect(config.fees.registration.amountKobo).toBe(0);
     expect(config.onboarding.residentCode.persistent).toBe(true);
     expect(config.accessCodes.defaultDurationHours).toBe(720);
+    expect(config.accessCodes.maxDurationHours).toBe(8760);
     expect(config.payments.bankTransfer.bankName).toBeNull();
     expect(config.sos.contacts).toEqual([]);
     expect(config.customFields).toEqual([]);
@@ -72,6 +73,7 @@ describe('baseline configuration', () => {
     expect(config.fees.registration.amountKobo).toBe(5_000_000);
     expect(config.payments.provider).toBe('NONE');
     expect(config.accessCodes.defaultDurationHours).toBe(720);
+    expect(config.accessCodes.maxDurationHours).toBe(8760);
     expect(config.sos.contacts).toEqual([]);
     // No payment integration or account activation may be enabled in Phase 0.
     expect(config.onboarding.createAccountOnlyAfterVerifiedPayment).toBe(true);
@@ -91,6 +93,14 @@ describe('configuration validation', () => {
   it('rejects invalid branding colours', () => {
     const document = { ...validDocument(), branding: { primaryColor: 'orange' } };
     expect(issuePaths(document)).toContain('branding.primaryColor');
+  });
+
+  it('rejects an access-code default above its maximum', () => {
+    const document = {
+      ...validDocument(),
+      accessCodes: { defaultDurationHours: 100, maxDurationHours: 10 },
+    };
+    expect(issuePaths(document)).toContain('accessCodes.defaultDurationHours');
   });
 
   it('rejects negative and fractional fee amounts', () => {

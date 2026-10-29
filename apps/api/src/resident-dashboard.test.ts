@@ -411,7 +411,7 @@ describe('resident dashboard home (S11)', () => {
     const generated = await request(app)
       .post('/api/v1/resident/codes')
       .set('Cookie', residentCookie)
-      .send({ kind: 'ENTRY', durationHours: 168 });
+      .send({ kind: 'ENTRY', durationHours: 168, visitorName: 'Ada Visitor' });
     expect(generated.status).toBe(201);
 
     const response = await request(app)

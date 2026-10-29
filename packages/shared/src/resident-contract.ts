@@ -149,18 +149,32 @@ export interface ResidentAccessCodeDto {
   validUntil: string | null;
   issuedAt: string;
   revokedAt: string | null;
+  /** Visitor the code was issued for. */
+  visitorName: string | null;
+  /** Vehicle plate presented at the gate, when supplied. */
+  carPlate: string | null;
+  /** Relative media URL of the visitor's ID image. */
+  idDocumentUrl: string | null;
 }
 
 export interface ResidentAccessCodesResponse {
   codes: ResidentAccessCodeDto[];
   /** The estate's configured default validity for a newly generated code. */
   defaultDurationHours: number;
+  /** The estate's configured maximum validity a resident may request. */
+  maxDurationHours: number;
 }
 
 export interface ResidentGenerateAccessCodeInput {
   kind: AccessCodeKind;
   /** Validity window in hours; defaults to the estate setting when omitted. */
   durationHours?: number;
+  /** Visitor the code is being issued for. */
+  visitorName: string;
+  /** Vehicle plate presented at the gate, when supplied. */
+  carPlate?: string;
+  /** Uploaded visitor ID image URL. */
+  idDocumentUrl?: string;
 }
 
 export interface ResidentGenerateAccessCodeResponse {
@@ -208,12 +222,23 @@ export interface OperatorAccessCodeDto {
   validUntil: string | null;
   issuedAt: string;
   revokedAt: string | null;
+  /** Visitor the code was issued for. */
+  visitorName: string | null;
+  /** Vehicle plate presented at the gate, when supplied. */
+  carPlate: string | null;
+  /** Relative media URL of the visitor's ID image. */
+  idDocumentUrl: string | null;
   resident: OperatorResidentSummaryDto | null;
   property: OperatorPropertySummaryDto | null;
 }
 
 export interface OperatorAccessCodesResponse {
   codes: OperatorAccessCodeDto[];
+}
+
+export interface OperatorRevokeAccessCodeResponse {
+  ok: true;
+  code: OperatorAccessCodeDto;
 }
 
 /** One gate verification attempt, never the code itself. */
@@ -225,6 +250,10 @@ export interface AccessVerificationDto {
   reason: AccessVerificationReason | null;
   codePrefix: string | null;
   occurredAt: string;
+  /** Visitor details carried by the presented code, when it exists. */
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
   resident: OperatorResidentSummaryDto | null;
   property: OperatorPropertySummaryDto | null;
   verifiedBy: OperatorActorSummaryDto | null;

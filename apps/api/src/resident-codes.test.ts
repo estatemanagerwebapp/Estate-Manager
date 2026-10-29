@@ -207,6 +207,11 @@ beforeAll(async () => {
       const draft = await drafts.findByUser(userId);
       return draft?.propertyId ?? null;
     },
+    loadDurationLimits: async () => ({
+      defaultDurationHours: 720,
+      maxDurationHours: 720,
+    }),
+    ownsMediaUrl: async (_organizationId, _userId, url) => url.startsWith('/api/v1/media/'),
   });
 
   app = createApp({
@@ -275,7 +280,13 @@ describe('resident access codes (S4)', () => {
     const response = await request(app)
       .post('/api/v1/resident/codes')
       .set('Cookie', residentCookie)
-      .send({ kind: 'ENTRY', durationHours: 720 });
+      .send({
+        kind: 'ENTRY',
+        durationHours: 720,
+        visitorName: 'Ada Visitor',
+        carPlate: ' lag-123-aa ',
+        idDocumentUrl: '/api/v1/media/visitor-id.png',
+      });
     expect(response.status).toBe(201);
     expect(response.body.data.ok).toBe(true);
 
@@ -295,6 +306,9 @@ describe('resident access codes (S4)', () => {
     expect(row!.codeHash).not.toBe(fullCode);
     expect(row!.codeHash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(row)).not.toContain(fullCode);
+    expect(row!.visitorName).toBe('Ada Visitor');
+    expect(row!.carPlate).toBe('lag-123-aa');
+    expect(row!.idDocumentUrl).toBe('/api/v1/media/visitor-id.png');
 
     // The 720-hour (30-day) window is set.
     const windowHours = (row!.validUntil!.getTime() - row!.issuedAt.getTime()) / 3_600_000;
@@ -307,17 +321,64 @@ describe('resident access codes (S4)', () => {
     expect(auditRows.length).toBe(1);
   });
 
+  it('enforces the estate maximum and rejects unverified visitor ID URLs', async () => {
+    const tooLong = await request(app)
+      .post('/api/v1/resident/codes')
+      .set('Cookie', residentCookie)
+      .send({ kind: 'ENTRY', durationHours: 721, visitorName: 'Ada Visitor' });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body.error.message).toContain('720');
+
+    const badMedia = await request(app)
+      .post('/api/v1/resident/codes')
+      .set('Cookie', residentCookie)
+      .send({
+        kind: 'ENTRY',
+        visitorName: 'Ada Visitor',
+        idDocumentUrl: 'https://evil.example/id.png',
+      });
+    expect(badMedia.status).toBe(400);
+
+    const noVisitor = await request(app)
+      .post('/api/v1/resident/codes')
+      .set('Cookie', residentCookie)
+      .send({ kind: 'ENTRY' });
+    expect(noVisitor.status).toBe(400);
+  });
+
+  it('rejects missing and non-photo visitor ID uploads', async () => {
+    expect((await request(app).post('/api/v1/resident/codes/id-document')).status).toBe(401);
+
+    const missing = await request(app)
+      .post('/api/v1/resident/codes/id-document')
+      .set('Cookie', residentCookie);
+    expect(missing.status).toBe(400);
+
+    const svg = await request(app)
+      .post('/api/v1/resident/codes/id-document')
+      .set('Cookie', residentCookie)
+      .attach('file', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" />'), {
+        filename: 'visitor.svg',
+        contentType: 'image/svg+xml',
+      });
+    expect(svg.status).toBe(400);
+  });
+
   it('lists the codes without ever exposing the full secret', async () => {
     const response = await request(app).get('/api/v1/resident/codes').set('Cookie', residentCookie);
     expect(response.status).toBe(200);
 
-    const { codes, defaultDurationHours } = response.body.data;
+    const { codes, defaultDurationHours, maxDurationHours } = response.body.data;
     expect(defaultDurationHours).toBe(720);
+    expect(maxDurationHours).toBe(720);
     expect(codes.length).toBe(1);
     expect(codes[0].kind).toBe('ENTRY');
     expect(codes[0].status).toBe('ACTIVE');
     expect(codes[0].codePrefix).toHaveLength(4);
     expect(codes[0].validUntil).toBeTruthy();
+    expect(codes[0].visitorName).toBe('Ada Visitor');
+    expect(codes[0].carPlate).toBe('lag-123-aa');
+    expect(codes[0].idDocumentUrl).toBe('/api/v1/media/visitor-id.png');
 
     // The list carries no full code field at all.
     const serialized = JSON.stringify(response.body);
@@ -392,7 +453,7 @@ describe('resident access codes (S4)', () => {
     const generated = await request(app)
       .post('/api/v1/resident/codes')
       .set('Cookie', secondResidentCookie)
-      .send({ kind: 'BOTH' });
+      .send({ kind: 'BOTH', visitorName: 'Bode Visitor' });
     expect(generated.status).toBe(201);
     const secondCodeId = generated.body.data.codeId as string;
 
@@ -435,7 +496,7 @@ describe('resident access codes (S4)', () => {
     const response = await request(app)
       .post('/api/v1/resident/codes')
       .set('Cookie', residentCookie)
-      .send({ kind: 'ENTRY', durationHours: 9999 });
+      .send({ kind: 'ENTRY', durationHours: 9999, visitorName: 'Ada Visitor' });
     expect(response.status).toBe(400);
   });
 });

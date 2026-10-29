@@ -276,8 +276,24 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       const draft = await residentDrafts.findByUser(userId);
       return draft?.propertyId ?? null;
     },
-    loadDefaultDurationHours: async () =>
-      (await configService.resolve()).config.accessCodes.defaultDurationHours,
+    loadDurationLimits: async () => {
+      const accessCodes = (await configService.resolve()).config.accessCodes;
+      return {
+        defaultDurationHours: accessCodes.defaultDurationHours,
+        maxDurationHours: accessCodes.maxDurationHours,
+      };
+    },
+    ownsMediaUrl: async (organizationId, userId, url) => {
+      const prefix = `${mediaStorage.publicBase}/`;
+      if (!url.startsWith(prefix)) return false;
+      const relativePath = url.slice(prefix.length);
+      if (!/^[0-9a-f-]{36}\/[0-9a-f-]{36}$/i.test(relativePath)) return false;
+      const row = await prisma.mediaFile.findFirst({
+        where: { organizationId, relativePath, uploadedById: userId },
+        select: { id: true },
+      });
+      return Boolean(row);
+    },
   });
 
   const complaintRepo = new PrismaComplaintRepository(prisma);

@@ -43,15 +43,17 @@ function makeContext(req: Request, res: Response, fallbackOrganizationId: string
 /**
  * Organization-wide access-code register, mounted at `/access-codes`.
  *
- * Read-only: residents still create, extend and deactivate their own codes.
- * `gate.read` is enough to inspect prefixes and validity windows; the full
- * code is never available to staff.
+ * Residents create, extend and deactivate their own codes; staff with
+ * `gate.read` inspect prefixes and validity windows, and staff with
+ * `gate.manage` can revoke a code from the estate office. The full code is
+ * never available to staff.
  */
 export function createOperatorAccessCodeRouter(options: OperatorGateRouteOptions): Router {
   const router = Router();
   const { sessions, permissions, organizationId, gate } = options;
   const authGuard = requireAuth((sessionId) => sessions.verify(sessionId));
   const readGuard = requirePermission((ctx) => permissions.can(ctx.role, 'gate.read'));
+  const manageGuard = requirePermission((ctx) => permissions.can(ctx.role, 'gate.manage'));
 
   router.get(
     '/',
@@ -70,6 +72,20 @@ export function createOperatorAccessCodeRouter(options: OperatorGateRouteOptions
         return;
       }
       const response = await gate.listAccessCodes(organizationId, query.data);
+      res.status(200).json({ data: response });
+    }),
+  );
+
+  router.post(
+    '/:id/revoke',
+    authGuard,
+    manageGuard,
+    asyncWrap(async (req, res) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'Missing access code id');
+      }
+      const response = await gate.revoke(makeContext(req, res, organizationId), id);
       res.status(200).json({ data: response });
     }),
   );

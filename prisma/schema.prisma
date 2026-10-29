@@ -338,6 +338,12 @@ model AccessCode {
   status         String    @default("ACTIVE") @db.VarChar(16)
   /// End of the validity window; null = no expiry (open-ended code).
   validUntil     DateTime? @map("valid_until") @db.Timestamptz(6)
+  /// Visitor the code was issued for, so the gate can identify them quickly.
+  visitorName    String?   @map("visitor_name") @db.VarChar(120)
+  /// Vehicle plate presented at the gate, when the visitor arrives by car.
+  carPlate       String?   @map("car_plate") @db.VarChar(24)
+  /// Relative media URL of the visitor's ID image, uploaded by the resident.
+  idDocumentUrl  String?   @map("id_document_url") @db.VarChar(255)
   issuedAt       DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

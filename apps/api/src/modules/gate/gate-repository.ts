@@ -38,10 +38,15 @@ export interface GatePropertyRecord {
 
 export interface OperatorAccessCodeRecord {
   id: string;
+  organizationId: string;
+  userId: string;
   kind: AccessCodeKind;
   status: AccessCodeStatus;
   codePrefix: string;
   validUntil: Date | null;
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
   issuedAt: Date;
   revokedAt: Date | null;
   resident: GateResidentRecord | null;
@@ -62,6 +67,9 @@ export interface AccessVerificationRecord {
   reason: AccessVerificationReason | null;
   codePrefix: string | null;
   occurredAt: Date;
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
   resident: GateResidentRecord | null;
   property: GatePropertyRecord | null;
   verifiedBy: GateActorRecord | null;
@@ -116,14 +124,26 @@ const VERIFICATION_INCLUDE = {
   resident: { select: RESIDENT_SELECT },
   property: { select: PROPERTY_SELECT },
   verifiedBy: { select: ACTOR_SELECT },
+  accessCode: {
+    select: {
+      visitorName: true,
+      carPlate: true,
+      idDocumentUrl: true,
+    },
+  },
 } satisfies Record<string, unknown>;
 
 type PrismaAccessCodeRow = {
   id: string;
+  organizationId: string;
+  userId: string;
   kind: string;
   status: string;
   codePrefix: string;
   validUntil: Date | null;
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
   issuedAt: Date;
   revokedAt: Date | null;
   user: GateResidentRecord | null;
@@ -138,6 +158,11 @@ type PrismaVerificationRow = {
   reason: string | null;
   codePrefix: string | null;
   occurredAt: Date;
+  accessCode: {
+    visitorName: string | null;
+    carPlate: string | null;
+    idDocumentUrl: string | null;
+  } | null;
   resident: GateResidentRecord | null;
   property: GatePropertyRecord | null;
   verifiedBy: GateActorRecord | null;
@@ -174,6 +199,41 @@ export class PrismaGateRepository {
       include: ACCESS_CODE_INCLUDE,
     });
     return (rows as PrismaAccessCodeRow[]).map(toAccessCodeRecord);
+  }
+
+  /** Organization-scoped lookup by primary key, with display context. */
+  async findAccessCodeById(
+    organizationId: string,
+    codeId: string,
+  ): Promise<OperatorAccessCodeRecord | null> {
+    if (!isUuid(codeId)) return null;
+    const row = await this.prisma.accessCode.findFirst({
+      where: { id: codeId, organizationId },
+      include: ACCESS_CODE_INCLUDE,
+    });
+    return row ? toAccessCodeRecord(row as PrismaAccessCodeRow) : null;
+  }
+
+  /**
+   * Revoke a code on behalf of the estate office. Scoped by organization and
+   * refuses to touch a code that is already revoked.
+   */
+  async revokeAccessCode(
+    organizationId: string,
+    codeId: string,
+    revokedAt: Date,
+  ): Promise<OperatorAccessCodeRecord | null> {
+    if (!isUuid(codeId)) return null;
+    const result = await this.prisma.accessCode.updateMany({
+      where: { id: codeId, organizationId, status: { not: 'REVOKED' } },
+      data: { status: 'REVOKED', revokedAt },
+    });
+    if (result.count === 0) return null;
+    const row = await this.prisma.accessCode.findFirst({
+      where: { id: codeId, organizationId },
+      include: ACCESS_CODE_INCLUDE,
+    });
+    return row ? toAccessCodeRecord(row as PrismaAccessCodeRow) : null;
   }
 
   /** Hash lookup within the active organization. The plaintext never reaches SQL. */
@@ -230,13 +290,24 @@ export class PrismaGateRepository {
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 function toAccessCodeRecord(row: PrismaAccessCodeRow): OperatorAccessCodeRecord {
   return {
     id: row.id,
+    organizationId: row.organizationId,
+    userId: row.userId,
     kind: row.kind as AccessCodeKind,
     status: row.status as AccessCodeStatus,
     codePrefix: row.codePrefix,
     validUntil: row.validUntil,
+    visitorName: row.visitorName,
+    carPlate: row.carPlate,
+    idDocumentUrl: row.idDocumentUrl,
     issuedAt: row.issuedAt,
     revokedAt: row.revokedAt,
     resident: row.user,
@@ -253,6 +324,9 @@ function toVerificationRecord(row: PrismaVerificationRow): AccessVerificationRec
     reason: row.reason as AccessVerificationReason | null,
     codePrefix: row.codePrefix,
     occurredAt: row.occurredAt,
+    visitorName: row.accessCode?.visitorName ?? null,
+    carPlate: row.accessCode?.carPlate ?? null,
+    idDocumentUrl: row.accessCode?.idDocumentUrl ?? null,
     resident: row.resident,
     property: row.property,
     verifiedBy: row.verifiedBy,
