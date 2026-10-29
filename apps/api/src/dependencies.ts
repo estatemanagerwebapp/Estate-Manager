@@ -35,6 +35,8 @@ import { ResidentBookingsService } from './modules/resident/bookings.service.js'
 import { PrismaSosRepository } from './modules/resident/sos-repository.js';
 import { ResidentSosService } from './modules/resident/sos.service.js';
 import { OperatorSosService } from './modules/sos/operator-sos.service.js';
+import { OperatorMessagesService } from './modules/messages/operator-messages.service.js';
+import { OperatorComplaintsService } from './modules/complaints/operator-complaints.service.js';
 import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
 import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 import {
@@ -105,6 +107,10 @@ export interface AppDependencies {
   residentSosService: ResidentSosService;
   /** Operator SOS queue and acknowledgement/resolution actions. */
   operatorSosService: OperatorSosService;
+  /** Operator message inbox and staff replies. */
+  operatorMessagesService: OperatorMessagesService;
+  /** Operator complaint queue, replies and status changes. */
+  operatorComplaintsService: OperatorComplaintsService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
   /** Phase 2 — local media storage (ID document uploads). */
@@ -246,9 +252,17 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       return draft?.propertyId ?? null;
     },
   });
+  const operatorComplaintsService = new OperatorComplaintsService({
+    complaints: complaintRepo,
+    audit,
+  });
 
   const messageRepo = new PrismaMessageRepository(prisma);
   const residentMessagesService = new ResidentMessagesService({
+    messages: messageRepo,
+    audit,
+  });
+  const operatorMessagesService = new OperatorMessagesService({
     messages: messageRepo,
     audit,
   });
@@ -349,6 +363,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentBookingsService,
     residentSosService,
     operatorSosService,
+    operatorMessagesService,
+    operatorComplaintsService,
     residentNotificationsService,
     mediaStorage,
     loadPropertyDetail,

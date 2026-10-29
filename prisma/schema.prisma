@@ -115,6 +115,7 @@ model User {
   complaints          Complaint[]
   complaintReplies    ComplaintReply[]
   messageThreads      MessageThread[]
+  messages            Message[]
   announcements       Announcement[]
   bookings            Booking[]
   sosEvents           SosEvent[]
@@ -350,6 +351,7 @@ model Complaint {
   replies      ComplaintReply[]
 
   @@index([organizationId, userId, status])
+  @@index([organizationId, status, createdAt])
   @@map("complaints")
 }
 
@@ -373,21 +375,25 @@ model ComplaintReply {
 // messages posted into it by either side.
 
 model MessageThread {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
   /// The resident who started the thread; also its owner for scoping.
-  residentUserId String   @map("resident_user_id") @db.Uuid
-  subject        String   @db.VarChar(160)
+  residentUserId  String    @map("resident_user_id") @db.Uuid
+  subject         String    @db.VarChar(160)
   /// OPEN | CLOSED.
-  status         String   @default("OPEN") @db.VarChar(16)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  status          String    @default("OPEN") @db.VarChar(16)
+  /// Shared estate-office read marker. Unread means resident messages created
+  /// after this instant; null means every resident message is unread.
+  staffLastReadAt DateTime? @map("staff_last_read_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   resident     User         @relation(fields: [residentUserId], references: [id], onDelete: Cascade)
   messages     Message[]
 
   @@index([organizationId, residentUserId])
+  @@index([organizationId, status, updatedAt])
   @@map("message_threads")
 }
 
@@ -396,12 +402,17 @@ model Message {
   threadId   String   @map("thread_id") @db.Uuid
   /// RESIDENT | ESTATE_OFFICE.
   senderRole String   @map("sender_role") @db.VarChar(16)
+  /// The account that posted the message; null for legacy rows or when the
+  /// author was deleted.
+  authorId   String?  @map("author_id") @db.Uuid
   body       String
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([threadId, createdAt])
+  @@index([authorId])
   @@map("messages")
 }
 

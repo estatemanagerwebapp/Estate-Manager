@@ -35,6 +35,14 @@ import {
   createOperatorSosRouter,
   type OperatorSosRouteOptions,
 } from './modules/sos/operator-sos.routes.js';
+import {
+  createOperatorMessagesRouter,
+  type OperatorMessagesRouteOptions,
+} from './modules/messages/operator-messages.routes.js';
+import {
+  createOperatorComplaintsRouter,
+  type OperatorComplaintsRouteOptions,
+} from './modules/complaints/operator-complaints.routes.js';
 import type { OrganizationConfigService } from './modules/organization/config.service.js';
 
 export interface AppOptions {
@@ -67,6 +75,10 @@ export interface AppOptions {
   resident?: ResidentRouteOptions;
   /** Operator SOS queue and acknowledge/resolve actions (`/sos/*`). */
   sos?: OperatorSosRouteOptions;
+  /** Operator message inbox and staff replies (`/messages/*`). */
+  messages?: OperatorMessagesRouteOptions;
+  /** Operator complaint queue, replies and status changes (`/complaints/*`). */
+  complaints?: OperatorComplaintsRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -115,6 +127,8 @@ export function createApp(options: AppOptions = {}): Express {
     dashboard: options.dashboard,
     resident: options.resident,
     sos: options.sos,
+    messages: options.messages,
+    complaints: options.complaints,
   });
   app.use(env.API_BASE_PATH, router);
 
@@ -140,6 +154,8 @@ function createVersionedRoutes(options: {
   dashboard?: DashboardRouteOptions;
   resident?: ResidentRouteOptions;
   sos?: OperatorSosRouteOptions;
+  messages?: OperatorMessagesRouteOptions;
+  complaints?: OperatorComplaintsRouteOptions;
 }): IRouter {
   const router: IRouter = express.Router();
   const {
@@ -154,6 +170,8 @@ function createVersionedRoutes(options: {
     dashboard,
     resident,
     sos,
+    messages,
+    complaints,
   } = options;
 
   router.use(
@@ -215,6 +233,16 @@ function createVersionedRoutes(options: {
   if (sos) {
     // Operator SOS queue (staff-scoped), mounted at /sos.
     router.use('/sos', createOperatorSosRouter(sos));
+  }
+
+  if (messages) {
+    // Operator message inbox (staff-scoped), mounted at /messages.
+    router.use('/messages', createOperatorMessagesRouter(messages));
+  }
+
+  if (complaints) {
+    // Operator complaint queue (staff-scoped), mounted at /complaints.
+    router.use('/complaints', createOperatorComplaintsRouter(complaints));
   }
 
   return router;

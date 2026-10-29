@@ -84,6 +84,7 @@ export class ResidentMessagesService {
     return this.options.messages.createThread({
       organizationId,
       residentUserId: userId,
+      authorId: userId,
       subject: cleanSubject,
       body,
     });
@@ -105,6 +106,7 @@ export class ResidentMessagesService {
     return this.options.messages.createMessage({
       threadId: thread.id,
       senderRole: 'RESIDENT',
+      authorId: userId,
       body,
     });
   }

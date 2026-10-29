@@ -18,6 +18,8 @@ import { AccountPage } from './pages/AccountPage';
 import { AdministratorsPage } from './pages/AdministratorsPage';
 import { ResidentsPage } from './pages/ResidentsPage';
 import { SosAlertsPage } from './pages/SosAlertsPage';
+import { MessagesPage } from './pages/MessagesPage';
+import { ComplaintsPage } from './pages/ComplaintsPage';
 import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
 import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
@@ -126,6 +128,22 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="sos.read">
                       <SosAlertsPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/messages"
+                  element={
+                    <RequirePermission permission="message.read">
+                      <MessagesPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/complaints"
+                  element={
+                    <RequirePermission permission="complaint.read">
+                      <ComplaintsPage />
                     </RequirePermission>
                   }
                 />

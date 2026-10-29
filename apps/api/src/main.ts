@@ -125,6 +125,18 @@ async function main(): Promise<void> {
       organizationId: deps.organizationId,
       sos: deps.operatorSosService,
     },
+    messages: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      messages: deps.operatorMessagesService,
+    },
+    complaints: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      complaints: deps.operatorComplaintsService,
+    },
   });
 
   const server = http.createServer(app);

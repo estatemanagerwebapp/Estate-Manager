@@ -1,4 +1,9 @@
-import type { OperatorSosFilter, UserFilter } from './client';
+import type {
+  OperatorComplaintFilter,
+  OperatorMessageFilter,
+  OperatorSosFilter,
+  UserFilter,
+} from './client';
 
 /**
  * Query-key registry for the operator console.
@@ -41,12 +46,12 @@ export const queryKeys = {
   // invalidation convention visible before the screens exist.
   messages: {
     all: ['messages'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['messages', filter] as const,
+    list: (filter: OperatorMessageFilter = {}) => ['messages', filter] as const,
     detail: (threadId: string) => ['message-thread', threadId] as const,
   },
   complaints: {
     all: ['complaints'] as const,
-    list: (filter: Record<string, unknown> = {}) => ['complaints', filter] as const,
+    list: (filter: OperatorComplaintFilter = {}) => ['complaints', filter] as const,
     detail: (complaintId: string) => ['complaint', complaintId] as const,
   },
   invoices: {

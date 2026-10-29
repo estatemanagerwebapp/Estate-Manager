@@ -144,6 +144,18 @@ async function buildApp(): Promise<HttpHandler> {
       organizationId: deps.organizationId,
       sos: deps.operatorSosService,
     },
+    messages: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      messages: deps.operatorMessagesService,
+    },
+    complaints: {
+      sessions: deps.auth.sessions,
+      permissions: deps.auth.permissions,
+      organizationId: deps.organizationId,
+      complaints: deps.operatorComplaintsService,
+    },
   });
 
   return app as unknown as HttpHandler;

@@ -74,6 +74,14 @@ import type {
   OperatorSosEventsResponse,
   OperatorResolveSosInput,
   OperatorSosMutationResponse,
+  MessageThreadStatus,
+  OperatorMessagesResponse,
+  OperatorMessageThreadResponse,
+  OperatorMessageReplyInput,
+  OperatorComplaintsResponse,
+  OperatorComplaintResponse,
+  OperatorComplaintReplyInput,
+  OperatorComplaintStatusInput,
   ResidentNotificationsView,
   ResidentMarkNotificationReadResponse,
   ResidentDashboardView,
@@ -219,6 +227,20 @@ export interface OperatorSosFilter {
   status?: string;
   /** Active means RAISED + ACKNOWLEDGED. Ignored when `status` is set. */
   active?: boolean;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the operator message inbox. */
+export interface OperatorMessageFilter {
+  status?: MessageThreadStatus;
+  /** Server caps at 200. */
+  limit?: number;
+}
+
+/** Query filters for the operator complaint queue. */
+export interface OperatorComplaintFilter {
+  status?: ComplaintStatus;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -709,6 +731,68 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  // --- Operator messages ------------------------------------------------------
+  /** Staff inbox, organization-scoped. */
+  listOperatorMessages: (filter: OperatorMessageFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorMessagesResponse>(`/api/v1/messages${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Mark a conversation as read by the estate office. */
+  markOperatorMessageRead: (threadId: string) =>
+    request<OperatorMessageThreadResponse>(
+      `/api/v1/messages/${encodeURIComponent(threadId)}/read`,
+      { method: 'POST' },
+    ),
+
+  /** Reply as the estate office. */
+  replyOperatorMessage: (threadId: string, input: OperatorMessageReplyInput) =>
+    request<OperatorMessageThreadResponse>(
+      `/api/v1/messages/${encodeURIComponent(threadId)}/reply`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+
+  /** Close an open conversation. */
+  closeOperatorMessage: (threadId: string) =>
+    request<OperatorMessageThreadResponse>(
+      `/api/v1/messages/${encodeURIComponent(threadId)}/close`,
+      { method: 'POST' },
+    ),
+
+  /** Reopen a closed conversation. */
+  reopenOperatorMessage: (threadId: string) =>
+    request<OperatorMessageThreadResponse>(
+      `/api/v1/messages/${encodeURIComponent(threadId)}/reopen`,
+      { method: 'POST' },
+    ),
+
+  // --- Operator complaints ----------------------------------------------------
+  /** Staff complaint queue, organization-scoped. */
+  listOperatorComplaints: (filter: OperatorComplaintFilter = {}) => {
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    const qs = params.toString();
+    return request<OperatorComplaintsResponse>(`/api/v1/complaints${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Reply to a complaint as the estate office. */
+  replyOperatorComplaint: (complaintId: string, input: OperatorComplaintReplyInput) =>
+    request<OperatorComplaintResponse>(
+      `/api/v1/complaints/${encodeURIComponent(complaintId)}/reply`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+
+  /** Change a complaint status. */
+  setOperatorComplaintStatus: (complaintId: string, input: OperatorComplaintStatusInput) =>
+    request<OperatorComplaintResponse>(
+      `/api/v1/complaints/${encodeURIComponent(complaintId)}/status`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
 
   /** S10: the resident's notification inbox plus their upcoming bookings. */
   getResidentNotifications: () =>

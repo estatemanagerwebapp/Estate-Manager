@@ -4,6 +4,8 @@ import {
   Home,
   KeyRound,
   LayoutDashboard,
+  Mail,
+  MessageSquareWarning,
   ShieldCheck,
   Siren,
   UserRound,
@@ -74,6 +76,18 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     icon: Siren,
     permission: 'sos.read',
   },
+  {
+    to: '/app/messages',
+    label: 'Messages',
+    icon: Mail,
+    permission: 'message.read',
+  },
+  {
+    to: '/app/complaints',
+    label: 'Complaints',
+    icon: MessageSquareWarning,
+    permission: 'complaint.read',
+  },
 ];
 
 export const SETTINGS_SECTION_LABEL = 'Settings';
@@ -104,6 +118,8 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/administrators')) return 'Administrators';
   if (pathname.startsWith('/app/users')) return 'Administrators';
   if (pathname.startsWith('/app/sos')) return 'SOS alerts';
+  if (pathname.startsWith('/app/messages')) return 'Messages';
+  if (pathname.startsWith('/app/complaints')) return 'Complaints';
   if (pathname.startsWith('/app/activity')) return 'Activity';
   if (pathname.startsWith('/app/account')) return 'Settings';
   return 'Overview';

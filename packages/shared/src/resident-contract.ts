@@ -210,9 +210,13 @@ export interface ResidentCreateComplaintResponse {
 
 // --- Messages (S6) ---------------------------------------------------------------
 
+export const MESSAGE_THREAD_STATUSES = ['OPEN', 'CLOSED'] as const;
+export type MessageThreadStatus = (typeof MESSAGE_THREAD_STATUSES)[number];
+export type MessageSenderRole = 'RESIDENT' | 'ESTATE_OFFICE';
+
 export interface ResidentMessageDto {
   id: string;
-  senderRole: 'RESIDENT' | 'ESTATE_OFFICE';
+  senderRole: MessageSenderRole;
   body: string;
   createdAt: string;
 }
@@ -220,7 +224,7 @@ export interface ResidentMessageDto {
 export interface ResidentMessageThreadDto {
   id: string;
   subject: string;
-  status: 'OPEN' | 'CLOSED';
+  status: MessageThreadStatus;
   messages: ResidentMessageDto[];
   createdAt: string;
   updatedAt: string;
@@ -240,6 +244,105 @@ export interface ResidentSendMessageInput {
 export interface ResidentSendMessageResponse {
   ok: true;
   thread: ResidentMessageThreadDto;
+}
+
+// --- Operator messages & complaints (Phase 4) ---------------------------------------
+
+/** Shared resident context used by the operator messaging/complaint screens. */
+export interface OperatorResidentSummaryDto {
+  id: string;
+  fullName: string | null;
+  email: string;
+  phone: string | null;
+}
+
+/** Shared assigned-property context used by the operator screens. */
+export interface OperatorPropertySummaryDto {
+  id: string;
+  identifier: string;
+  name: string | null;
+  estate: { id: string; name: string; slug: string };
+}
+
+/** A staff or resident account that authored a message/reply. */
+export interface OperatorActorSummaryDto {
+  id: string;
+  fullName: string | null;
+  email: string;
+  role: string;
+}
+
+export interface OperatorMessageDto {
+  id: string;
+  senderRole: MessageSenderRole;
+  body: string;
+  createdAt: string;
+  author: OperatorActorSummaryDto | null;
+}
+
+export interface OperatorMessageThreadDto {
+  id: string;
+  subject: string;
+  status: MessageThreadStatus;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  messages: OperatorMessageDto[];
+  /** Resident messages created after the shared staff read marker. */
+  unreadCount: number;
+  staffLastReadAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperatorMessagesResponse {
+  threads: OperatorMessageThreadDto[];
+}
+
+export interface OperatorMessageReplyInput {
+  body: string;
+}
+
+export interface OperatorMessageThreadResponse {
+  ok: true;
+  thread: OperatorMessageThreadDto;
+}
+
+export interface OperatorComplaintReplyDto {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: OperatorActorSummaryDto | null;
+}
+
+export interface OperatorComplaintDto {
+  id: string;
+  category: string;
+  subject: string;
+  description: string;
+  status: ComplaintStatus;
+  resolvedAt: string | null;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  replies: OperatorComplaintReplyDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperatorComplaintsResponse {
+  complaints: OperatorComplaintDto[];
+}
+
+export interface OperatorComplaintReplyInput {
+  body: string;
+}
+
+export interface OperatorComplaintStatusInput {
+  status: ComplaintStatus;
+}
+
+export interface OperatorComplaintResponse {
+  ok: true;
+  complaint: OperatorComplaintDto;
 }
 
 // --- Community (S7) ----------------------------------------------------------------
