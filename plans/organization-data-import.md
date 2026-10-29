@@ -104,4 +104,8 @@ Mounted at `/api/v1/org-imports`:
   gate.
 - Migration `20261029141655_organization_data_import` creates the batch/row
   tables; `20261029150000_organization_import_batch_org_fk` adds the organization
-  cascade foreign key.
+  cascade foreign key. Both are applied to production.
+- Commit `51a2c20` is pushed to `main` and the Vercel deployment completed. The
+  production route returns `401` without a session, as expected.
+- Authenticated production smoke is pending because no production operator
+  credentials are stored in the repository.
