@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../lib/errors.js';
+import { withDatabaseSecurityContext } from '../lib/prisma.js';
+import { logger } from '../lib/logger.js';
 
 export interface AuthenticatedContext {
   organizationId: string;
@@ -8,6 +10,12 @@ export interface AuthenticatedContext {
    *  verification — never taken from the request. */
   role: string;
   sessionId: string;
+  /** Authenticated members of this resident household, resolved server-side. */
+  residentAccountUserIds?: readonly string[];
+  /** Estate IDs loaded from staff assignments during server-side session verification. */
+  estateIds: readonly string[];
+  /** Resident property IDs are loaded from the verified account relationship. */
+  propertyIds: readonly string[];
 }
 
 type AuthenticatedRequest = Request & {
@@ -31,7 +39,14 @@ export function readSessionId(req: Request): string | undefined {
 }
 
 export interface VerifiedSession {
-  user: { id: string; organizationId: string; status: string; role: string };
+  user: {
+    id: string;
+    organizationId: string;
+    status: string;
+    role: string;
+    estateIds?: string[];
+    propertyIds?: string[];
+  };
   session: { expiresAt: Date | null };
 }
 
@@ -49,7 +64,7 @@ export interface VerifiedSession {
  * suspended account).
  */
 export function requireAuth(verifySession: (sessionId: string) => Promise<VerifiedSession | null>) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     const authedReq = req as AuthenticatedRequest;
     const sessionId = readSessionId(req);
 
@@ -82,10 +97,72 @@ export function requireAuth(verifySession: (sessionId: string) => Promise<Verifi
         userId: verified.user.id,
         role: verified.user.role,
         sessionId,
+        residentAccountUserIds: [verified.user.id],
+        estateIds: verified.user.estateIds ?? [],
+        propertyIds: verified.user.propertyIds ?? [],
       };
-      next();
+      withRequestDatabaseScope(
+        {
+          organizationId: verified.user.organizationId,
+          userId: verified.user.id,
+          role: verified.user.role,
+          residentAccountUserIds: [],
+          estateIds: verified.user.estateIds ?? [],
+          propertyIds: verified.user.propertyIds ?? [],
+        },
+        res,
+        next,
+        (resolvedContext) => {
+          authedReq.auth!.estateIds = resolvedContext.estateIds;
+          authedReq.auth!.propertyIds = resolvedContext.propertyIds;
+          authedReq.auth!.residentAccountUserIds = resolvedContext.residentAccountUserIds ?? [verified.user.id];
+        },
+      );
     })();
   };
+}
+
+/** Bind the full request lifecycle to one database transaction with RLS context. */
+export function withRequestDatabaseScope(
+  context: import('../lib/prisma.js').DatabaseSecurityContext,
+  res: Response,
+  next: NextFunction,
+  onResolved?: (context: import('../lib/prisma.js').DatabaseSecurityContext) => void,
+): void {
+  // Unit tests use fake services and do not connect to PostgreSQL. Production
+  // and local development always use the transaction-backed RLS path.
+  if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') {
+    next();
+    return;
+  }
+
+  let settled = false;
+  const responseFinished = new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (res.statusCode >= 500) reject(new Error(`Request failed with HTTP ${res.statusCode}`));
+      else resolve();
+    };
+    res.once('finish', finish);
+    res.once('close', finish);
+  });
+
+  void withDatabaseSecurityContext(context, async (_transaction, resolvedContext) => {
+    onResolved?.(resolvedContext);
+    // Express continues dispatch synchronously; async route handlers inherit
+    // the transaction's AsyncLocalStorage context.
+    next();
+    await responseFinished;
+  }).catch((error: unknown) => {
+    if (res.headersSent) {
+      logger.error({ err: error }, 'Database request transaction rolled back after response');
+      return;
+    }
+    next(
+      new AppError(503, 'DATABASE_UNAVAILABLE', 'Could not establish an isolated database request'),
+    );
+  });
 }
 
 export function getAuth(req: Request): AuthenticatedContext | undefined {
@@ -136,4 +213,28 @@ export function auditContext(req: Request, res: Response) {
     requestId: typeof requestId === 'string' ? requestId : undefined,
     sessionId: authedReq.auth?.sessionId,
   };
+}
+
+/** Audit context with the route's configured organization as a fallback. */
+export function routeAuditContext(
+  req: Request,
+  res: Response,
+  fallbackOrganizationId: string,
+): { organizationId: string; actorId: string | null; requestId: string | null } {
+  const context = auditContext(req, res);
+  return {
+    organizationId: context.organizationId ?? fallbackOrganizationId,
+    actorId: context.actorId,
+    requestId: context.requestId ?? null,
+  };
+}
+
+/** Read a required, non-array route parameter. */
+export function routeParam(req: Request, name: string): string {
+  const value = req.params[name];
+  const flat = Array.isArray(value) ? value[0] : value;
+  if (typeof flat !== 'string' || flat.length === 0) {
+    throw new AppError(400, 'VALIDATION_ERROR', `Missing :${name} parameter`);
+  }
+  return flat;
 }

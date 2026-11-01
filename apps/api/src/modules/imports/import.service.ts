@@ -78,15 +78,15 @@ export class ImportService {
     input: {
       estateId: string;
       filename: string;
-      /** Path to the uploaded .xlsx file on disk (multer temp path). */
-      filePath: string;
+      /** Uploaded workbook bytes. */
+      buffer: Buffer;
     },
   ): Promise<ImportPreviewResponse> {
     const estate = await this.requireEstate(context.organizationId, input.estateId);
     const houseTypes = await this.houseTypes.listActive();
     const existingIdentifiers = await this.properties.identifiersByEstate(estate.id);
 
-    const result = await parseWorkbook(input.filePath, {
+    const result = await parseWorkbook(input.buffer, {
       houseTypes,
       estateSlug: estate.slug,
       existingIdentifiers,

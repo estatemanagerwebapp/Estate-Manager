@@ -5,7 +5,8 @@ import type {
   SosStatus,
 } from '../resident/sos-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import type { NotifyInput } from '../resident/notifications.service.js';
+import { requireAuditActor, type AuthAuditContext } from '../auth/auth.service.js';
 import type {
   OperatorResolveSosInput,
   OperatorSosEventsResponse,
@@ -19,14 +20,17 @@ const MAX_RESOLUTION_NOTE_LENGTH = 500;
 export interface OperatorSosFilter {
   status?: SosStatus;
   activeOnly?: boolean;
+  estateId?: string;
   limit?: number;
 }
 
 export interface OperatorSosServiceOptions {
   sos: PrismaSosRepository;
   audit: PrismaAuditRepository;
+  /** Resident inbox hook; failures never undo a lifecycle change. */
+  notify?: (organizationId: string, userId: string, input: NotifyInput) => Promise<void>;
   /** Active predefined emergency contacts, when configured. */
-  contacts?: () => Promise<SosContactDto[]>;
+  contacts?: (organizationId: string, estateId?: string) => Promise<SosContactDto[]>;
 }
 
 /**
@@ -49,18 +53,21 @@ export class OperatorSosService {
         organizationId,
         status: filter.status,
         activeOnly: filter.activeOnly,
+        estateId: filter.estateId,
         limit: filter.limit,
       }),
-      this.options.contacts ? this.options.contacts() : Promise.resolve([]),
+      this.options.contacts
+        ? this.options.contacts(organizationId, filter.estateId)
+        : Promise.resolve([]),
     ]);
-    return { events: records.map(toDto), contacts };
+    return { events: records.map(toOperatorSosDto), contacts };
   }
 
   async acknowledge(
     context: AuthAuditContext,
     sosEventId: string,
   ): Promise<OperatorSosMutationResponse> {
-    const actorId = requireActor(context);
+    const actorId = requireAuditActor(context);
     const current = await this.requireEvent(context.organizationId, sosEventId);
     if (current.status !== 'RAISED') {
       throw new AppError(
@@ -94,7 +101,14 @@ export class OperatorSosService {
       },
     });
 
-    return { ok: true, event: toDto(record) };
+    await this.notifyResident(context.organizationId, record.userId, {
+      kind: 'SOS',
+      title: 'Your SOS alert was acknowledged',
+      body: 'The estate team has seen your alert and is responding.',
+      linkTo: '/resident/app/sos',
+    });
+
+    return { ok: true, event: toOperatorSosDto(record) };
   }
 
   async resolve(
@@ -102,7 +116,7 @@ export class OperatorSosService {
     sosEventId: string,
     input: OperatorResolveSosInput,
   ): Promise<OperatorSosMutationResponse> {
-    const actorId = requireActor(context);
+    const actorId = requireAuditActor(context);
     const note = input.resolutionNote?.trim() ?? '';
     if (note.length > MAX_RESOLUTION_NOTE_LENGTH) {
       throw new AppError(
@@ -147,7 +161,27 @@ export class OperatorSosService {
       },
     });
 
-    return { ok: true, event: toDto(record) };
+    await this.notifyResident(context.organizationId, record.userId, {
+      kind: 'SOS',
+      title: 'Your SOS alert was resolved',
+      body: 'The estate team has closed your SOS alert.',
+      linkTo: '/resident/app/sos',
+    });
+
+    return { ok: true, event: toOperatorSosDto(record) };
+  }
+
+  private async notifyResident(
+    organizationId: string,
+    userId: string,
+    input: NotifyInput,
+  ): Promise<void> {
+    if (!this.options.notify) return;
+    try {
+      await this.options.notify(organizationId, userId, input);
+    } catch {
+      // The lifecycle change is committed; the inbox note is best-effort.
+    }
   }
 
   private async requireEvent(
@@ -162,14 +196,7 @@ export class OperatorSosService {
   }
 }
 
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
-}
-
-function toDto(record: OperatorSosEventRecord): SosOperatorEventDto {
+export function toOperatorSosDto(record: OperatorSosEventRecord): SosOperatorEventDto {
   return {
     id: record.id,
     note: record.note,

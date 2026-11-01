@@ -12,97 +12,6 @@
     "primaryColor": "#FF5A1F",
     "portalName": "Silverstone Resident Portal"
   },
-  "assetModel": {
-    "types": [
-      {
-        "key": "land",
-        "label": "Land",
-        "detailKind": "LAND_PARCEL",
-        "requiresUnits": false,
-        "unitTypeKeys": [],
-        "active": true
-      },
-      {
-        "key": "house",
-        "label": "House",
-        "detailKind": "PROPERTY",
-        "requiresUnits": false,
-        "unitTypeKeys": [],
-        "active": true
-      }
-    ],
-    "unitTypes": [],
-    "allowMultipleAssetsPerResident": true,
-    "requireApprovalForAssignmentChanges": true
-  },
-  "propertyOptions": {
-    "addressComponents": [
-      {
-        "key": "street_name",
-        "label": "Street name",
-        "requiredFor": ["land", "house"],
-        "notApplicableFor": [],
-        "maxLength": 120,
-        "pattern": null
-      },
-      {
-        "key": "plot_number",
-        "label": "Plot number",
-        "requiredFor": ["land"],
-        "notApplicableFor": [
-          "house.bungalow",
-          "house.terrace",
-          "house.duplex",
-          "house.apartment",
-          "house.flat"
-        ],
-        "maxLength": 32,
-        "pattern": "\\d+"
-      },
-      {
-        "key": "house_number",
-        "label": "House number",
-        "requiredFor": ["house.bungalow", "house.terrace", "house.duplex"],
-        "notApplicableFor": ["house.apartment", "house.flat", "land"],
-        "maxLength": 32,
-        "pattern": "\\d+[A-Za-z]?"
-      },
-      {
-        "key": "block_name",
-        "label": "Building / block name",
-        "requiredFor": ["house.apartment", "house.flat"],
-        "notApplicableFor": ["house.bungalow", "house.terrace", "house.duplex", "land"],
-        "maxLength": 64,
-        "pattern": null
-      },
-      {
-        "key": "floor_number",
-        "label": "Floor number",
-        "requiredFor": ["house.apartment", "house.flat"],
-        "notApplicableFor": ["house.bungalow", "house.terrace", "house.duplex", "land"],
-        "maxLength": 16,
-        "pattern": "\\d+"
-      },
-      {
-        "key": "unit_number",
-        "label": "Unit / apartment number",
-        "requiredFor": ["house.apartment", "house.flat"],
-        "notApplicableFor": ["house.bungalow", "house.terrace", "house.duplex", "land"],
-        "maxLength": 32,
-        "pattern": "\\d+[A-Za-z]?"
-      }
-    ],
-    "houseTypes": [
-      { "key": "bungalow", "label": "Bungalow", "active": true },
-      { "key": "terrace", "label": "Terrace", "active": true },
-      { "key": "duplex", "label": "Duplex", "active": true },
-      { "key": "apartment", "label": "Apartment", "active": true },
-      { "key": "flat", "label": "Flat", "active": true }
-    ],
-    "identifierTemplate": "{estate_slug}",
-    "identifierMax": 120,
-    "$comment": "Address structure is configurable per deployment. House sub-types are configured via houseTypes; each address component declares which top-level type and/or house sub-type it applies to via requiredFor / notApplicableFor. Identifier formulas are code-defaulted per type and not editable here."
-  },
   "modules": {
     "estates": true,
     "residents": true,
@@ -127,12 +36,6 @@
     }
   },
   "onboarding": {
-    "invitationCode": {
-      "length": 10,
-      "ttlMinutes": 1440,
-      "maxAttempts": 5,
-      "singleUse": true
-    },
     "requireEmail": true,
     "requireGovernmentId": true,
     "requireNextOfKin": true,
@@ -161,6 +64,5 @@
   },
   "roles": {
     "grants": []
-  },
-  "customFields": []
+  }
 }

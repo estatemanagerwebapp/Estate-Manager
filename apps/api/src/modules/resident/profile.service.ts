@@ -32,7 +32,7 @@ export interface ResidentProfileServiceOptions {
  * Resident profile service (S1).
  *
  * Self-scoped: every read/write resolves the acting user's own row from the
- * session (the router pins it via `getResidentContext`); no path param ever
+ * session (the router pins it via `getAuth`); no path param ever
  * selects a different resident.
  */
 export class ResidentProfileService {

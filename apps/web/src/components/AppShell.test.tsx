@@ -57,8 +57,12 @@ vi.mock('../auth/useCan', () => ({
   }),
 }));
 
-vi.mock('../api/navigation', () => ({
-  useNavigationCounts: () => ({ data: navCountsState.counts }),
+vi.mock('../api/sync', () => ({
+  useSyncSnapshot: () => ({
+    snapshot: navCountsState.counts ? { staffCounts: navCountsState.counts } : null,
+    loading: false,
+    error: null,
+  }),
 }));
 
 // Imported after the mocks so the shell receives the stubbed context.
@@ -102,7 +106,6 @@ describe('AppShell navigation', () => {
     const frontDesk = screen.getByRole('group', { name: 'Front desk' });
     expect(within(frontDesk).getByRole('link', { name: 'SOS alerts' })).toBeTruthy();
     expect(within(frontDesk).getByRole('link', { name: 'Messages' })).toBeTruthy();
-    expect(within(frontDesk).getByRole('link', { name: 'Complaints' })).toBeTruthy();
 
     const portfolio = screen.getByRole('group', { name: 'Portfolio' });
     expect(within(portfolio).getByRole('link', { name: /residents/i })).toBeTruthy();
@@ -126,7 +129,6 @@ describe('AppShell navigation', () => {
     renderShell();
 
     expect(screen.getByRole('link', { name: /messages, 5 unread/i })).toBeTruthy();
-    expect(screen.getByRole('link', { name: /complaints, 99\+ open/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /billing, 2 overdue/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /facilities, 1 waiting for a slot/i })).toBeTruthy();
     // Zero is hidden: the link keeps its plain name.

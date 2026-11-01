@@ -1,5 +1,5 @@
 import { AppError } from '../../lib/errors.js';
-import { isRoleKey, isStaffRole, ROLE_KEYS, type RoleKey } from '@silverstone/shared';
+import { isRoleKey, isStaffRole, type RoleKey } from '@silverstone/shared';
 import { assertRole, assertStatus, type UserRecord } from './user-repository.js';
 
 /**
@@ -141,10 +141,4 @@ export function assertMayDelete(
   if (!canManageRole(actorRole, target.role)) {
     throw new AppError(403, 'FORBIDDEN', 'You do not have permission to delete this user');
   }
-}
-
-/** Roles the UI may offer as a "promote to" choice for a given actor role. */
-export function assignableRoles(actorRole: string): readonly RoleKey[] {
-  const all = [...ROLE_KEYS] as RoleKey[];
-  return all.filter((candidate) => canSetRole(actorRole, 'RESIDENT', candidate));
 }

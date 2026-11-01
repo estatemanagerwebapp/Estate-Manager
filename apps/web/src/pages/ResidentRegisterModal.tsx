@@ -1,19 +1,28 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { KeyRound } from 'lucide-react';
-import { type RegisterResidentResponse, type PropertyDto } from '@silverstone/shared';
+import {
+  PROPERTY_KINDS,
+  PROPERTY_KIND_LABELS,
+  type PropertyKind,
+  type RegisterResidentResponse,
+} from '@silverstone/shared';
 import type { EstateDto } from '@silverstone/shared';
 import { api, ApiRequestError } from '../api/client';
 import { useApiQuery } from '../api/query';
+import { useHouseTypes } from '../api/hooks';
 import { useToast } from '../toast/Toast';
 import { Button, Field, inputClass, selectClass } from '../components/ui';
 import { Modal } from '../components/dialog';
 
+const onboardingInputClass = `${inputClass} !text-base`;
+const onboardingSelectClass = `${selectClass} w-full !text-base`;
+
 /**
  * Register-resident modal.
  *
- * First name + property are required; email/phone are optional and
- * prefilled for the resident (they cannot edit them later). The resident
- * completes their own fields + pays the registration fee at `/onboard`.
+ * Resident and property are registered together so an onboarding draft never
+ * leaves an unassigned property behind. The resident completes their own
+ * fields and pays the registration fee at `/onboard`.
  */
 export function ResidentRegisterModal({
   onClose,
@@ -25,11 +34,34 @@ export function ResidentRegisterModal({
   const toast = useToast();
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
+  const [accountMatch, setAccountMatch] = useState<{
+    id: string;
+    email: string;
+    fullName: string | null;
+    propertyCount: number;
+  } | null>(null);
+  const [linkToExistingAccount, setLinkToExistingAccount] = useState(false);
+  const [checkingAccount, setCheckingAccount] = useState(false);
   const [phone, setPhone] = useState('');
-  const [propertyId, setPropertyId] = useState('');
   const [estateId, setEstateId] = useState('');
+  const [kind, setKind] = useState<PropertyKind | ''>('');
+  const [houseType, setHouseType] = useState('');
+  const [propertyName, setPropertyName] = useState('');
+  const [streetName, setStreetName] = useState('');
+  const [houseNumber, setHouseNumber] = useState('');
+  const [blockName, setBlockName] = useState('');
+  const [floorNumber, setFloorNumber] = useState('');
+  const [unitNumber, setUnitNumber] = useState('');
+  const [plotNumber, setPlotNumber] = useState('');
+  const [plotName, setPlotName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { view: houseTypesView } = useHouseTypes(true);
+  const houseTypes = (houseTypesView?.houseTypes ?? []).filter((item) => item.active);
+  const selectedHouseType = houseTypes.find((item) => item.key === houseType);
+  const usesUnitFields = selectedHouseType?.requiresUnitFields ?? false;
+  const showsHouseFields = kind === 'HOUSE' || kind === 'BOTH';
+  const showsLandFields = kind === 'LAND' || kind === 'BOTH';
 
   // Both pickers share the caches used by the main register screens. The
   // unfiltered estates key is the same one the Estates list page uses.
@@ -38,14 +70,13 @@ export function ResidentRegisterModal({
     () => api.listEstates(),
     'Could not load estates.',
   );
-  const { data: propertyData } = useApiQuery(
-    ['properties', 'picker', estateId],
-    () => api.listProperties({ estateId, pageSize: 200 }),
-    'Could not load properties.',
-    Boolean(estateId),
-  );
   const estates: EstateDto[] = estateData?.estates ?? [];
-  const properties: PropertyDto[] = estateId ? (propertyData?.properties ?? []) : [];
+
+  useEffect(() => {
+    if (showsHouseFields && !houseType && houseTypes.length > 0) {
+      setHouseType(houseTypes[0]!.key);
+    }
+  }, [showsHouseFields, houseType, houseTypes]);
 
   async function handleSubmit(event?: FormEvent) {
     event?.preventDefault();
@@ -53,8 +84,25 @@ export function ResidentRegisterModal({
       setError('Enter the resident’s first name.');
       return;
     }
-    if (!propertyId) {
-      setError('Select the property to assign.');
+    if (!estateId || !kind || !streetName.trim()) {
+      setError('Complete the estate and property details.');
+      return;
+    }
+    if (showsHouseFields && !houseType) {
+      setError('Select a house type.');
+      return;
+    }
+    if (
+      showsHouseFields &&
+      (usesUnitFields
+        ? !blockName.trim() || !floorNumber.trim() || !unitNumber.trim()
+        : !houseNumber.trim())
+    ) {
+      setError('Complete the required house address fields.');
+      return;
+    }
+    if (showsLandFields && (!plotNumber.trim() || !plotName.trim())) {
+      setError('Enter the plot number and plot name.');
       return;
     }
     setSubmitting(true);
@@ -63,8 +111,21 @@ export function ResidentRegisterModal({
       const result = await api.registerResident({
         firstName: firstName.trim(),
         email: email.trim() || null,
+        ...(linkToExistingAccount && accountMatch ? { existingResidentUserId: accountMatch.id } : {}),
         phone: phone.trim() || null,
-        propertyId,
+        property: {
+          estateId,
+          kind,
+          houseType: showsHouseFields ? houseType : null,
+          name: propertyName.trim() || undefined,
+          streetName: streetName.trim(),
+          houseNumber: showsHouseFields && !usesUnitFields ? houseNumber.trim() : null,
+          blockName: showsHouseFields && usesUnitFields ? blockName.trim() : null,
+          floorNumber: showsHouseFields && usesUnitFields ? floorNumber.trim() : null,
+          unitNumber: showsHouseFields && usesUnitFields ? unitNumber.trim() : null,
+          plotNumber: showsLandFields ? plotNumber.trim() : null,
+          plotName: showsLandFields ? plotName.trim() : null,
+        },
       });
       onRegistered(result);
       toast.success('Resident registered. Share the onboarding code before closing.');
@@ -77,8 +138,6 @@ export function ResidentRegisterModal({
       setSubmitting(false);
     }
   }
-
-  const selectedProperty = properties.find((p) => p.id === propertyId);
 
   return (
     <Modal
@@ -93,7 +152,7 @@ export function ResidentRegisterModal({
           <Button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={submitting || !firstName.trim() || !propertyId}
+            disabled={submitting || !firstName.trim() || !estateId || !kind}
           >
             {submitting ? 'Registering…' : 'Register resident'}
           </Button>
@@ -109,7 +168,7 @@ export function ResidentRegisterModal({
 
         <Field label="First name (required)" hint="The only field required at registration.">
           <input
-            className={inputClass}
+            className={onboardingInputClass}
             value={firstName}
             onChange={(event) => setFirstName(event.target.value)}
             maxLength={120}
@@ -124,13 +183,48 @@ export function ResidentRegisterModal({
         >
           <input
             type="email"
-            className={inputClass}
+            className={onboardingInputClass}
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setAccountMatch(null);
+              setLinkToExistingAccount(false);
+            }}
+            onBlur={() => {
+              const normalized = email.trim().toLowerCase();
+              if (!normalized || !normalized.includes('@')) return;
+              setCheckingAccount(true);
+              void api
+                .findResidentAccountMatch(normalized)
+                .then((result) => setAccountMatch(result.match))
+                .catch(() => setAccountMatch(null))
+                .finally(() => setCheckingAccount(false));
+            }}
             maxLength={255}
             placeholder="name@example.com"
           />
         </Field>
+
+        {checkingAccount && <p className="text-xs text-(--color-ink-muted)">Checking for an existing resident account…</p>}
+        {accountMatch && (
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
+            <p className="text-sm font-medium text-(--color-ink)">
+              Existing resident account found: {accountMatch.fullName || accountMatch.email}
+            </p>
+            <p className="mt-1 text-xs text-(--color-ink-muted)">
+              {accountMatch.propertyCount} linked {accountMatch.propertyCount === 1 ? 'property' : 'properties'}.
+            </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={linkToExistingAccount}
+                onChange={(event) => setLinkToExistingAccount(event.target.checked)}
+                className="mt-0.5"
+              />
+              <span>Confirm this is the same resident and add this property to their account.</span>
+            </label>
+          </div>
+        )}
 
         <Field
           label="Phone (optional)"
@@ -138,7 +232,7 @@ export function ResidentRegisterModal({
         >
           <input
             type="tel"
-            className={inputClass}
+            className={onboardingInputClass}
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
             maxLength={40}
@@ -146,14 +240,13 @@ export function ResidentRegisterModal({
           />
         </Field>
 
-        <Field label="Estate">
+        <Field label="Estate (required)">
           <select
             value={estateId}
             onChange={(event) => {
               setEstateId(event.target.value);
-              setPropertyId('');
             }}
-            className={`${selectClass} w-full`}
+            className={onboardingSelectClass}
             aria-label="Estate"
           >
             <option value="">Select an estate…</option>
@@ -165,30 +258,119 @@ export function ResidentRegisterModal({
           </select>
         </Field>
 
-        <Field
-          label="Property (required)"
-          hint={
-            selectedProperty
-              ? `Identifier: ${selectedProperty.identifier}`
-              : 'Required to assign the resident.'
-          }
-        >
+        <Field label="Property type (required)">
           <select
-            value={propertyId}
-            onChange={(event) => setPropertyId(event.target.value)}
-            className={`${selectClass} w-full`}
-            disabled={!estateId}
-            aria-label="Property"
+            value={kind}
+            onChange={(event) => setKind(event.target.value as PropertyKind | '')}
+            className={onboardingSelectClass}
+            aria-label="Property type"
           >
-            <option value="">{estateId ? 'Select a property…' : 'Choose an estate first'}</option>
-            {properties.map((property) => (
-              <option key={property.id} value={property.id}>
-                {property.identifier}
-                {property.name ? ` — ${property.name}` : ''}
+            <option value="">Select a type…</option>
+            {PROPERTY_KINDS.map((value) => (
+              <option key={value} value={value}>
+                {PROPERTY_KIND_LABELS[value]}
               </option>
             ))}
           </select>
         </Field>
+
+        {showsHouseFields && (
+          <Field label="House type (required)">
+            <select
+              value={houseType}
+              onChange={(event) => setHouseType(event.target.value)}
+              className={onboardingSelectClass}
+              aria-label="House type"
+            >
+              <option value="">Select a house type…</option>
+              {houseTypes.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        <Field label="Property name (optional)">
+          <input
+            className={onboardingInputClass}
+            value={propertyName}
+            onChange={(event) => setPropertyName(event.target.value)}
+            maxLength={120}
+            placeholder="e.g. Block A, Unit 4"
+          />
+        </Field>
+        {kind && (
+          <>
+            <Field label="Street name (required)">
+              <input
+                className={onboardingInputClass}
+                value={streetName}
+                onChange={(event) => setStreetName(event.target.value)}
+                maxLength={120}
+                required
+              />
+            </Field>
+            {showsHouseFields &&
+              (usesUnitFields ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Field label="Block (required)">
+                    <input
+                      className={onboardingInputClass}
+                      value={blockName}
+                      onChange={(event) => setBlockName(event.target.value)}
+                      maxLength={64}
+                    />
+                  </Field>
+                  <Field label="Floor (required)">
+                    <input
+                      className={onboardingInputClass}
+                      value={floorNumber}
+                      onChange={(event) => setFloorNumber(event.target.value)}
+                      maxLength={16}
+                    />
+                  </Field>
+                  <Field label="Unit (required)">
+                    <input
+                      className={onboardingInputClass}
+                      value={unitNumber}
+                      onChange={(event) => setUnitNumber(event.target.value)}
+                      maxLength={32}
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <Field label="House number (required)">
+                  <input
+                    className={onboardingInputClass}
+                    value={houseNumber}
+                    onChange={(event) => setHouseNumber(event.target.value)}
+                    maxLength={32}
+                  />
+                </Field>
+              ))}
+            {showsLandFields && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Plot number (required)">
+                  <input
+                    className={onboardingInputClass}
+                    value={plotNumber}
+                    onChange={(event) => setPlotNumber(event.target.value)}
+                    maxLength={32}
+                  />
+                </Field>
+                <Field label="Plot name (required)">
+                  <input
+                    className={onboardingInputClass}
+                    value={plotName}
+                    onChange={(event) => setPlotName(event.target.value)}
+                    maxLength={64}
+                  />
+                </Field>
+              </div>
+            )}
+          </>
+        )}
 
         <p className="text-[11px] leading-relaxed text-(--color-ink-muted)">
           <KeyRound aria-hidden size={12} className="inline" /> A persistent onboarding code is

@@ -50,6 +50,7 @@ export interface CreateResidentOnboardingInput {
   firstName: string;
   email: string | null;
   phone: string | null;
+  userId?: string | null;
 }
 
 export interface CreateResidentOnboardingResult {
@@ -168,6 +169,7 @@ export class PrismaResidentOnboardingRepository {
         firstName: input.firstName,
         email: input.email,
         phone: input.phone,
+        userId: input.userId ?? null,
       },
     });
     return { record: toRecord(row), code };
@@ -311,6 +313,16 @@ export class PrismaResidentOnboardingRepository {
       include: { user: { select: { status: true } } },
     });
     return row ? toRecord(row) : null;
+  }
+
+  async findManyByUsers(userIds: readonly string[]): Promise<ResidentOnboardingRecord[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.prisma.residentOnboarding.findMany({
+      where: { userId: { in: [...new Set(userIds)] }, status: 'COMPLETED', archivedAt: null },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: { user: { select: { status: true } } },
+    });
+    return rows.map(toRecord);
   }
 
   async linkUser(id: string, userId: string): Promise<ResidentOnboardingRecord | null> {

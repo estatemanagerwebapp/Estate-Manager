@@ -26,6 +26,9 @@ export interface FacilityRecord {
   name: string;
   description: string;
   bookable: boolean;
+  openingTime: string;
+  closingTime: string;
+  bookingThresholdHours: number | null;
   usageFeeKobo: number;
   archivedAt: Date | null;
   createdAt: Date;
@@ -370,6 +373,9 @@ type FacilityRow = {
   name: string;
   description: string;
   bookable: boolean;
+  openingTime: string;
+  closingTime: string;
+  bookingThresholdHours: number | null;
   usageFeeKobo: number;
   archivedAt: Date | null;
   createdAt: Date;
@@ -415,6 +421,9 @@ function toFacilityRecord(row: FacilityRow): FacilityRecord {
     name: row.name,
     description: row.description,
     bookable: row.bookable,
+    openingTime: row.openingTime,
+    closingTime: row.closingTime,
+    bookingThresholdHours: row.bookingThresholdHours,
     usageFeeKobo: row.usageFeeKobo,
     archivedAt: row.archivedAt,
     createdAt: row.createdAt,

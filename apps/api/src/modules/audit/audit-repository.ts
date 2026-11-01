@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 import type {
   AuditEventDto,
@@ -75,6 +75,7 @@ const AUDIT_EVENT_DB_MAP = {
   'user.created': 'user_created',
   'user.sessions_revoked': 'user_sessions_revoked',
   'message.replied': 'message_replied',
+  'message.sent': 'message_sent',
   'message.thread_closed': 'message_thread_closed',
   'message.thread_reopened': 'message_thread_reopened',
   'complaint.replied': 'complaint_replied',
@@ -125,6 +126,7 @@ export interface AuditQueryFilter {
   eventType?: AuditEventType;
   outcome?: AuditEventOutcome;
   targetType?: AuditTargetType;
+  estateId?: string;
   actorId?: string;
   /** Inclusive lower bound on `createdAt`. */
   from?: Date;
@@ -141,6 +143,21 @@ export class PrismaAuditRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async record(input: RecordAuditEventInput): Promise<void> {
+    await this.recordWithin(this.prisma, input);
+  }
+
+  /**
+   * Record the event inside an existing transaction.
+   *
+   * Composed messages use this so the audit row and the conversations it
+   * describes commit together: a failing audit (for example a database whose
+   * enum is missing a pending migration) rolls the whole broadcast back
+   * instead of leaving recipients messaged with no audit trail.
+   */
+  async recordWithin(
+    client: Prisma.TransactionClient,
+    input: RecordAuditEventInput,
+  ): Promise<void> {
     const dbEventType = AUDIT_EVENT_DB_MAP[input.eventType];
     if (!dbEventType) {
       // An event type that the shared package allows but the database enum
@@ -148,24 +165,32 @@ export class PrismaAuditRepository {
       throw new Error(`Audit event type "${input.eventType}" has no database mapping`);
     }
 
-    await this.prisma.auditEvent.create({
-      data: {
-        organizationId: input.organizationId,
-        actorId: input.actorId,
-        eventType: dbEventType as 'login_succeeded',
-        targetType: input.targetType,
-        targetId: input.targetId,
-        requestId: input.requestId,
-        outcome: input.outcome,
-        metadata: sanitizeMetadata(input.metadata ?? {}) as Prisma.InputJsonValue,
-      },
+    // `createMany` rather than `create`: an INSERT ... RETURNING would also
+    // need to satisfy the audit SELECT policy, which intentionally hides
+    // organization-wide rows (such as pre-authentication logins) from estate
+    // admins. The repository never uses the returned row.
+    await client.auditEvent.createMany({
+      data: [
+        {
+          organizationId: input.organizationId,
+          actorId: input.actorId,
+          eventType: dbEventType as 'login_succeeded',
+          targetType: input.targetType,
+          targetId: input.targetId,
+          requestId: input.requestId,
+          outcome: input.outcome,
+          metadata: sanitizeMetadata(input.metadata ?? {}) as Prisma.InputJsonValue,
+        },
+      ],
     });
   }
 
   async listForAuditReadonly(filter: AuditQueryFilter): Promise<AuditEventDto[]> {
     if (filter.cursor && !(await this.cursorBelongsToOrganization(filter))) return [];
+    const estateEventIds = filter.estateId ? await this.findEstateEventIds(filter) : undefined;
+    if (estateEventIds && estateEventIds.length === 0) return [];
     const rows = await this.prisma.auditEvent.findMany({
-      where: toWhere(filter),
+      where: toWhere(filter, estateEventIds),
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.min(filter.limit ?? 100, 500),
       include: { actor: { select: AUDIT_ACTOR_SELECT } },
@@ -185,8 +210,10 @@ export class PrismaAuditRepository {
     if (filter.cursor && !(await this.cursorBelongsToOrganization(filter))) {
       return { events: [], capped: false };
     }
+    const estateEventIds = filter.estateId ? await this.findEstateEventIds(filter) : undefined;
+    if (estateEventIds && estateEventIds.length === 0) return { events: [], capped: false };
     const rows = await this.prisma.auditEvent.findMany({
-      where: toWhere(filter),
+      where: toWhere(filter, estateEventIds),
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       include: { actor: { select: AUDIT_ACTOR_SELECT } },
@@ -208,6 +235,23 @@ export class PrismaAuditRepository {
     });
   }
 
+  /**
+   * Distinct event types written since a cursor.
+   *
+   * The live-sync endpoint only needs to know *which* queues changed, not the
+   * rows themselves. Grouping in the database keeps each poll to one indexed
+   * read no matter how many events landed in the window.
+   */
+  async eventTypesSince(organizationId: string, since: Date): Promise<AuditEventType[]> {
+    const rows = await this.prisma.auditEvent.groupBy({
+      by: ['eventType'],
+      where: { organizationId, createdAt: { gte: since } },
+    });
+    return rows
+      .map((row) => AUDIT_EVENT_WIRE_MAP[row.eventType])
+      .filter((type): type is AuditEventType => type !== undefined);
+  }
+
   private async cursorBelongsToOrganization(filter: AuditQueryFilter): Promise<boolean> {
     const row = await this.prisma.auditEvent.findFirst({
       where: { id: filter.cursor, organizationId: filter.organizationId },
@@ -215,11 +259,80 @@ export class PrismaAuditRepository {
     });
     return row !== null;
   }
+
+  /**
+   * Audit rows have no foreign keys to estate records. Resolve their related
+   * event ids through estate/property ids and resident property assignments,
+   * then constrain the regular typed query to those rows.
+   */
+  private async findEstateEventIds(filter: AuditQueryFilter): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT ae.id
+      FROM audit_events ae
+      WHERE ae.organization_id = ${filter.organizationId}::uuid
+        AND (
+          ae.target_id = ${filter.estateId}::uuid
+          OR ae.metadata->>'estateId' = ${filter.estateId}
+          OR ae.target_id IN (
+            SELECT p.id FROM properties p
+            WHERE p.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+          )
+          OR ae.metadata->>'facilityId' IN (
+            SELECT f.id::text FROM facilities f
+            WHERE f.organization_id = ${filter.organizationId}::uuid
+              AND f.estate_id = ${filter.estateId}::uuid
+          )
+          OR ae.metadata->>'propertyId' IN (
+            SELECT p.id::text FROM properties p
+            WHERE p.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+          )
+          OR ae.actor_id IN (
+            SELECT ro.user_id FROM resident_onboardings ro
+            JOIN properties p ON p.id = ro.property_id
+            WHERE ro.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+              AND ro.user_id IS NOT NULL
+          )
+          OR ae.target_id IN (
+            SELECT ro.user_id FROM resident_onboardings ro
+            JOIN properties p ON p.id = ro.property_id
+            WHERE ro.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+              AND ro.user_id IS NOT NULL
+          )
+          OR ae.metadata->>'residentUserId' IN (
+            SELECT ro.user_id::text FROM resident_onboardings ro
+            JOIN properties p ON p.id = ro.property_id
+            WHERE ro.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+              AND ro.user_id IS NOT NULL
+          )
+          OR ae.metadata->>'residentId' IN (
+            SELECT ro.user_id::text FROM resident_onboardings ro
+            JOIN properties p ON p.id = ro.property_id
+            WHERE ro.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+              AND ro.user_id IS NOT NULL
+          )
+          OR ae.metadata->>'userId' IN (
+            SELECT ro.user_id::text FROM resident_onboardings ro
+            JOIN properties p ON p.id = ro.property_id
+            WHERE ro.organization_id = ${filter.organizationId}::uuid
+              AND p.estate_id = ${filter.estateId}::uuid
+              AND ro.user_id IS NOT NULL
+          )
+        )
+    `);
+    return rows.map((row) => row.id);
+  }
 }
 
-function toWhere(filter: AuditQueryFilter): Prisma.AuditEventWhereInput {
+function toWhere(filter: AuditQueryFilter, estateEventIds?: string[]): Prisma.AuditEventWhereInput {
   return {
     organizationId: filter.organizationId,
+    ...(estateEventIds ? { id: { in: estateEventIds } } : {}),
     ...(filter.eventType ? { eventType: AUDIT_EVENT_DB_MAP[filter.eventType] } : {}),
     ...(filter.outcome ? { outcome: filter.outcome } : {}),
     ...(filter.targetType ? { targetType: filter.targetType } : {}),

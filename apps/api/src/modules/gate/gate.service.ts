@@ -1,8 +1,14 @@
 import { AppError } from '../../lib/errors.js';
 import { sha256Hex } from '../../lib/password.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import {
+  requireAuditActor,
+  requireAuditOrganization,
+  type AuthAuditContext,
+} from '../auth/auth.service.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
+import type { NotifyInput } from '../resident/notifications.service.js';
 import type {
+  AccessCodeStatus,
   AccessVerificationGate,
   AccessVerificationOutcome,
   AccessVerificationReason,
@@ -12,6 +18,7 @@ import type {
   OperatorAccessCodesResponse,
   OperatorRevokeAccessCodeResponse,
   OperatorVerifyAccessCodeInput,
+  OperatorVerifyAccessCodePreviewResponse,
   OperatorVerifyAccessCodeResponse,
 } from '@silverstone/shared';
 import type {
@@ -27,6 +34,8 @@ const MAX_CODE_LENGTH = 32;
 export interface OperatorGateServiceOptions {
   gate: PrismaGateRepository;
   audit: PrismaAuditRepository;
+  /** Resident inbox hook; failures never undo a recorded verification. */
+  notify?: (organizationId: string, userId: string, input: NotifyInput) => Promise<void>;
   /** Injectable clock for deterministic tests. */
   now?: () => Date;
 }
@@ -69,8 +78,8 @@ export class OperatorGateService {
     context: AuthAuditContext,
     codeId: string,
   ): Promise<OperatorRevokeAccessCodeResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
 
     const record = await this.options.gate.findAccessCodeById(organizationId, codeId);
     if (!record) {
@@ -105,16 +114,53 @@ export class OperatorGateService {
     return { ok: true, code: this.toAccessCodeDto(updated, now) };
   }
 
+  /**
+   * Resolve a presented code **without recording anything**.
+   *
+   * This is the first half of the gate check: the guard enters a code, sees who
+   * it belongs to and what the outcome would be, and only then decides to
+   * record the entry/exit. A preview has no side effects — no verification row,
+   * no audit event — so an abandoned lookup never pollutes the log.
+   */
+  async preview(
+    organizationId: string,
+    input: OperatorVerifyAccessCodeInput,
+  ): Promise<OperatorVerifyAccessCodePreviewResponse> {
+    const code = normalizeCode(input.code);
+    const now = this.now();
+    const record = await this.options.gate.findAccessCodeByHash(organizationId, sha256Hex(code));
+    const decision = decide(record, input.gate, now);
+
+    return {
+      ok: true,
+      preview: {
+        found: record !== null,
+        outcome: decision.outcome,
+        reason: decision.reason,
+        gate: input.gate,
+        codePrefix: record?.codePrefix ?? code.slice(0, 4),
+        kind: record?.kind ?? null,
+        status: record ? accessCodeStatus(record, now) : null,
+        validUntil: record?.validUntil ? record.validUntil.toISOString() : null,
+        issuedAt: record?.issuedAt ? record.issuedAt.toISOString() : null,
+        visitorName: record?.visitorName ?? null,
+        carPlate: record?.carPlate ?? null,
+        idDocumentUrl: record?.idDocumentUrl ?? null,
+        authenticationType: record?.authenticationType ?? null,
+        resident: record?.resident ?? null,
+        property: record?.property ?? null,
+        accessCodeId: record?.id ?? null,
+      },
+    };
+  }
+
   async verify(
     context: AuthAuditContext,
     input: OperatorVerifyAccessCodeInput,
   ): Promise<OperatorVerifyAccessCodeResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
-    const code = input.code.trim().toUpperCase();
-    if (!code || code.length > MAX_CODE_LENGTH) {
-      throw new AppError(400, 'VALIDATION_ERROR', 'Invalid access code');
-    }
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
+    const code = normalizeCode(input.code);
 
     const now = this.now();
     const record = await this.options.gate.findAccessCodeByHash(organizationId, sha256Hex(code));
@@ -150,28 +196,36 @@ export class OperatorGateService {
       },
     });
 
+    // Tell the code owner their visitor arrived. Denials are not pushed: an
+    // expired or mistyped code at the gate is not an event the resident needs.
+    if (decision.outcome === 'GRANTED' && record?.userId) {
+      await this.notifyResident(organizationId, record.userId, {
+        kind: 'CODE',
+        title: 'Your access code was used',
+        body: `${record.visitorName?.trim() || 'A visitor'} checked ${input.gate === 'ENTRY' ? 'in' : 'out'} at the gate.`,
+        linkTo: '/resident/app/codes',
+      });
+    }
+
     return { ok: true, verification: toVerificationDto(verification) };
   }
 
   private toAccessCodeDto(record: OperatorAccessCodeRecord, now: Date): OperatorAccessCodeDto {
-    const status =
-      record.status === 'ACTIVE' && record.validUntil && record.validUntil < now
-        ? 'EXPIRED'
-        : record.status;
-    return {
-      id: record.id,
-      kind: record.kind,
-      status,
-      codePrefix: record.codePrefix,
-      validUntil: record.validUntil ? record.validUntil.toISOString() : null,
-      issuedAt: record.issuedAt.toISOString(),
-      revokedAt: record.revokedAt ? record.revokedAt.toISOString() : null,
-      visitorName: record.visitorName,
-      carPlate: record.carPlate,
-      idDocumentUrl: record.idDocumentUrl,
-      resident: record.resident,
-      property: record.property,
-    };
+    return toOperatorAccessCodeDto(record, now);
+  }
+
+  private async notifyResident(
+    organizationId: string,
+    userId: string,
+    input: NotifyInput,
+  ): Promise<void> {
+    if (!this.options.notify) return;
+    try {
+      await this.options.notify(organizationId, userId, input);
+    } catch {
+      // The verification and its audit row are already committed; the inbox
+      // note is best-effort.
+    }
   }
 
   private now(): Date {
@@ -195,7 +249,52 @@ function decide(
   return { outcome: 'GRANTED', reason: null };
 }
 
-function toVerificationDto(record: AccessVerificationRecord): AccessVerificationDto {
+function normalizeCode(raw: string): string {
+  const code = raw.trim().toUpperCase();
+  if (!code || code.length > MAX_CODE_LENGTH) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Invalid access code');
+  }
+  return code;
+}
+
+/** Derived status: an `ACTIVE` code past its window displays as `EXPIRED`. */
+export function accessCodeStatus(
+  record: { status: AccessCodeStatus; validUntil: Date | null },
+  now: Date,
+): AccessCodeStatus {
+  return record.status === 'ACTIVE' && record.validUntil && record.validUntil < now
+    ? 'EXPIRED'
+    : record.status;
+}
+
+/**
+ * Map a repository record to the operator wire shape.
+ *
+ * Exported so the guard dashboard can reuse the exact access-code projection
+ * (derived `EXPIRED` status included) instead of duplicating it.
+ */
+export function toOperatorAccessCodeDto(
+  record: OperatorAccessCodeRecord,
+  now: Date,
+): OperatorAccessCodeDto {
+  return {
+    id: record.id,
+    kind: record.kind,
+    status: accessCodeStatus(record, now),
+    codePrefix: record.codePrefix,
+    validUntil: record.validUntil ? record.validUntil.toISOString() : null,
+    issuedAt: record.issuedAt.toISOString(),
+    revokedAt: record.revokedAt ? record.revokedAt.toISOString() : null,
+    visitorName: record.visitorName,
+    carPlate: record.carPlate,
+    idDocumentUrl: record.idDocumentUrl,
+    authenticationType: record.authenticationType,
+    resident: record.resident,
+    property: record.property,
+  };
+}
+
+export function toVerificationDto(record: AccessVerificationRecord): AccessVerificationDto {
   return {
     id: record.id,
     accessCodeId: record.accessCodeId,
@@ -207,22 +306,9 @@ function toVerificationDto(record: AccessVerificationRecord): AccessVerification
     visitorName: record.visitorName,
     carPlate: record.carPlate,
     idDocumentUrl: record.idDocumentUrl,
+    authenticationType: record.authenticationType,
     resident: record.resident,
     property: record.property,
     verifiedBy: record.verifiedBy,
   };
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
-}
-
-function requireOrganization(context: AuthAuditContext): string {
-  if (!context.organizationId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Organization context is required');
-  }
-  return context.organizationId;
 }

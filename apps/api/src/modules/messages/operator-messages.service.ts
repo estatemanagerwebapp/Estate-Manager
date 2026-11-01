@@ -3,15 +3,20 @@ import type {
   OperatorMessageThreadRecord,
   PrismaMessageRepository,
 } from '../resident/messages-repository.js';
+import type { Prisma } from '@prisma/client';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import { requireAuditActor, type AuthAuditContext } from '../auth/auth.service.js';
 import type {
+  OperatorComposeMessageInput,
+  OperatorComposeMessageResponse,
   MessageThreadStatus,
+  OperatorMessageRecipientsResponse,
   OperatorMessageReplyInput,
   OperatorMessagesResponse,
   OperatorMessageThreadDto,
   OperatorMessageThreadResponse,
 } from '@silverstone/shared';
+import type { NotifyInput } from '../resident/notifications.service.js';
 
 const MAX_BODY_LENGTH = 4000;
 
@@ -23,6 +28,16 @@ export interface OperatorMessageFilter {
 export interface OperatorMessagesServiceOptions {
   messages: PrismaMessageRepository;
   audit: PrismaAuditRepository;
+  /**
+   * Writes a resident notification inside the compose transaction. Passing the
+   * transaction keeps the conversations, audit row and notifications atomic.
+   */
+  notifyWithin?: (
+    client: Prisma.TransactionClient,
+    organizationId: string,
+    userId: string,
+    input: NotifyInput,
+  ) => Promise<void>;
 }
 
 /**
@@ -34,6 +49,96 @@ export interface OperatorMessagesServiceOptions {
  */
 export class OperatorMessagesService {
   constructor(private readonly options: OperatorMessagesServiceOptions) {}
+
+  async recipients(organizationId: string): Promise<OperatorMessageRecipientsResponse> {
+    return { recipients: await this.options.messages.listOperatorRecipients(organizationId) };
+  }
+
+  async compose(
+    context: AuthAuditContext,
+    input: OperatorComposeMessageInput,
+  ): Promise<OperatorComposeMessageResponse> {
+    const actorId = requireAuditActor(context);
+    const subject = input.subject.trim();
+    const body = input.body.trim();
+    if (!subject || subject.length > 160) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Subject must be between 1 and 160 characters');
+    }
+    if (!body || body.length > MAX_BODY_LENGTH) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `Message body must be between 1 and ${MAX_BODY_LENGTH} characters`,
+      );
+    }
+
+    const recipients = await this.options.messages.listOperatorRecipients(context.organizationId);
+    const targets =
+      input.mode === 'DIRECT'
+        ? recipients.filter((recipient) => recipient.id === input.recipientUserId)
+        : recipients.filter((recipient) => recipient.estate.id === input.estateId);
+    if (targets.length === 0) {
+      throw new AppError(
+        404,
+        'NOT_FOUND',
+        input.mode === 'DIRECT'
+          ? 'Resident recipient not found'
+          : 'No active residents are assigned to this estate',
+      );
+    }
+
+    const threads = await this.options.messages.createOperatorThreads(
+      targets.map((recipient) => ({
+        organizationId: context.organizationId,
+        residentUserId: recipient.id,
+        authorId: actorId,
+        subject,
+        body,
+      })),
+      {
+        // The audit row commits with the conversations. If it fails — for
+        // example because the database is missing the `message_sent` enum
+        // value — the whole batch rolls back instead of leaving recipients
+        // messaged with no audit trail.
+        beforeCommit: async (tx, createdThreads) => {
+          await this.options.audit.recordWithin(tx, {
+            organizationId: context.organizationId,
+            actorId,
+            eventType: 'message.sent',
+            targetType: 'message_thread',
+            targetId: createdThreads[0]?.id ?? null,
+            requestId: context.requestId,
+            outcome: 'success',
+            metadata: {
+              subject,
+              mode: input.mode,
+              recipientCount: targets.length,
+              estateId: input.mode === 'BROADCAST' ? input.estateId : targets[0]?.estate.id,
+            },
+          });
+
+          if (this.options.notifyWithin) {
+            for (const recipient of targets) {
+              await this.options.notifyWithin(tx, context.organizationId, recipient.id, {
+                kind: 'MESSAGE',
+                title: subject,
+                body: body.slice(0, 240),
+                // The resident Messages screen is not part of the portal; the
+                // inbox is the surface that can open this update.
+                linkTo: '/resident/app/notifications',
+              });
+            }
+          }
+        },
+      },
+    );
+
+    return {
+      ok: true,
+      recipientCount: targets.length,
+      ...(input.mode === 'DIRECT' && threads[0] ? { threadId: threads[0].id } : {}),
+    };
+  }
 
   async list(
     organizationId: string,
@@ -52,7 +157,7 @@ export class OperatorMessagesService {
     threadId: string,
     input: OperatorMessageReplyInput,
   ): Promise<OperatorMessageThreadResponse> {
-    const actorId = requireActor(context);
+    const actorId = requireAuditActor(context);
     const body = input.body.trim();
     if (!body || body.length > MAX_BODY_LENGTH) {
       throw new AppError(
@@ -98,7 +203,7 @@ export class OperatorMessagesService {
     context: AuthAuditContext,
     threadId: string,
   ): Promise<OperatorMessageThreadResponse> {
-    requireActor(context);
+    requireAuditActor(context);
     const current = await this.requireThread(context.organizationId, threadId);
     await this.options.messages.markReadByStaff(context.organizationId, current.id, new Date());
     const record = await this.requireThread(context.organizationId, current.id);
@@ -110,7 +215,7 @@ export class OperatorMessagesService {
     threadId: string,
     status: MessageThreadStatus,
   ): Promise<OperatorMessageThreadResponse> {
-    const actorId = requireActor(context);
+    const actorId = requireAuditActor(context);
     const current = await this.requireThread(context.organizationId, threadId);
     if (current.status === status) {
       return { ok: true, thread: toDto(current) };
@@ -147,13 +252,6 @@ export class OperatorMessagesService {
     }
     return record;
   }
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
 }
 
 function toDto(record: OperatorMessageThreadRecord): OperatorMessageThreadDto {

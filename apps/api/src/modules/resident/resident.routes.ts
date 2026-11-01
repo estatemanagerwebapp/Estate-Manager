@@ -2,15 +2,15 @@
  * Resident portal routes (`/resident/*`).
  *
  * Mounted at `/resident` in `application.ts`. Every endpoint is self-scoped: it
- * resolves the acting resident's user id from the session (via
- * `getResidentContext`) and only reads or writes that user's data.
+ * resolves the acting resident's user id from the session (via `getAuth`)
+ * and only reads or writes that user's data.
  *
  * The mount is present from S0 (foundation) with a `/ping` probe; steps S1–S11
  * add the per-domain routes (profile, properties, invoices, codes, complaints,
  * messages, community, facilities, bookings, sos, notifications) plus the
  * dashboard aggregate.
  */
-import { Router, type Request, type Response, type RequestHandler } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
@@ -18,9 +18,8 @@ import {
   requireAuth,
   requirePermission,
   getAuth,
-  auditContext,
+  routeAuditContext,
 } from '../../middleware/auth-guard.js';
-import { requireResident, getResidentContext } from '../../middleware/resident-guard.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { ResidentProfileService } from './profile.service.js';
@@ -66,58 +65,30 @@ export interface ResidentRouteOptions {
   dashboard?: ResidentDashboardService;
 }
 
-/** Wrap async handlers so rejections reach the central error handler once. */
-function asyncWrap(handler: RequestHandler): RequestHandler {
-  return (req, res, next) => {
-    void (async () => {
-      try {
-        await handler(req, res, next);
-      } catch (error) {
-        if (!res.headersSent) next(error);
-      }
-    })();
-  };
-}
-
 export function createResidentRouter(options: ResidentRouteOptions): Router {
   const router = Router();
   const { sessions, permissions, organizationId } = options;
 
   const verifySession = (sessionId: string) => sessions.verify(sessionId);
   const authGuard = requireAuth(verifySession);
-  const residentGuard = requireResident();
-
-  function makeContext(req: Request, res: Response) {
-    const ctx = auditContext(req, res);
-    return {
-      organizationId: ctx.organizationId ?? organizationId,
-      actorId: ctx.actorId,
-      requestId: ctx.requestId ?? null,
-    };
-  }
 
   // S0 foundation: a health-style probe proving the mount is wired and
   // self-scoping resolves. Kept for parity with the operator dashboard.
-  router.get(
-    '/ping',
-    authGuard,
-    residentGuard,
-    asyncWrap(async (req, res) => {
-      const ctx = getResidentContext(req);
-      const auth = getAuth(req);
-      if (!ctx || !auth) {
-        res.status(200).json({ data: { ok: true, user: null } });
-        return;
-      }
-      const allowed = await permissions.can(auth.role, 'portal.access.self');
-      if (!allowed) {
-        throw new AppError(403, 'FORBIDDEN', 'Resident portal access not granted');
-      }
-      res.status(200).json({
-        data: { ok: true, user: { id: ctx.userId, organizationId } },
-      });
-    }),
-  );
+  router.get('/ping', authGuard, async (req, res) => {
+    const ctx = getAuth(req);
+    const auth = getAuth(req);
+    if (!ctx || !auth) {
+      res.status(200).json({ data: { ok: true, user: null } });
+      return;
+    }
+    const allowed = await permissions.can(auth.role, 'portal.access.self');
+    if (!allowed) {
+      throw new AppError(403, 'FORBIDDEN', 'Resident portal access not granted');
+    }
+    res.status(200).json({
+      data: { ok: true, user: { id: ctx.userId, organizationId } },
+    });
+  });
 
   // --- S1: Profile ---------------------------------------------------------------
   // GET  /profile  — the acting resident's own profile (user + onboarding + property).
@@ -128,64 +99,52 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
 
   const profileViewGuard = requirePermission((ctx) => permissions.can(ctx.role, 'profile.view'));
 
-  router.get(
-    '/profile',
-    authGuard,
-    residentGuard,
-    profileViewGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.profile) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Profile service not wired'));
-        return;
-      }
-      const view = await options.profile.view(organizationId, ctx.userId);
-      res.status(200).json({ data: view });
-    }),
-  );
+  router.get('/profile', authGuard, profileViewGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.profile) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Profile service not wired'));
+      return;
+    }
+    const view = await options.profile.view(organizationId, ctx.userId);
+    res.status(200).json({ data: view });
+  });
 
-  router.patch(
-    '/profile',
-    authGuard,
-    residentGuard,
-    profileViewGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.profile) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Profile service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          phone: z.string().trim().max(40).nullish(),
-          nextOfKinName: z.string().trim().max(160).nullish(),
-          nextOfKinPhone: z.string().trim().max(40).nullish(),
-          nextOfKinEmail: z.string().trim().max(255).nullish(),
-          idType: z.string().trim().max(32).nullish(),
-          propertyType: z.string().trim().max(48).nullish(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid profile update'));
-        return;
-      }
-      const response = await options.profile.update(
-        organizationId,
-        ctx.userId,
-        body.data,
-        makeContext(req, res).requestId,
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.patch('/profile', authGuard, profileViewGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.profile) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Profile service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        phone: z.string().trim().max(40).nullish(),
+        nextOfKinName: z.string().trim().max(160).nullish(),
+        nextOfKinPhone: z.string().trim().max(40).nullish(),
+        nextOfKinEmail: z.string().trim().max(255).nullish(),
+        idType: z.string().trim().max(32).nullish(),
+        propertyType: z.string().trim().max(48).nullish(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid profile update'));
+      return;
+    }
+    const response = await options.profile.update(
+      organizationId,
+      ctx.userId,
+      body.data,
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(200).json({ data: response });
+  });
 
   // --- S2: My Properties -------------------------------------------------------
   // GET /properties — the acting resident's assigned property(ies). One today;
@@ -195,25 +154,22 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
 
   const propertyViewGuard = requirePermission((ctx) => permissions.can(ctx.role, 'property.view'));
 
-  router.get(
-    '/properties',
-    authGuard,
-    residentGuard,
-    propertyViewGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.properties) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Properties service not wired'));
-        return;
-      }
-      const view = await options.properties.list(organizationId, ctx.userId);
-      res.status(200).json({ data: view });
-    }),
-  );
+  router.get('/properties', authGuard, propertyViewGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.properties) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Properties service not wired'));
+      return;
+    }
+    const view = await options.properties.list(
+      organizationId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+    );
+    res.status(200).json({ data: view });
+  });
 
   // --- S3: Invoices & Payments ---------------------------------------------------
   // GET  /finance        — the acting resident's finance view (4 sections).
@@ -231,65 +187,59 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
     permissions.can(ctx.role, 'payment.create'),
   );
 
-  router.get(
-    '/finance',
-    authGuard,
-    residentGuard,
-    invoiceViewGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.finance) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Finance service not wired'));
-        return;
-      }
-      const view = await options.finance.view(organizationId, ctx.userId);
-      res.status(200).json({ data: view });
-    }),
-  );
+  router.get('/finance', authGuard, invoiceViewGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.finance) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Finance service not wired'));
+      return;
+    }
+    const view = await options.finance.view(
+      organizationId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+    );
+    res.status(200).json({ data: view });
+  });
 
-  router.post(
-    '/payments',
-    authGuard,
-    residentGuard,
-    paymentCreateGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.finance) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Finance service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          invoiceId: z.string().trim().min(1),
-          method: z.string().trim().min(1).max(32).optional(),
-          reference: z.string().trim().max(120).nullish(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid payment input'));
-        return;
-      }
-      const response = await options.finance.createPayment(
-        organizationId,
-        ctx.userId,
-        {
-          invoiceId: body.data.invoiceId,
-          method: body.data.method,
-          reference: body.data.reference ?? null,
-        },
-        makeContext(req, res).requestId,
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/payments', authGuard, paymentCreateGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.finance) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Finance service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        invoiceId: z.string().trim().min(1),
+        amountKobo: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+        method: z.string().trim().min(1).max(32).optional(),
+        reference: z.string().trim().max(120).nullish(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid payment input'));
+      return;
+    }
+    const response = await options.finance.createPayment(
+      organizationId,
+      ctx.userId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+      {
+        invoiceId: body.data.invoiceId,
+        amountKobo: body.data.amountKobo,
+        method: body.data.method,
+        reference: body.data.reference ?? null,
+      },
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(200).json({ data: response });
+  });
 
   // --- S4: Access Codes -----------------------------------------------------------
   // GET  /codes               — the acting resident's codes (prefix + window).
@@ -340,7 +290,6 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   router.post(
     '/codes/id-document',
     authGuard,
-    residentGuard,
     codeCreateGuard,
     (req, res, next) => {
       codeDocumentUpload.single('file')(req, res, (err) => {
@@ -352,8 +301,8 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         next();
       });
     },
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
+    async (req, res, next) => {
+      const ctx = getAuth(req);
       if (!ctx) {
         next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
         return;
@@ -374,142 +323,139 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
         uploadedById: ctx.userId,
       });
       res.status(201).json({ data: result });
-    }),
+    },
   );
 
-  router.get(
-    '/codes',
-    authGuard,
-    residentGuard,
-    codeCreateGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.codes) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
-        return;
-      }
-      const response = await options.codes.list(organizationId, ctx.userId);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/codes', authGuard, codeCreateGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.codes) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+      return;
+    }
+    const propertyId = typeof req.query.propertyId === 'string' ? req.query.propertyId : null;
+    if (propertyId && !ctx.propertyIds.includes(propertyId)) {
+      next(new AppError(404, 'NOT_FOUND', 'Property not found'));
+      return;
+    }
+    const response = await options.codes.list(
+      organizationId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+      propertyId,
+    );
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/codes',
-    authGuard,
-    residentGuard,
-    codeCreateGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.codes) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          kind: codeKindSchema,
-          durationHours: z
-            .number()
-            .int()
-            .min(1)
-            .max(365 * 24)
-            .optional(),
-          visitorName: z.string().trim().min(1).max(120),
-          carPlate: z.string().trim().max(24).optional(),
-          idDocumentUrl: z.string().trim().max(255).optional(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid access code input'));
-        return;
-      }
-      const response = await options.codes.generate(
-        organizationId,
-        ctx.userId,
-        {
-          kind: body.data.kind,
-          durationHours: body.data.durationHours,
-          visitorName: body.data.visitorName,
-          carPlate: body.data.carPlate,
-          idDocumentUrl: body.data.idDocumentUrl,
-        },
-        makeContext(req, res).requestId,
-      );
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/codes', authGuard, codeCreateGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.codes) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        propertyId: z.string().uuid(),
+        kind: codeKindSchema,
+        durationHours: z
+          .number()
+          .int()
+          .min(1)
+          .max(365 * 24)
+          .optional(),
+        visitorName: z.string().trim().min(1).max(120),
+        authenticationType: z
+          .enum(['ID_IMAGE', 'CAR_PLATE', 'VISITOR_IMAGE'])
+          .default('ID_IMAGE'),
+        carPlate: z.string().trim().max(24).optional(),
+        idDocumentUrl: z.string().trim().max(255).optional(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid access code input'));
+      return;
+    }
+    if (!ctx.propertyIds.includes(body.data.propertyId)) {
+      next(new AppError(404, 'NOT_FOUND', 'Property not found'));
+      return;
+    }
+    const response = await options.codes.generate(
+      organizationId,
+      ctx.userId,
+      {
+        propertyId: body.data.propertyId,
+        kind: body.data.kind,
+        durationHours: body.data.durationHours,
+        visitorName: body.data.visitorName,
+        authenticationType: body.data.authenticationType,
+        carPlate: body.data.carPlate,
+        idDocumentUrl: body.data.idDocumentUrl,
+      },
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(201).json({ data: response });
+  });
 
-  router.post(
-    '/codes/:id/extend',
-    authGuard,
-    residentGuard,
-    codeCreateGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.codes) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          durationHours: z
-            .number()
-            .int()
-            .min(1)
-            .max(365 * 24)
-            .optional(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid extend input'));
-        return;
-      }
-      const response = await options.codes.extend(
-        organizationId,
-        ctx.userId,
-        String(req.params.id),
-        body.data.durationHours,
-        makeContext(req, res).requestId,
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/codes/:id/extend', authGuard, codeCreateGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.codes) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        durationHours: z
+          .number()
+          .int()
+          .min(1)
+          .max(365 * 24)
+          .optional(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid extend input'));
+      return;
+    }
+    const response = await options.codes.extend(
+      organizationId,
+      ctx.userId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+      String(req.params.id),
+      body.data.durationHours,
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/codes/:id/deactivate',
-    authGuard,
-    residentGuard,
-    codeDeactivateGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.codes) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
-        return;
-      }
-      const response = await options.codes.deactivate(
-        organizationId,
-        ctx.userId,
-        String(req.params.id),
-        makeContext(req, res).requestId,
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/codes/:id/deactivate', authGuard, codeDeactivateGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.codes) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Codes service not wired'));
+      return;
+    }
+    const response = await options.codes.deactivate(
+      organizationId,
+      ctx.userId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+      String(req.params.id),
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(200).json({ data: response });
+  });
 
   // --- S5: Complaints -----------------------------------------------------------
   // GET  /complaints         — the acting resident's complaints (+ replies).
@@ -524,68 +470,56 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
     permissions.can(ctx.role, 'complaint.create'),
   );
 
-  router.get(
-    '/complaints',
-    authGuard,
-    residentGuard,
-    complaintViewGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.complaints) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Complaints service not wired'));
-        return;
-      }
-      const query = z
-        .object({ status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']).optional() })
-        .safeParse(req.query ?? {});
-      if (!query.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint filter'));
-        return;
-      }
-      const response = await options.complaints.list(organizationId, ctx.userId, query.data.status);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/complaints', authGuard, complaintViewGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.complaints) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Complaints service not wired'));
+      return;
+    }
+    const query = z
+      .object({ status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']).optional() })
+      .safeParse(req.query ?? {});
+    if (!query.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint filter'));
+      return;
+    }
+    const response = await options.complaints.list(organizationId, ctx.userId, query.data.status);
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/complaints',
-    authGuard,
-    residentGuard,
-    complaintCreateGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.complaints) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Complaints service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          category: z.string().trim().min(1).max(48),
-          subject: z.string().trim().min(1).max(160),
-          description: z.string().trim().min(1).max(4000),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint input'));
-        return;
-      }
-      const response = await options.complaints.create(
-        organizationId,
-        ctx.userId,
-        body.data,
-        makeContext(req, res).requestId,
-      );
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/complaints', authGuard, complaintCreateGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.complaints) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Complaints service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        category: z.string().trim().min(1).max(48),
+        subject: z.string().trim().min(1).max(160),
+        description: z.string().trim().min(1).max(4000),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid complaint input'));
+      return;
+    }
+    const response = await options.complaints.create(
+      organizationId,
+      ctx.userId,
+      body.data,
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(201).json({ data: response });
+  });
 
   // --- S6: Messages --------------------------------------------------------------
   // GET  /messages — the acting resident's conversation threads.
@@ -596,84 +530,67 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
 
   const messageGuard = requirePermission((ctx) => permissions.can(ctx.role, 'message.view'));
 
-  router.get(
-    '/messages',
-    authGuard,
-    residentGuard,
-    messageGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.messages) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Messages service not wired'));
-        return;
-      }
-      const response = await options.messages.list(organizationId, ctx.userId);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/messages', authGuard, messageGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.messages) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Messages service not wired'));
+      return;
+    }
+    const response = await options.messages.list(organizationId, ctx.userId);
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/messages',
-    authGuard,
-    residentGuard,
-    messageGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.messages) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Messages service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          threadId: z.string().trim().min(1).optional(),
-          subject: z.string().trim().min(1).max(160).optional(),
-          body: z.string().trim().min(1).max(4000),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid message input'));
-        return;
-      }
-      const response = await options.messages.send(
-        organizationId,
-        ctx.userId,
-        body.data,
-        makeContext(req, res).requestId,
-      );
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/messages', authGuard, messageGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.messages) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Messages service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        threadId: z.string().trim().min(1).optional(),
+        subject: z.string().trim().min(1).max(160).optional(),
+        body: z.string().trim().min(1).max(4000),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid message input'));
+      return;
+    }
+    const response = await options.messages.send(
+      organizationId,
+      ctx.userId,
+      body.data,
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(201).json({ data: response });
+  });
 
   // --- S7: Community -------------------------------------------------------------
   // GET /community — the latest announcements and the active broadcast for
   // the resident's own estate. Read-only: residents never publish here.
 
-  router.get(
-    '/community',
-    authGuard,
-    residentGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.community) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Community service not wired'));
-        return;
-      }
-      const response = await options.community.get(organizationId, ctx.userId);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/community', authGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.community) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Community service not wired'));
+      return;
+    }
+    const response = await options.community.get(organizationId, ctx.userId);
+    res.status(200).json({ data: response });
+  });
 
   // --- S8: Facilities & Bookings ---------------------------------------------------
   // GET  /facilities           — bookable facilities + the resident's bookings.
@@ -682,176 +599,140 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
 
   const bookingGuard = requirePermission((ctx) => permissions.can(ctx.role, 'facility.book'));
 
-  router.get(
-    '/facilities',
-    authGuard,
-    residentGuard,
-    bookingGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.bookings) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
-        return;
-      }
-      const response = await options.bookings.list(organizationId, ctx.userId);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/facilities', authGuard, bookingGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.bookings) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+      return;
+    }
+    const response = await options.bookings.list(organizationId, ctx.userId);
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/bookings',
-    authGuard,
-    residentGuard,
-    bookingGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.bookings) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          facilityId: z.string().trim().min(1),
-          startsAt: z.string().trim().min(1),
-          endsAt: z.string().trim().min(1),
-          attendees: z.number().int().min(1).max(500).optional(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid booking input'));
-        return;
-      }
-      const response = await options.bookings.create(
-        organizationId,
-        ctx.userId,
-        {
-          facilityId: body.data.facilityId,
-          startsAt: body.data.startsAt,
-          endsAt: body.data.endsAt,
-          attendees: body.data.attendees,
-        },
-        makeContext(req, res).requestId,
-      );
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/bookings', authGuard, bookingGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.bookings) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        facilityId: z.string().trim().min(1),
+        startsAt: z.string().trim().min(1),
+        endsAt: z.string().trim().min(1),
+        attendees: z.number().int().min(1).max(500).optional(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid booking input'));
+      return;
+    }
+    const response = await options.bookings.create(
+      organizationId,
+      ctx.userId,
+      {
+        facilityId: body.data.facilityId,
+        startsAt: body.data.startsAt,
+        endsAt: body.data.endsAt,
+        attendees: body.data.attendees,
+      },
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(201).json({ data: response });
+  });
 
-  router.post(
-    '/bookings/:id/cancel',
-    authGuard,
-    residentGuard,
-    bookingGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.bookings) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
-        return;
-      }
-      const response = await options.bookings.cancel(
-        organizationId,
-        ctx.userId,
-        String(req.params.id),
-        makeContext(req, res).requestId,
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/bookings/:id/cancel', authGuard, bookingGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.bookings) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+      return;
+    }
+    const response = await options.bookings.cancel(
+      organizationId,
+      ctx.userId,
+      String(req.params.id),
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(200).json({ data: response });
+  });
 
   // --- S8 (Phase 7): facility availability watches --------------------------------
   // GET  /facility-watches         — the resident's own watches.
   // POST /facility-watches         — watch an occupied window.
   // POST /facility-watches/:id/cancel — cancel one of the resident's own waits.
 
-  router.get(
-    '/facility-watches',
-    authGuard,
-    residentGuard,
-    bookingGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.bookings) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
-        return;
-      }
-      const response = await options.bookings.listWatches(organizationId, ctx.userId);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/facility-watches', authGuard, bookingGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.bookings) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+      return;
+    }
+    const response = await options.bookings.listWatches(organizationId, ctx.userId);
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/facility-watches',
-    authGuard,
-    residentGuard,
-    bookingGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.bookings) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
-        return;
-      }
-      const body = z
-        .object({
-          facilityId: z.string().trim().min(1),
-          startsAt: z.string().trim().min(1),
-          endsAt: z.string().trim().min(1),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid availability alert input'));
-        return;
-      }
-      const response = await options.bookings.createWatch(organizationId, ctx.userId, {
-        facilityId: body.data.facilityId,
-        startsAt: body.data.startsAt,
-        endsAt: body.data.endsAt,
-      });
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/facility-watches', authGuard, bookingGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.bookings) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+      return;
+    }
+    const body = z
+      .object({
+        facilityId: z.string().trim().min(1),
+        startsAt: z.string().trim().min(1),
+        endsAt: z.string().trim().min(1),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid availability alert input'));
+      return;
+    }
+    const response = await options.bookings.createWatch(organizationId, ctx.userId, {
+      facilityId: body.data.facilityId,
+      startsAt: body.data.startsAt,
+      endsAt: body.data.endsAt,
+    });
+    res.status(201).json({ data: response });
+  });
 
-  router.post(
-    '/facility-watches/:id/cancel',
-    authGuard,
-    residentGuard,
-    bookingGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.bookings) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
-        return;
-      }
-      const response = await options.bookings.cancelWatch(
-        organizationId,
-        ctx.userId,
-        String(req.params.id),
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/facility-watches/:id/cancel', authGuard, bookingGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.bookings) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Bookings service not wired'));
+      return;
+    }
+    const response = await options.bookings.cancelWatch(
+      organizationId,
+      ctx.userId,
+      String(req.params.id),
+    );
+    res.status(200).json({ data: response });
+  });
 
   // --- S9: Emergency / SOS -----------------------------------------------------------
   // GET  /sos — the acting resident's own SOS history.
@@ -862,57 +743,45 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
 
   const sosGuard = requirePermission((ctx) => permissions.can(ctx.role, 'sos.create'));
 
-  router.get(
-    '/sos',
-    authGuard,
-    residentGuard,
-    sosGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.sos) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'SOS service not wired'));
-        return;
-      }
-      const response = await options.sos.list(organizationId, ctx.userId);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/sos', authGuard, sosGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.sos) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'SOS service not wired'));
+      return;
+    }
+    const response = await options.sos.list(organizationId, ctx.userId);
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/sos',
-    authGuard,
-    residentGuard,
-    sosGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.sos) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'SOS service not wired'));
-        return;
-      }
-      const body = z
-        .object({ note: z.string().trim().max(500).optional() })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid SOS input'));
-        return;
-      }
-      const response = await options.sos.raise(
-        organizationId,
-        ctx.userId,
-        { note: body.data.note },
-        makeContext(req, res).requestId,
-      );
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/sos', authGuard, sosGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.sos) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'SOS service not wired'));
+      return;
+    }
+    const body = z
+      .object({ note: z.string().trim().max(500).optional() })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid SOS input'));
+      return;
+    }
+    const response = await options.sos.raise(
+      organizationId,
+      ctx.userId,
+      { note: body.data.note },
+      routeAuditContext(req, res, organizationId).requestId,
+    );
+    res.status(201).json({ data: response });
+  });
 
   // --- S10: Notifications -----------------------------------------------------------
   // GET  /notifications         — recent notifications, unread count and the
@@ -923,56 +792,46 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
   // Self-scoped: the notification id is resolved against the session user,
   // so another resident's notification is invisible (404).
 
-  router.get(
-    '/notifications',
-    authGuard,
-    residentGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.notifications) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Notifications service not wired'));
-        return;
-      }
-      const inbox = await options.notifications.list(organizationId, ctx.userId);
-      const bookings = options.bookings
-        ? await options.bookings.list(organizationId, ctx.userId)
-        : { upcoming: [] };
-      res.status(200).json({
-        data: {
-          upcomingBookings: bookings.upcoming,
-          recentNotifications: inbox.recentNotifications,
-          unreadCount: inbox.unreadCount,
-        },
-      });
-    }),
-  );
+  router.get('/notifications', authGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.notifications) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Notifications service not wired'));
+      return;
+    }
+    const inbox = await options.notifications.list(organizationId, ctx.userId);
+    const bookings = options.bookings
+      ? await options.bookings.list(organizationId, ctx.userId)
+      : { upcoming: [] };
+    res.status(200).json({
+      data: {
+        upcomingBookings: bookings.upcoming,
+        recentNotifications: inbox.recentNotifications,
+        unreadCount: inbox.unreadCount,
+      },
+    });
+  });
 
-  router.post(
-    '/notifications/:id/read',
-    authGuard,
-    residentGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.notifications) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Notifications service not wired'));
-        return;
-      }
-      const response = await options.notifications.markRead(
-        organizationId,
-        ctx.userId,
-        String(req.params.id),
-      );
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/notifications/:id/read', authGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.notifications) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Notifications service not wired'));
+      return;
+    }
+    const response = await options.notifications.markRead(
+      organizationId,
+      ctx.userId,
+      String(req.params.id),
+    );
+    res.status(200).json({ data: response });
+  });
 
   // --- S11: Dashboard home ---------------------------------------------------------
   // GET /dashboard — one aggregate that composes the sections the resident
@@ -985,25 +844,23 @@ export function createResidentRouter(options: ResidentRouteOptions): Router {
     permissions.can(ctx.role, 'portal.access.self'),
   );
 
-  router.get(
-    '/dashboard',
-    authGuard,
-    residentGuard,
-    dashboardGuard,
-    asyncWrap(async (req, res, next) => {
-      const ctx = getResidentContext(req);
-      if (!ctx) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      if (!options.dashboard) {
-        next(new AppError(501, 'INTERNAL_ERROR', 'Dashboard service not wired'));
-        return;
-      }
-      const view = await options.dashboard.get(organizationId, ctx.userId);
-      res.status(200).json({ data: view });
-    }),
-  );
+  router.get('/dashboard', authGuard, dashboardGuard, async (req, res, next) => {
+    const ctx = getAuth(req);
+    if (!ctx) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    if (!options.dashboard) {
+      next(new AppError(501, 'INTERNAL_ERROR', 'Dashboard service not wired'));
+      return;
+    }
+    const view = await options.dashboard.get(
+      organizationId,
+      ctx.userId,
+      ctx.residentAccountUserIds ?? [ctx.userId],
+    );
+    res.status(200).json({ data: view });
+  });
 
   return router;
 }

@@ -1,3 +1,9 @@
+import type {
+  AccessVerificationDto,
+  OperatorAccessCodeDto,
+  SosOperatorEventDto,
+} from './resident-contract.js';
+
 /**
  * Operator dashboard contracts.
  *
@@ -44,4 +50,35 @@ export interface DashboardAttentionItemDto {
 export interface DashboardSummaryResponse {
   kpis: DashboardKpisDto;
   attention: DashboardAttentionItemDto[];
+}
+
+/** Today's gate verification counters, split by outcome. */
+export interface GuardVerificationCountsDto {
+  granted: number;
+  denied: number;
+}
+
+/**
+ * The guard home aggregate.
+ *
+ * A gateman only acts on two things: an SOS alert and the gate. This payload
+ * is deliberately narrow — no estates, properties, billing, complaints or
+ * audit counts. Every field is `null` when the role lacks the matching read
+ * permission, so a restricted role never sees a misleading zero.
+ */
+export interface GuardOverviewDto {
+  /** RAISED + ACKNOWLEDGED SOS alerts. */
+  activeSos: number | null;
+  /** The newest active alerts (capped server-side), newest first. */
+  activeSosEvents: SosOperatorEventDto[] | null;
+  /**
+   * Access codes a visitor is expected to present today: still valid and
+   * either issued today or expiring before the day ends.
+   */
+  expectedToday: OperatorAccessCodeDto[] | null;
+  verificationsToday: GuardVerificationCountsDto | null;
+  /** The newest verification attempts of the day (capped server-side). */
+  recentVerifications: AccessVerificationDto[] | null;
+  /** Server time the aggregate was built at (ISO 8601). */
+  generatedAt: string;
 }

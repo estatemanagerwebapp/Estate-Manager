@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banknote, Plus, ReceiptText, RefreshCw, Search, Wallet } from 'lucide-react';
+import { Banknote, Plus, ReceiptText, Search, Wallet } from 'lucide-react';
 import {
   OPERATOR_PAYMENT_METHODS,
   formatNaira,
@@ -40,6 +40,7 @@ import {
   StatusBadge,
 } from '../components/operator';
 import type { BadgeTone } from '../components/ui';
+import { formatDate, formatDateTime } from '../lib/format';
 
 export type InvoiceView = 'ALL' | ResidentInvoiceStatus;
 export type BillingTab = 'invoices' | 'payments';
@@ -61,9 +62,11 @@ const PAYMENT_METHOD_LABELS: Record<OperatorPaymentMethod, string> = {
 };
 
 /** Build the API filter for an invoice view. */
-export function invoiceFilterForView(view: InvoiceView): OperatorInvoiceFilter {
-  if (view === 'ALL') return {};
-  return { status: view };
+export function invoiceFilterForView(view: InvoiceView, estateId?: string): OperatorInvoiceFilter {
+  return {
+    ...(view === 'ALL' ? {} : { status: view }),
+    ...(estateId ? { estateId } : {}),
+  };
 }
 
 export function invoiceStatusLabel(status: ResidentInvoiceStatus): string {
@@ -111,6 +114,7 @@ export function invoiceMatchesSearch(invoice: OperatorInvoiceDto, rawQuery: stri
   const query = rawQuery.trim().toLowerCase();
   if (!query) return true;
   return [
+    invoice.title,
     invoice.period,
     invoiceStatusLabel(invoiceDisplayStatus(invoice)),
     invoiceResidentLabel(invoice),
@@ -158,7 +162,7 @@ export function paymentMatchesSearch(payment: OperatorPaymentDto, rawQuery: stri
  * recording a payment writes the resident-visible payment/transaction rows and
  * settles the invoice.
  */
-export function BillingPage() {
+export function BillingPage({ fixedEstateId }: { fixedEstateId?: string } = {}) {
   const can = useCan();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -178,12 +182,15 @@ export function BillingPage() {
   const canVerifyPayments = can['payment.verify'] === true;
 
   const invoiceFilter = useMemo(() => {
-    const filter = invoiceFilterForView(invoiceView);
+    const filter = invoiceFilterForView(invoiceView, fixedEstateId);
     // A booking-payment link can point at an invoice outside the first page
     // of the default queue; ask for the larger window while linked.
     return linkedInvoiceId ? { ...filter, limit: 200 } : filter;
-  }, [invoiceView, linkedInvoiceId]);
-  const paymentFilter: OperatorPaymentFilter = { limit: 200 };
+  }, [invoiceView, linkedInvoiceId, fixedEstateId]);
+  const paymentFilter: OperatorPaymentFilter = {
+    limit: 200,
+    ...(fixedEstateId ? { estateId: fixedEstateId } : {}),
+  };
 
   const invoicesQuery = useApiQuery(
     queryKeys.invoices.list(invoiceFilter),
@@ -199,6 +206,12 @@ export function BillingPage() {
     queryKeys.residents.all,
     () => api.listResidents(),
     'Could not load residents.',
+    createOpen && canManage,
+  );
+  const estatesQuery = useApiQuery(
+    queryKeys.estates.all,
+    () => api.listEstates(),
+    'Could not load estates.',
     createOpen && canManage,
   );
 
@@ -257,7 +270,10 @@ export function BillingPage() {
   }
 
   async function createInvoice(input: {
+    estateId: string;
+    title: string;
     residentId: string;
+    propertyId: string;
     period: string;
     amountText: string;
     dueDate: string;
@@ -271,7 +287,10 @@ export function BillingPage() {
         throw new Error('Choose a valid due date.');
       }
       await api.createOperatorInvoice({
+        title: input.title.trim(),
         residentId: input.residentId,
+        propertyId: input.propertyId,
+        estateId: input.estateId,
         period: input.period.trim(),
         amountKobo,
         dueAt: dueAt.toISOString(),
@@ -322,7 +341,12 @@ export function BillingPage() {
 
   async function recordPayment(
     invoice: OperatorInvoiceDto,
-    input: { method: OperatorPaymentMethod; reference: string; paidDate: string },
+    input: {
+      amountText: string;
+      method: OperatorPaymentMethod;
+      reference: string;
+      paidDate: string;
+    },
   ) {
     setActing(true);
     setActionError(null);
@@ -332,6 +356,7 @@ export function BillingPage() {
         throw new Error('Choose a valid payment date.');
       }
       await api.recordOperatorPayment(invoice.id, {
+        amountKobo: parseNaira(input.amountText),
         method: input.method,
         reference: input.reference.trim() || undefined,
         paidAt: paidAt.toISOString(),
@@ -370,19 +395,6 @@ export function BillingPage() {
                 New invoice
               </Button>
             )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void refreshAll()}
-              disabled={invoicesQuery.fetching || paymentsQuery.fetching}
-            >
-              <RefreshCw
-                aria-hidden
-                size={14}
-                className={invoicesQuery.fetching ? 'animate-spin' : undefined}
-              />
-              Refresh
-            </Button>
           </>
         }
       />
@@ -490,9 +502,11 @@ export function BillingPage() {
               header: 'Invoice',
               cell: (invoice) => (
                 <div className="min-w-0">
-                  <p className="font-medium text-(--color-ink)">{invoice.period}</p>
+                  <p className="font-medium text-(--color-ink)">
+                    {invoice.title || invoice.period}
+                  </p>
                   <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-                    Issued {formatDate(invoice.issuedAt)}
+                    {invoice.period} · Issued {formatDate(invoice.issuedAt)}
                   </p>
                 </div>
               ),
@@ -710,7 +724,7 @@ export function BillingPage() {
           setActionError(null);
           clearLinkedInvoice();
         }}
-        title={selectedInvoice?.period ?? 'Invoice'}
+        title={selectedInvoice ? selectedInvoice.title || selectedInvoice.period : 'Invoice'}
         subtitle={
           selectedInvoice ? (
             <>
@@ -843,9 +857,11 @@ export function BillingPage() {
 
       {createOpen && (
         <CreateInvoiceModal
+          fixedEstateId={fixedEstateId}
+          estates={estatesQuery.data?.estates ?? []}
           residents={billableResidents(residentsQuery.data?.residents ?? [])}
-          loading={residentsQuery.loading}
-          error={residentsQuery.error}
+          loading={residentsQuery.loading || estatesQuery.loading}
+          error={residentsQuery.error ?? estatesQuery.error}
           submitting={acting}
           actionError={actionError}
           onClose={() => {
@@ -897,6 +913,8 @@ function tabClass(active: boolean): string {
 }
 
 function CreateInvoiceModal({
+  fixedEstateId,
+  estates,
   residents,
   loading,
   error,
@@ -905,11 +923,14 @@ function CreateInvoiceModal({
   onClose,
   onSubmit,
 }: {
+  fixedEstateId?: string;
+  estates: ReadonlyArray<{ id: string; name: string; slug: string }>;
   residents: ReadonlyArray<{
     userId: string;
+    propertyId: string;
     firstName: string;
     email: string | null;
-    property: { identifier: string; name: string | null; estate: { name: string } };
+    property: { identifier: string; name: string | null; estate: { name: string; slug: string } };
   }>;
   loading: boolean;
   error: string | null;
@@ -917,25 +938,65 @@ function CreateInvoiceModal({
   actionError: string | null;
   onClose: () => void;
   onSubmit: (input: {
+    estateId: string;
+    title: string;
     residentId: string;
+    propertyId: string;
     period: string;
     amountText: string;
     dueDate: string;
   }) => void;
 }) {
-  const [residentId, setResidentId] = useState('');
+  const [estateId, setEstateId] = useState(fixedEstateId ?? '');
+  const [residentSearch, setResidentSearch] = useState('');
+  const [residentChoice, setResidentChoice] = useState('');
+  const [title, setTitle] = useState('');
   const [period, setPeriod] = useState(defaultPeriod());
   const [amountText, setAmountText] = useState('');
   const [dueDate, setDueDate] = useState(defaultDueDate());
   const [formError, setFormError] = useState<string | null>(null);
 
-  const selected = residents.find((resident) => resident.userId === residentId);
+  const estateSlug = estates.find((estate) => estate.id === estateId)?.slug ?? '';
+  const estateResidents = residents.filter(
+    (resident) => resident.property.estate.slug === estateSlug,
+  );
+  const search = residentSearch.trim().toLowerCase();
+  const visibleResidents = search
+    ? estateResidents.filter((resident) =>
+        [
+          resident.firstName,
+          resident.email ?? '',
+          resident.property.identifier,
+          resident.property.name ?? '',
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(search),
+      )
+    : estateResidents;
+  const selected = estateResidents.find(
+    (resident) => `${resident.userId}:${resident.propertyId}` === residentChoice,
+  );
+
+  function chooseEstate(next: string) {
+    setEstateId(next);
+    setResidentChoice('');
+    setResidentSearch('');
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
-    if (!residentId) {
-      setFormError('Choose a resident.');
+    if (!estateId) {
+      setFormError('Choose an estate.');
+      return;
+    }
+    if (!selected) {
+      setFormError('Search and choose a resident in that estate.');
+      return;
+    }
+    if (!title.trim()) {
+      setFormError('Enter a bill name.');
       return;
     }
     if (!period.trim()) {
@@ -950,47 +1011,104 @@ function CreateInvoiceModal({
       setFormError('Choose a due date.');
       return;
     }
-    onSubmit({ residentId, period, amountText, dueDate });
+    onSubmit({
+      estateId,
+      title,
+      residentId: selected.userId,
+      propertyId: selected.propertyId,
+      period,
+      amountText,
+      dueDate,
+    });
   }
 
   return (
     <Modal open onClose={onClose} title="New invoice">
       <form onSubmit={submit} className="flex flex-col gap-3">
+        <Field label="Estate" hint="The resident list below is limited to this estate.">
+          <select
+            value={estateId}
+            onChange={(event) => chooseEstate(event.target.value)}
+            className={inputClass}
+            disabled={Boolean(fixedEstateId) || loading || submitting}
+          >
+            <option value="">{loading ? 'Loading estates…' : 'Choose an estate'}</option>
+            {estates.map((estate) => (
+              <option key={estate.id} value={estate.id}>
+                {estate.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         <Field
           label="Resident"
           hint={
-            selected
-              ? `${selected.property.identifier} · ${selected.property.estate.name}`
-              : 'Only residents with a completed portal account can be billed.'
+            !estateId
+              ? 'Choose an estate first.'
+              : selected
+                ? `${selected.property.identifier} · ${selected.property.estate.name}`
+                : 'Only residents with a completed portal account can be billed.'
           }
         >
-          <select
-            value={residentId}
-            onChange={(event) => setResidentId(event.target.value)}
+          <input
+            type="search"
+            value={residentSearch}
+            onChange={(event) => setResidentSearch(event.target.value)}
+            placeholder="Search by name, email or property"
+            aria-label="Search residents in the selected estate"
             className={inputClass}
-            disabled={loading || submitting}
+            disabled={!estateId || loading || submitting}
+          />
+          <select
+            value={residentChoice}
+            onChange={(event) => setResidentChoice(event.target.value)}
+            className={`${inputClass} mt-2`}
+            aria-label="Select resident"
+            disabled={!estateId || loading || submitting}
           >
-            <option value="">{loading ? 'Loading residents…' : 'Choose a resident'}</option>
-            {residents.map((resident) => (
-              <option key={resident.userId} value={resident.userId}>
+            <option value="">
+              {!estateId
+                ? 'Choose an estate first'
+                : visibleResidents.length === 0
+                  ? 'No residents match'
+                  : 'Choose a resident'}
+            </option>
+            {visibleResidents.map((resident) => (
+              <option
+                key={`${resident.userId}:${resident.propertyId}`}
+                value={`${resident.userId}:${resident.propertyId}`}
+              >
                 {resident.firstName}
-                {resident.email ? ` · ${resident.email}` : ''}
+                {resident.email ? ` · ${resident.email}` : ''} · {resident.property.identifier}
               </option>
             ))}
           </select>
         </Field>
         {error && <p className="text-xs text-rose-600">{error}</p>}
 
-        <Field label="Billing period" hint="For example “2026-11” or “Service charge Q4”.">
-          <input
-            type="text"
-            value={period}
-            onChange={(event) => setPeriod(event.target.value)}
-            maxLength={48}
-            className={inputClass}
-            disabled={submitting}
-          />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Bill name" hint="For example “Security levy”.">
+            <input
+              type="text"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={160}
+              className={inputClass}
+              disabled={submitting}
+            />
+          </Field>
+          <Field label="Period" hint="For example “2026-11” or “Q4 2026”.">
+            <input
+              type="text"
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+              maxLength={48}
+              className={inputClass}
+              disabled={submitting}
+            />
+          </Field>
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Amount (₦)">
@@ -1031,7 +1149,7 @@ function CreateInvoiceModal({
           >
             Cancel
           </Button>
-          <Button type="submit" size="sm" disabled={submitting || residents.length === 0}>
+          <Button type="submit" size="sm" disabled={submitting}>
             {submitting ? 'Issuing…' : 'Issue invoice'}
           </Button>
         </div>
@@ -1051,8 +1169,15 @@ function RecordPaymentModal({
   submitting: boolean;
   actionError: string | null;
   onClose: () => void;
-  onSubmit: (input: { method: OperatorPaymentMethod; reference: string; paidDate: string }) => void;
+  onSubmit: (input: {
+    amountText: string;
+    method: OperatorPaymentMethod;
+    reference: string;
+    paidDate: string;
+  }) => void;
 }) {
+  const outstanding = Math.max(invoice.amountKobo - invoice.paidKobo, 0);
+  const [amountText, setAmountText] = useState(String(outstanding / 100));
   const [method, setMethod] = useState<OperatorPaymentMethod>('BANK_TRANSFER');
   const [reference, setReference] = useState('');
   const [paidDate, setPaidDate] = useState(todayInput());
@@ -1061,11 +1186,15 @@ function RecordPaymentModal({
   function submit(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
+    if (!amountText.trim()) {
+      setFormError('Enter the amount received.');
+      return;
+    }
     if (!paidDate) {
       setFormError('Choose a payment date.');
       return;
     }
-    onSubmit({ method, reference, paidDate });
+    onSubmit({ amountText, method, reference, paidDate });
   }
 
   return (
@@ -1073,15 +1202,31 @@ function RecordPaymentModal({
       <form onSubmit={submit} className="flex flex-col gap-3">
         <div className="rounded-md bg-slate-50 px-3 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)">
-            Amount to record
+            Outstanding
           </p>
           <p className="mt-1 text-lg font-semibold text-(--color-ink)">
-            {formatNaira(invoice.amountKobo)}
+            {formatNaira(outstanding)}
           </p>
           <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-            {invoice.period} · {invoiceResidentLabel(invoice)}
+            {invoice.title || invoice.period} · {invoiceResidentLabel(invoice)}
           </p>
+          {invoice.paidKobo > 0 && (
+            <p className="mt-1 text-xs text-(--color-ink-muted)">
+              {formatNaira(invoice.paidKobo)} already paid of {formatNaira(invoice.amountKobo)}.
+            </p>
+          )}
         </div>
+
+        <Field label="Amount received (₦)" hint="Enter a smaller amount to record a part payment.">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={amountText}
+            onChange={(event) => setAmountText(event.target.value)}
+            className={inputClass}
+            disabled={submitting}
+          />
+        </Field>
 
         <Field label="Payment method">
           <select
@@ -1148,16 +1293,18 @@ function billableResidents(
   residents: ReadonlyArray<{
     status: string;
     userId: string | null;
+    propertyId: string;
     firstName: string;
     email: string | null;
     archivedAt?: string | null;
-    property: { identifier: string; name: string | null; estate: { name: string } };
+    property: { identifier: string; name: string | null; estate: { name: string; slug: string } };
   }>,
 ): Array<{
   userId: string;
+  propertyId: string;
   firstName: string;
   email: string | null;
-  property: { identifier: string; name: string | null; estate: { name: string } };
+  property: { identifier: string; name: string | null; estate: { name: string; slug: string } };
 }> {
   return residents
     .filter(
@@ -1166,6 +1313,7 @@ function billableResidents(
     )
     .map((resident) => ({
       userId: resident.userId as string,
+      propertyId: resident.propertyId,
       firstName: resident.firstName,
       email: resident.email,
       property: resident.property,
@@ -1185,15 +1333,4 @@ function defaultDueDate(): string {
 
 function todayInput(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-NG', { dateStyle: 'medium' });
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }

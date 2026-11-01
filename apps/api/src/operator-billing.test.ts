@@ -109,6 +109,7 @@ async function issueInvoice(overrides: Record<string, unknown> = {}) {
     .post('/api/v1/invoices')
     .set('Cookie', adminCookie)
     .send({
+      title: 'Security levy',
       residentId,
       period: `2026-11-${uniqueSuffix()}`,
       amountKobo: 2_500_000,
@@ -118,10 +119,12 @@ async function issueInvoice(overrides: Record<string, unknown> = {}) {
   expect(response.status).toBe(201);
   return response.body.data.invoice as {
     id: string;
+    title: string;
     amountKobo: number;
     status: string;
     period: string;
     paidKobo: number;
+    outstandingKobo: number;
     resident: { id: string; fullName: string | null } | null;
     property: { identifier: string } | null;
   };
@@ -272,6 +275,7 @@ describe('operator billing', () => {
       .post('/api/v1/invoices')
       .set('Cookie', auditorCookie)
       .send({
+        title: 'Denied levy',
         residentId,
         period: '2026-11',
         amountKobo: 1_000,
@@ -283,7 +287,7 @@ describe('operator billing', () => {
         await request(app)
           .post('/api/v1/invoices/00000000-0000-0000-0000-000000000000/payments')
           .set('Cookie', auditorCookie)
-          .send({ method: 'CASH' })
+          .send({ amountKobo: 1_000, method: 'CASH' })
       ).status,
     ).toBe(403);
   });
@@ -341,6 +345,7 @@ describe('operator billing', () => {
     expect(
       (
         await request(app).post('/api/v1/invoices').set('Cookie', adminCookie).send({
+          title: 'Cross-org levy',
           residentId: otherResidentId,
           period: '2026-11',
           amountKobo: 1_000,
@@ -363,6 +368,7 @@ describe('operator billing', () => {
       .post(`/api/v1/invoices/${invoice.id}/payments`)
       .set('Cookie', adminCookie)
       .send({
+        amountKobo: invoice.amountKobo,
         method: 'BANK_TRANSFER',
         reference: 'TRX-2026-11',
         paidAt: '2026-11-15T00:00:00.000Z',
@@ -409,7 +415,7 @@ describe('operator billing', () => {
         await request(app)
           .post(`/api/v1/invoices/${invoice.id}/payments`)
           .set('Cookie', adminCookie)
-          .send({ method: 'CASH' })
+          .send({ amountKobo: invoice.amountKobo, method: 'CASH' })
       ).status,
     ).toBe(201);
     expect(
@@ -417,7 +423,7 @@ describe('operator billing', () => {
         await request(app)
           .post(`/api/v1/invoices/${invoice.id}/payments`)
           .set('Cookie', adminCookie)
-          .send({ method: 'CASH' })
+          .send({ amountKobo: invoice.amountKobo, method: 'CASH' })
       ).status,
     ).toBe(409);
     expect(
@@ -432,11 +438,11 @@ describe('operator billing', () => {
       request(app)
         .post(`/api/v1/invoices/${invoice.id}/payments`)
         .set('Cookie', adminCookie)
-        .send({ method: 'CASH' }),
+        .send({ amountKobo: invoice.amountKobo, method: 'CASH' }),
       request(app)
         .post(`/api/v1/invoices/${invoice.id}/payments`)
         .set('Cookie', adminCookie)
-        .send({ method: 'BANK_TRANSFER' }),
+        .send({ amountKobo: invoice.amountKobo, method: 'BANK_TRANSFER' }),
     ]);
     expect([first.status, second.status].sort()).toEqual([201, 409]);
 
@@ -469,6 +475,110 @@ describe('operator billing', () => {
       (await request(app).post(`/api/v1/invoices/${invoice.id}/void`).set('Cookie', adminCookie))
         .status,
     ).toBe(409);
+  });
+
+  it('records a part payment and applies it to the outstanding balance', async () => {
+    const invoice = await issueInvoice({ period: '2026-11-part', amountKobo: 2_500_000 });
+    expect(invoice.title).toBe('Security levy');
+    expect(invoice.outstandingKobo).toBe(2_500_000);
+
+    const first = await request(app)
+      .post(`/api/v1/invoices/${invoice.id}/payments`)
+      .set('Cookie', adminCookie)
+      .send({ amountKobo: 1_000_000, method: 'CASH' });
+    expect(first.status).toBe(201);
+    expect(first.body.data.invoice.status).toBe('UNPAID');
+    expect(first.body.data.invoice.paidKobo).toBe(1_000_000);
+    expect(first.body.data.invoice.outstandingKobo).toBe(1_500_000);
+
+    const stored = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(stored.status).toBe('UNPAID');
+
+    const view = await request(app).get('/api/v1/resident/finance').set('Cookie', residentCookie);
+    expect(view.status).toBe(200);
+    const row = (
+      view.body.data.outstanding as Array<{
+        id: string;
+        paidKobo: number;
+        outstandingKobo: number;
+      }>
+    ).find((entry) => entry.id === invoice.id);
+    expect(row?.paidKobo).toBe(1_000_000);
+    expect(row?.outstandingKobo).toBe(1_500_000);
+
+    const overpay = await request(app)
+      .post(`/api/v1/invoices/${invoice.id}/payments`)
+      .set('Cookie', adminCookie)
+      .send({ amountKobo: 2_000_000, method: 'CASH' });
+    expect(overpay.status).toBe(400);
+    expect(overpay.body.error.message).toContain('outstanding');
+
+    const rest = await request(app)
+      .post(`/api/v1/invoices/${invoice.id}/payments`)
+      .set('Cookie', adminCookie)
+      .send({ amountKobo: 1_500_000, method: 'CASH' });
+    expect(rest.status).toBe(201);
+    expect(rest.body.data.invoice.status).toBe('PAID');
+    expect(rest.body.data.invoice.paidKobo).toBe(2_500_000);
+    expect(rest.body.data.invoice.outstandingKobo).toBe(0);
+    expect(await prisma.payment.count({ where: { organizationId, invoiceId: invoice.id } })).toBe(
+      2,
+    );
+  });
+
+  it('checks that the resident belongs to the selected estate', async () => {
+    const property = await prisma.property.findUniqueOrThrow({ where: { id: propertyId } });
+    const good = await request(app).post('/api/v1/invoices').set('Cookie', adminCookie).send({
+      title: 'Estate security levy',
+      estateId: property.estateId,
+      residentId,
+      period: '2026-12-estate',
+      amountKobo: 500_000,
+      dueAt: '2026-12-31T00:00:00.000Z',
+    });
+    expect(good.status).toBe(201);
+    expect(good.body.data.invoice.title).toBe('Estate security levy');
+
+    const wrongEstate = await request(app)
+      .post('/api/v1/invoices')
+      .set('Cookie', adminCookie)
+      .send({
+        title: 'Wrong estate levy',
+        estateId: '00000000-0000-4000-8000-000000000000',
+        residentId,
+        period: '2026-12-wrong',
+        amountKobo: 500_000,
+        dueAt: '2026-12-31T00:00:00.000Z',
+      });
+    expect(wrongEstate.status).toBe(400);
+    expect(wrongEstate.body.error.message).toContain('selected estate');
+  });
+
+  it('lets a resident pay part of an invoice', async () => {
+    const invoice = await issueInvoice({ period: '2026-11-resident-part' });
+    const part = await request(app)
+      .post('/api/v1/resident/payments')
+      .set('Cookie', residentCookie)
+      .send({ invoiceId: invoice.id, amountKobo: 500_000, method: 'CASH' });
+    expect(part.status).toBe(200);
+    expect(part.body.data.payment.amountKobo).toBe(500_000);
+
+    const stored = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(stored.status).toBe('UNPAID');
+
+    const overpay = await request(app)
+      .post('/api/v1/resident/payments')
+      .set('Cookie', residentCookie)
+      .send({ invoiceId: invoice.id, amountKobo: 3_000_000, method: 'CASH' });
+    expect(overpay.status).toBe(400);
+
+    const rest = await request(app)
+      .post('/api/v1/resident/payments')
+      .set('Cookie', residentCookie)
+      .send({ invoiceId: invoice.id, amountKobo: 2_000_000, method: 'CASH' });
+    expect(rest.status).toBe(200);
+    const settled = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(settled.status).toBe('PAID');
   });
 
   it('lets the resident see and pay an operator-issued invoice', async () => {

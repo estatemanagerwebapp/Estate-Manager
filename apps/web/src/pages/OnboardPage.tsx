@@ -91,7 +91,12 @@ export function OnboardPage() {
   const [completing, setCompleting] = useState(false);
   const [submittingNote, setSubmittingNote] = useState(false);
   const [paymentSubmitted, setPaymentSubmitted] = useState(false);
-  const [completed, setCompleted] = useState<{ demoPassword: string } | null>(null);
+  const [completed, setCompleted] = useState<{
+    demoPassword?: string;
+    dependantTemporaryPassword?: string;
+    dependantInvitationSent?: boolean;
+    accountLinked?: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Hydrate local state from the loaded draft.
@@ -202,7 +207,7 @@ export function OnboardPage() {
     setError(null);
     try {
       const result = await api.completeOnboarding(code);
-      setCompleted({ demoPassword: result.demoPassword });
+      setCompleted(result);
       setStep(5 as WizardStep);
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === 'PAYMENT_REQUIRED') {
@@ -252,26 +257,49 @@ export function OnboardPage() {
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
             <CheckCircle2 aria-hidden size={24} />
           </span>
-          <h1 className="mt-4 text-lg font-semibold">Account created</h1>
-          <p className="mt-1 max-w-sm text-sm text-(--color-ink-muted)">
-            Your account is ready. Use this temporary password to sign in, then you will be asked to
-            set your own:
-          </p>
-          <div className="mt-4 flex items-center gap-2 rounded-md bg-(--color-primary-soft) px-5 py-3">
-            <code className="font-mono text-lg font-semibold tracking-widest text-(--color-primary)">
-              {completed.demoPassword}
-            </code>
-            <button
-              type="button"
-              onClick={() => void navigator.clipboard.writeText(completed.demoPassword)}
-              className="ml-auto rounded border border-(--color-primary) bg-white px-2.5 py-1 text-[11px] font-medium text-(--color-primary)"
-            >
-              Copy
-            </button>
-          </div>
-          <p className="mt-3 text-[11px] text-(--color-ink-muted)">
-            It will not be shown again. You will be prompted to change it at first sign-in.
-          </p>
+          <h1 className="mt-4 text-lg font-semibold">
+            {completed.accountLinked ? 'Property added to your account' : 'Account ready'}
+          </h1>
+          {completed.demoPassword ? (
+            <>
+              <p className="mt-1 max-w-sm text-sm text-(--color-ink-muted)">
+                Use this temporary password to sign in, then set your own:
+              </p>
+              <div className="mt-4 flex items-center gap-2 rounded-md bg-(--color-primary-soft) px-5 py-3">
+                <code className="font-mono text-lg font-semibold tracking-widest text-(--color-primary)">
+                  {completed.demoPassword}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => void navigator.clipboard.writeText(completed.demoPassword!)}
+                  className="ml-auto rounded border border-(--color-primary) bg-white px-2.5 py-1 text-[11px] font-medium text-(--color-primary)"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="mt-3 text-[11px] text-(--color-ink-muted)">
+                This password is shown once. You will be prompted to change it at first sign-in.
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 max-w-sm text-sm text-(--color-ink-muted)">
+              Your new property is linked to your existing resident login.
+            </p>
+          )}
+          {completed.dependantTemporaryPassword && (
+            <div className="mt-4 rounded-md border border-(--color-border) p-3 text-left">
+              <p className="text-sm font-medium">Next of kin temporary password</p>
+              <code className="font-mono text-primary">{completed.dependantTemporaryPassword}</code>
+              <p className="mt-1 text-xs text-(--color-ink-muted)">
+                They will be asked to change it at first sign-in.
+              </p>
+            </div>
+          )}
+          {completed.dependantInvitationSent && (
+            <p className="mt-3 text-sm text-(--color-ink-muted)">
+              A separate login invitation was sent to your next of kin.
+            </p>
+          )}
           <Link
             to="/login"
             className="mt-5 inline-flex items-center gap-2 rounded-md bg-(--color-primary) px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"

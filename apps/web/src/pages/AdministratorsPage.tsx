@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -77,6 +78,7 @@ export function AdministratorsPage() {
   const queryClient = useQueryClient();
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [estateFilter, setEstateFilter] = useState('');
   const [search, setSearch] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -87,10 +89,18 @@ export function AdministratorsPage() {
     const next: UserFilter = { scope: 'staff' };
     if (roleFilter) next.role = roleFilter;
     if (statusFilter) next.status = statusFilter;
+    if (estateFilter) next.estateId = estateFilter;
     return next;
-  }, [roleFilter, statusFilter]);
+  }, [roleFilter, statusFilter, estateFilter]);
 
   const administratorsKey = queryKeys.administrators.list(filter);
+  const estatesQuery = useApiQuery(
+    ['estates', { status: 'ACTIVE' }],
+    () => api.listEstates({ status: 'ACTIVE' }),
+    'Could not load estates.',
+    actor?.role === 'SUPER_ADMIN',
+  );
+  const estates = estatesQuery.data?.estates ?? [];
   const {
     data,
     loading,
@@ -166,6 +176,26 @@ export function AdministratorsPage() {
       if (previous) queryClient.setQueryData(administratorsKey, previous);
       setActionError(
         err instanceof ApiRequestError ? err.message : 'Could not update the administrator.',
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function applyEstates(target: UserListItemDto, estateIds: string[]) {
+    setBusyId(target.id);
+    setActionError(null);
+    try {
+      const result = await api.setUserEstates(target.id, estateIds);
+      patchAdministrators((current) =>
+        current.map((user) =>
+          user.id === target.id ? { ...user, estateAssignments: result.estateAssignments } : user,
+        ),
+      );
+      toast.success('Estate assignments updated.');
+    } catch (err) {
+      setActionError(
+        err instanceof ApiRequestError ? err.message : 'Could not update estate assignments.',
       );
     } finally {
       setBusyId(null);
@@ -308,6 +338,26 @@ export function AdministratorsPage() {
       ),
     },
     {
+      key: 'estates',
+      header: 'Assigned estates',
+      cell: (target) =>
+        target.role === 'SUPER_ADMIN' ? (
+          <span className="text-xs text-(--color-ink-muted)">All estates</span>
+        ) : actor?.role === 'SUPER_ADMIN' ? (
+          <EstateAssignmentEditor
+            target={target}
+            estates={estates}
+            busy={busyId === target.id}
+            onSave={(ids) => void applyEstates(target, ids)}
+          />
+        ) : (
+          <span className="text-xs text-(--color-ink-muted)">
+            {(target.estateAssignments ?? []).map((estate) => estate.name).join(', ') ||
+              'Unassigned'}
+          </span>
+        ),
+    },
+    {
       key: 'actions',
       header: 'Actions',
       align: 'right',
@@ -320,6 +370,7 @@ export function AdministratorsPage() {
           onStatus={(status, reason) => void applyStatus(target, status, reason)}
           onRevoke={() => void revokeSessions(target)}
           onDelete={() => void deleteAdministrator(target)}
+          showActivity={actor?.role === 'SUPER_ADMIN'}
         />
       ),
     },
@@ -387,6 +438,21 @@ export function AdministratorsPage() {
             </option>
           ))}
         </select>
+        {actor?.role === 'SUPER_ADMIN' && (
+          <select
+            value={estateFilter}
+            onChange={(event) => setEstateFilter(event.target.value)}
+            aria-label="Filter by estate"
+            className={selectClass}
+          >
+            <option value="">All estates</option>
+            {estates.map((estate) => (
+              <option key={estate.id} value={estate.id}>
+                {estate.name}
+              </option>
+            ))}
+          </select>
+        )}
       </FilterBar>
 
       {actionError && (
@@ -418,6 +484,7 @@ export function AdministratorsPage() {
       {createOpen && (
         <CreateAdministratorModal
           actorRole={actor?.role}
+          estates={estates}
           onClose={() => setCreateOpen(false)}
           onCreated={handleCreated}
         />
@@ -438,6 +505,7 @@ function AdministratorActions({
   onStatus,
   onRevoke,
   onDelete,
+  showActivity,
 }: {
   target: UserListItemDto;
   isSelf: boolean;
@@ -446,6 +514,7 @@ function AdministratorActions({
   onStatus: (status: string, reason: string) => void;
   onRevoke: () => void;
   onDelete: () => void;
+  showActivity: boolean;
 }) {
   const [reason, setReason] = useState('');
   const active = target.status === 'ACTIVE';
@@ -453,9 +522,19 @@ function AdministratorActions({
 
   if (isSelf) {
     return (
-      <span className="text-[11px] text-(--color-ink-muted)">
-        Self — use Account &amp; password
-      </span>
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-[11px] text-(--color-ink-muted)">
+          Self — use Account &amp; password
+        </span>
+        {showActivity && (
+          <Link
+            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-medium text-(--color-ink)"
+            to={`/app/activity?actorId=${encodeURIComponent(target.id)}`}
+          >
+            View activity
+          </Link>
+        )}
+      </div>
     );
   }
 
@@ -510,6 +589,14 @@ function AdministratorActions({
       >
         <LogOut aria-hidden size={12} />
       </button>
+      {showActivity && (
+        <Link
+          className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-medium text-(--color-ink)"
+          to={`/app/activity?actorId=${encodeURIComponent(target.id)}`}
+        >
+          View activity
+        </Link>
+      )}
       <button
         type="button"
         onClick={onDelete}
@@ -524,12 +611,58 @@ function AdministratorActions({
   );
 }
 
+function EstateAssignmentEditor({
+  target,
+  estates,
+  busy,
+  onSave,
+}: {
+  target: UserListItemDto;
+  estates: Array<{ id: string; name: string }>;
+  busy: boolean;
+  onSave: (estateIds: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(() =>
+    (target.estateAssignments ?? []).map((estate) => estate.id),
+  );
+  return (
+    <div className="flex min-w-40 flex-col gap-1.5">
+      <select
+        multiple
+        value={selected}
+        onChange={(event) =>
+          setSelected(Array.from(event.currentTarget.selectedOptions, (option) => option.value))
+        }
+        disabled={busy}
+        aria-label={`Estates for ${target.fullName ?? target.email}`}
+        className="max-w-48 rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+      >
+        {estates.map((estate) => (
+          <option key={estate.id} value={estate.id}>
+            {estate.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => onSave(selected)}
+        disabled={busy || selected.length === 0}
+        className="self-start text-xs font-medium text-(--color-primary) disabled:opacity-50"
+      >
+        {busy ? 'Saving…' : 'Save estates'}
+      </button>
+    </div>
+  );
+}
+
 function CreateAdministratorModal({
   actorRole,
+  estates,
   onClose,
   onCreated,
 }: {
   actorRole: RoleKey | undefined;
+  estates: Array<{ id: string; name: string }>;
   onClose: () => void;
   onCreated: (result: AdminCreateUserResponse) => void;
 }) {
@@ -540,6 +673,7 @@ function CreateAdministratorModal({
   const [role, setRole] = useState<StaffRole>(
     roles.includes('ESTATE_ADMIN') ? 'ESTATE_ADMIN' : (roles[0] ?? 'GUARD'),
   );
+  const [estateIds, setEstateIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -557,6 +691,7 @@ function CreateAdministratorModal({
         email: email.trim(),
         phone: phone.trim() || null,
         role,
+        ...(role !== 'SUPER_ADMIN' ? { estateIds } : {}),
       };
       onCreated(await api.createAdministrator(input));
     } catch (err) {
@@ -580,7 +715,13 @@ function CreateAdministratorModal({
           <Button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={submitting || !fullName.trim() || !email.trim() || roles.length === 0}
+            disabled={
+              submitting ||
+              !fullName.trim() ||
+              !email.trim() ||
+              roles.length === 0 ||
+              (role !== 'SUPER_ADMIN' && estateIds.length === 0)
+            }
           >
             {submitting ? 'Creating…' : 'Create administrator'}
           </Button>
@@ -604,6 +745,31 @@ function CreateAdministratorModal({
             required
           />
         </Field>
+
+        {role !== 'SUPER_ADMIN' && (
+          <Field
+            label="Assigned estates"
+            hint="This staff account will only access selected estates."
+          >
+            <select
+              multiple
+              value={estateIds}
+              onChange={(event) =>
+                setEstateIds(
+                  Array.from(event.currentTarget.selectedOptions, (option) => option.value),
+                )
+              }
+              className={`${selectClass} w-full min-h-28`}
+              required
+            >
+              {estates.map((estate) => (
+                <option key={estate.id} value={estate.id}>
+                  {estate.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <Field label="Email">
           <input

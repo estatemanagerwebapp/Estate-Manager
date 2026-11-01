@@ -33,6 +33,7 @@ export interface MediaAccess {
   organizationId: string;
   userId: string;
   canManageUsers: boolean;
+  estateIds?: readonly string[];
   /**
    * Gate readers may open files referenced by a visitor access code. This is
    * deliberately narrower than `canManageUsers`: it never grants access to
@@ -145,13 +146,6 @@ export class R2MediaStorage implements MediaStorage {
     this.publicBase = options.publicBase ?? '/api/v1/media';
   }
 
-  async delete(relativePath: string): Promise<void> {
-    await this.client.send(
-      new DeleteObjectCommand({ Bucket: this.options.bucketName, Key: relativePath }),
-    );
-    await this.prisma.mediaFile.deleteMany({ where: { relativePath } });
-  }
-
   async save(input: {
     organizationId: string;
     buffer: Buffer;
@@ -238,6 +232,17 @@ async function findAuthorizedMediaRecord(
       select: { id: true },
     });
     if (gateDocument) return row;
+  }
+  if (access.estateIds?.length) {
+    const assignedEstateOwnsDocument = await prisma.residentOnboarding.findFirst({
+      where: {
+        organizationId: access.organizationId,
+        idDocumentUrl: `${publicBase}/${relativePath}`,
+        property: { estateId: { in: [...access.estateIds] } },
+      },
+      select: { id: true },
+    });
+    if (assignedEstateOwnsDocument) return row;
   }
   const residentOwnsDocument = await prisma.residentOnboarding.findFirst({
     where: {

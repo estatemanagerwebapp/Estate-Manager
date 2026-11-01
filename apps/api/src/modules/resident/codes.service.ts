@@ -28,10 +28,11 @@ export interface AccessCodeDurationLimits {
 export interface ResidentCodesServiceOptions {
   codes: PrismaAccessCodeRepository;
   audit: PrismaAuditRepository;
-  /** Resolves the acting resident's assigned property (may be null). */
-  loadPropertyId: (organizationId: string, userId: string) => Promise<string | null>;
   /** Configured validity limits; falls back to 720 / 8760 hours when absent. */
-  loadDurationLimits?: () => Promise<AccessCodeDurationLimits>;
+  loadDurationLimits?: (
+    organizationId: string,
+    propertyId: string,
+  ) => Promise<AccessCodeDurationLimits>;
   /**
    * Confirms an uploaded visitor ID image belongs to the acting resident.
    * Returning false keeps an arbitrary URL from being attached to a code.
@@ -55,10 +56,14 @@ export class ResidentCodesService {
    * revoked ones as REVOKED) so the list stays truthful without mutating
    * rows on read.
    */
-  async list(organizationId: string, userId: string): Promise<ResidentAccessCodesResponse> {
+  async list(
+    organizationId: string,
+    userIds: string | readonly string[],
+    propertyId: string | null,
+  ): Promise<ResidentAccessCodesResponse> {
     const [records, limits] = await Promise.all([
-      this.options.codes.listByUser(organizationId, userId),
-      this.durationLimits(),
+      this.options.codes.listByUser(organizationId, userIds),
+      this.durationLimits(organizationId, propertyId ?? ''),
     ]);
     const now = new Date();
     return {
@@ -78,10 +83,10 @@ export class ResidentCodesService {
     input: ResidentGenerateAccessCodeInput,
     requestId: string | null,
   ): Promise<ResidentGenerateAccessCodeResponse> {
-    const limits = await this.durationLimits();
+    const limits = await this.durationLimits(organizationId, input.propertyId);
     const durationHours = resolveDurationHours(input.durationHours, limits);
     const validUntil = new Date(Date.now() + durationHours * MS_PER_HOUR);
-    const propertyId = await this.options.loadPropertyId(organizationId, userId);
+    const propertyId = input.propertyId;
 
     const visitorName = input.visitorName?.trim() ?? '';
     if (!visitorName) {
@@ -94,6 +99,9 @@ export class ResidentCodesService {
     if (carPlate && carPlate.length > 24) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Car plate must be 24 characters or fewer');
     }
+    // The guard is told to verify the plate, so a car-plate code without one
+    // would be unusable at the gate. Enforce it server-side, not only in the
+    // resident form.
     const idDocumentUrl = input.idDocumentUrl?.trim() || null;
     if (idDocumentUrl) {
       if (!this.options.ownsMediaUrl) {
@@ -118,6 +126,7 @@ export class ResidentCodesService {
       visitorName,
       carPlate,
       idDocumentUrl,
+      authenticationType: input.authenticationType,
       codeLength: ACCESS_CODE_LENGTH,
     });
 
@@ -136,6 +145,7 @@ export class ResidentCodesService {
         validUntil: validUntil.toISOString(),
         hasCarPlate: Boolean(carPlate),
         hasIdDocument: Boolean(idDocumentUrl),
+        authenticationType: input.authenticationType,
       },
     });
 
@@ -149,11 +159,12 @@ export class ResidentCodesService {
   async extend(
     organizationId: string,
     userId: string,
+    accountUserIds: readonly string[],
     codeId: string,
     durationHours: number | undefined,
     requestId: string | null,
   ): Promise<ResidentExtendAccessCodeResponse> {
-    const record = await this.options.codes.findById(organizationId, userId, codeId);
+    const record = await this.options.codes.findById(organizationId, accountUserIds, codeId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Access code not found');
     }
@@ -161,7 +172,10 @@ export class ResidentCodesService {
       throw new AppError(409, 'CONFLICT', 'This access code has been deactivated');
     }
 
-    const hours = resolveDurationHours(durationHours, await this.durationLimits());
+    const hours = resolveDurationHours(
+      durationHours,
+      await this.durationLimits(organizationId, record.propertyId ?? ''),
+    );
     const candidate = new Date(Date.now() + hours * MS_PER_HOUR);
     const current = record.validUntil ? record.validUntil.getTime() : 0;
     const validUntil = new Date(Math.max(candidate.getTime(), current));
@@ -193,10 +207,11 @@ export class ResidentCodesService {
   async deactivate(
     organizationId: string,
     userId: string,
+    accountUserIds: readonly string[],
     codeId: string,
     requestId: string | null,
   ): Promise<ResidentDeactivateAccessCodeResponse> {
-    const record = await this.options.codes.findById(organizationId, userId, codeId);
+    const record = await this.options.codes.findById(organizationId, accountUserIds, codeId);
     if (!record) {
       throw new AppError(404, 'NOT_FOUND', 'Access code not found');
     }
@@ -223,14 +238,17 @@ export class ResidentCodesService {
     return { ok: true, code: toDto(updated) };
   }
 
-  private async durationLimits(): Promise<AccessCodeDurationLimits> {
+  private async durationLimits(
+    organizationId: string,
+    propertyId: string,
+  ): Promise<AccessCodeDurationLimits> {
     if (!this.options.loadDurationLimits) {
       return {
         defaultDurationHours: DEFAULT_CODE_DURATION_HOURS,
         maxDurationHours: MAX_CODE_DURATION_HOURS,
       };
     }
-    return this.options.loadDurationLimits();
+    return this.options.loadDurationLimits(organizationId, propertyId);
   }
 }
 
@@ -274,6 +292,7 @@ function withDerivedStatus(record: AccessCodeRecord, now: Date): AccessCodeRecor
 function toDto(record: AccessCodeRecord): ResidentAccessCodeDto {
   return {
     id: record.id,
+    propertyId: record.propertyId,
     kind: record.kind,
     status: record.status,
     codePrefix: record.codePrefix,
@@ -283,5 +302,6 @@ function toDto(record: AccessCodeRecord): ResidentAccessCodeDto {
     visitorName: record.visitorName,
     carPlate: record.carPlate,
     idDocumentUrl: record.idDocumentUrl,
+    authenticationType: record.authenticationType,
   };
 }

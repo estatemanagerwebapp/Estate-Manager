@@ -18,7 +18,11 @@ import {
   type OrganizationConfig,
 } from '@silverstone/config-schema';
 
-const prisma = new PrismaClient();
+// Seeding writes protected tables before any request scope exists, so it uses
+// the schema owner rather than the RLS-constrained API role.
+const prisma = new PrismaClient({
+  datasources: { db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL } },
+});
 
 function loadBootstrapConfig(): OrganizationConfig {
   const raw = readFileSync(new URL('../config/organization.default.json', import.meta.url), 'utf8');

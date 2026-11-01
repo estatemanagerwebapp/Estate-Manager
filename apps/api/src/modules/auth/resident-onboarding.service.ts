@@ -1,7 +1,7 @@
 import { AppError } from '../../lib/errors.js';
 import { hashPassword } from '../../lib/password.js';
 import { generateTemporaryPassword } from '../../lib/temporary-password.js';
-import type { PrismaUserRepository } from './user-repository.js';
+import type { PrismaUserRepository, UserRecord } from './user-repository.js';
 import type {
   PrismaResidentOnboardingRepository,
   ResidentOnboardingRecord,
@@ -25,7 +25,9 @@ import type {
   UserListItemDto,
   BankTransferDetailsDto,
 } from '@silverstone/shared';
+import type { CreatePropertyInput } from '@silverstone/shared';
 import type { AuthAuditContext } from './auth.service.js';
+import type { EmailAdapter } from './email-adapter.js';
 import type { OrganizationConfig, Fee } from '@silverstone/config-schema';
 import { bankTransferDetailsFromConfig } from '../settings/settings.mapper.js';
 import { GENDERS, MARITAL_STATUSES, RESIDENT_ID_TYPES } from '@silverstone/shared';
@@ -66,7 +68,7 @@ export function residentOnboardingConfigFromConfig(
 export interface PropertyDetail {
   identifier: string;
   name: string | null;
-  estate: { name: string; slug: string };
+  estate: { id: string; name: string; slug: string };
 }
 
 export interface OnAccountCreatedHook {
@@ -83,7 +85,7 @@ export class ResidentOnboardingService {
     private readonly audit: PrismaAuditRepository,
     private readonly permissions: PermissionResolver,
     /** Loads the resolved organization configuration at request time. */
-    private readonly loadConfig: () => Promise<OrganizationConfig>,
+    private readonly loadConfig: (estateId?: string) => Promise<OrganizationConfig>,
     /** Resolves a property + its estate for display in the guest view. */
     private readonly loadProperty: (
       organizationId: string,
@@ -95,13 +97,34 @@ export class ResidentOnboardingService {
      * transaction; omitted in tests that don't exercise the finance domain.
      */
     private readonly onAccountCreated?: (hook: OnAccountCreatedHook) => Promise<void>,
+    private readonly createProperty?: (
+      context: AuthAuditContext,
+      input: CreatePropertyInput,
+    ) => Promise<{ id: string }>,
+    private readonly deleteProperty?: (
+      context: AuthAuditContext,
+      propertyId: string,
+    ) => Promise<void>,
+    private readonly email?: EmailAdapter,
   ) {}
+
+  async residentAccountMatch(organizationId: string, email: string) {
+    const account = await this.users.findByEmail(organizationId, email.trim().toLowerCase());
+    if (!account || account.role !== 'RESIDENT') return null;
+    const properties = await this.drafts.findManyByUsers([account.id]);
+    return {
+      id: account.id,
+      email: account.email,
+      fullName: account.fullName,
+      propertyCount: properties.length,
+    };
+  }
 
   // --- Admin registration ----------------------------------------------------
 
   /**
-   * Register a resident: first name + property (required), email/phone
-   * optional. Creates the draft + issues the persistent code. No User row.
+   * Register a resident with a new property (or a legacy property ID), then
+   * create the draft and issue its persistent code. No User row is created.
    */
   async registerResident(
     context: AuthAuditContext,
@@ -114,46 +137,81 @@ export class ResidentOnboardingService {
     }
     const email = input.email?.trim() || null;
     const phone = input.phone?.trim() || null;
-
-    // Property must exist in this deployment.
-    const property = await this.loadProperty(context.organizationId, input.propertyId);
-    if (!property) {
-      throw new AppError(404, 'NOT_FOUND', 'Property not found');
+    let existingResidentUserId: string | null = null;
+    if (input.existingResidentUserId) {
+      if (!email) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'Email is required to link an existing account');
+      }
+      const existingAccount = await this.users.findById(
+        context.organizationId,
+        input.existingResidentUserId,
+      );
+      if (
+        !existingAccount ||
+        existingAccount.role !== 'RESIDENT' ||
+        existingAccount.email.toLowerCase() !== email.toLowerCase()
+      ) {
+        throw new AppError(409, 'CONFLICT', 'The selected resident account does not match this email');
+      }
+      existingResidentUserId = existingAccount.id;
     }
 
-    const config = await this.loadConfig();
-    const policy = residentOnboardingConfigFromConfig(config);
-    const { record, code } = await this.drafts.create(
-      {
+    let propertyId = input.propertyId;
+    let createdPropertyId: string | null = null;
+    if (input.property) {
+      if (!this.createProperty) {
+        throw new AppError(501, 'INTERNAL_ERROR', 'Property registration is not wired');
+      }
+      const created = await this.createProperty(context, input.property);
+      propertyId = created.id;
+      createdPropertyId = created.id;
+    }
+    if (!propertyId) throw new AppError(400, 'VALIDATION_ERROR', 'Property details are required');
+
+    let createdDraft = false;
+    try {
+      const property = await this.loadProperty(context.organizationId, propertyId);
+      if (!property) throw new AppError(404, 'NOT_FOUND', 'Property not found');
+
+      const config = await this.loadConfig(property.estate.id);
+      const policy = residentOnboardingConfigFromConfig(config);
+      const { record, code } = await this.drafts.create(
+        {
+          organizationId: context.organizationId,
+          propertyId,
+          firstName,
+          email,
+          phone,
+          userId: existingResidentUserId,
+        },
+        policy.codeLength,
+      );
+      createdDraft = true;
+
+      await this.audit.record({
         organizationId: context.organizationId,
-        propertyId: input.propertyId,
-        firstName,
-        email,
-        phone,
-      },
-      policy.codeLength,
-    );
+        actorId: context.actorId,
+        eventType: 'resident.registered',
+        targetType: 'resident',
+        targetId: record.id,
+        requestId: context.requestId,
+        outcome: 'success',
+        metadata: {
+          propertyId,
+          hasEmail: email !== null,
+          hasPhone: phone !== null,
+        },
+      });
 
-    await this.audit.record({
-      organizationId: context.organizationId,
-      actorId: context.actorId,
-      eventType: 'resident.registered',
-      targetType: 'resident',
-      targetId: record.id,
-      requestId: context.requestId,
-      outcome: 'success',
-      metadata: {
-        propertyId: input.propertyId,
-        hasEmail: email !== null,
-        hasPhone: phone !== null,
-      },
-    });
-
-    return {
-      ok: true,
-      resident: await this.toDto(record, property),
-      onboardingCode: code,
-    };
+      return { ok: true, resident: await this.toDto(record, property), onboardingCode: code };
+    } catch (error) {
+      // Avoid leaving a newly created property behind if the resident draft
+      // could not be created. Once the draft exists it owns the property.
+      if (createdPropertyId && !createdDraft && this.deleteProperty) {
+        await this.deleteProperty(context, createdPropertyId).catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   // --- Guest: load by code ----------------------------------------------------
@@ -181,7 +239,7 @@ export class ResidentOnboardingService {
     if (!property) {
       throw new AppError(404, 'NOT_FOUND', 'Property no longer exists');
     }
-    const config = await this.loadConfig();
+    const config = await this.loadConfig(property.estate.id);
     const policy = residentOnboardingConfigFromConfig(config);
     return {
       resident: await this.toDto(record, property),
@@ -269,12 +327,14 @@ export class ResidentOnboardingService {
 
     let user: UserListItemDto | undefined;
     let demoPassword: string | undefined;
+    let dependantTemporaryPassword: string | undefined;
+    let dependantInvitationSent = false;
 
     if (missing.length === 0 && email) {
       // Everything is complete: validate email is not already in use, then
       // mark paid and create the account.
       const existing = await this.users.findByEmail(context.organizationId, email);
-      if (existing) {
+      if (existing && existing.id !== record.userId) {
         throw new AppError(409, 'CONFLICT', 'A user with this email already exists');
       }
 
@@ -285,6 +345,8 @@ export class ResidentOnboardingService {
       const result = await this.createAccount(context.organizationId, updated, context);
       user = result.user;
       demoPassword = result.demoPassword;
+      dependantTemporaryPassword = result.dependantTemporaryPassword;
+      dependantInvitationSent = result.dependantInvitationSent ?? false;
 
       await this.audit.record({
         organizationId: context.organizationId,
@@ -297,7 +359,7 @@ export class ResidentOnboardingService {
         metadata: {
           paymentRef: input.paymentRef?.trim() || null,
           method: 'admin',
-          accountCreated: true,
+          accountCreated: Boolean(result.demoPassword),
           missingFields: null,
         },
       });
@@ -307,7 +369,10 @@ export class ResidentOnboardingService {
         ok: true,
         resident: await this.toDto(linked, property),
         user,
-        demoPassword,
+        ...(demoPassword ? { demoPassword } : {}),
+        ...(dependantTemporaryPassword ? { dependantTemporaryPassword } : {}),
+        ...(dependantInvitationSent ? { dependantInvitationSent } : {}),
+        ...(!result.demoPassword ? { accountLinked: true } : {}),
       };
     }
 
@@ -734,13 +799,24 @@ export class ResidentOnboardingService {
       throw new AppError(400, 'VALIDATION_ERROR', 'Email is required to create the account');
     }
     const existing = await this.users.findByEmail(organizationId, email);
-    if (existing) {
+    if (existing && existing.id !== record.userId) {
       throw new AppError(409, 'CONFLICT', 'A user with this email already exists');
     }
 
-    const { user, demoPassword } = await this.createAccount(organizationId, record, context);
+    const { user, demoPassword, dependantTemporaryPassword, dependantInvitationSent } = await this.createAccount(
+      organizationId,
+      record,
+      context,
+    );
 
-    return { ok: true, user, demoPassword };
+    return {
+      ok: true,
+      user,
+      ...(demoPassword ? { demoPassword } : {}),
+      ...(dependantTemporaryPassword ? { dependantTemporaryPassword } : {}),
+      ...(dependantInvitationSent ? { dependantInvitationSent } : {}),
+      ...(record.userId ? { accountLinked: true } : {}),
+    };
   }
 
   /**
@@ -754,7 +830,31 @@ export class ResidentOnboardingService {
     organizationId: string,
     record: ResidentOnboardingRecord,
     context: AuthAuditContext,
-  ): Promise<{ user: UserListItemDto; demoPassword: string }> {
+  ): Promise<{
+    user: UserListItemDto;
+    demoPassword?: string;
+    dependantTemporaryPassword?: string;
+    dependantInvitationSent?: boolean;
+  }> {
+    if (record.userId) {
+      const existing = await this.users.findById(organizationId, record.userId);
+      if (!existing || existing.role !== 'RESIDENT') {
+        throw new AppError(409, 'CONFLICT', 'The linked resident account is unavailable');
+      }
+      if (existing.email.toLowerCase() !== record.email?.trim().toLowerCase()) {
+        throw new AppError(409, 'CONFLICT', 'The linked account email no longer matches this resident');
+      }
+      await this.drafts.linkUser(record.id, existing.id);
+      await this.onAccountCreated?.({
+        organizationId,
+        userId: existing.id,
+        propertyId: record.propertyId,
+        requestId: context.requestId,
+      });
+      const dto = await this.toUserListDto(existing);
+      return { user: dto };
+    }
+
     // Generate the demo password (meets the password policy: 12+ chars,
     // mixed case + digit). It is returned to the resident exactly once
     // and hashed immediately.
@@ -774,6 +874,13 @@ export class ResidentOnboardingService {
 
     await this.drafts.linkUser(record.id, user.id);
 
+    const dependant = await this.provisionDependantAccount(
+      organizationId,
+      user,
+      record,
+      context,
+    );
+
     await this.audit.record({
       organizationId,
       actorId: user.id,
@@ -785,20 +892,7 @@ export class ResidentOnboardingService {
       metadata: { userId: user.id, email: record.email!.trim().toLowerCase() },
     });
 
-    const permissions = await this.permissions.effectivePermissions(user.role);
-    const dto: UserListItemDto = {
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
-      fullName: user.fullName,
-      role: user.role as UserListItemDto['role'],
-      mustChangePassword: true,
-      permissions,
-      status: user.status as UserListItemDto['status'],
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-      lastPasswordChangedAt: user.lastPasswordChangedAt?.toISOString() ?? null,
-    };
+    const dto = await this.toUserListDto(user);
 
     // S3: seed the registration-fee invoice + payment + transaction so the
     // resident's finance ledger is never empty. No-op when not wired.
@@ -809,7 +903,108 @@ export class ResidentOnboardingService {
       requestId: context.requestId,
     });
 
-    return { user: dto, demoPassword };
+    return {
+      user: dto,
+      demoPassword,
+      ...(dependant.temporaryPassword ? { dependantTemporaryPassword: dependant.temporaryPassword } : {}),
+      ...(dependant.invitationSent ? { dependantInvitationSent: true } : {}),
+    };
+  }
+
+  private async toUserListDto(user: UserRecord | null): Promise<UserListItemDto> {
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'Resident account not found');
+    const permissions = await this.permissions.effectivePermissions(user.role);
+    return {
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      fullName: user.fullName,
+      role: user.role as UserListItemDto['role'],
+      mustChangePassword: user.mustChangePassword,
+      permissions,
+      status: user.status as UserListItemDto['status'],
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      lastPasswordChangedAt: user.lastPasswordChangedAt?.toISOString() ?? null,
+      estateAssignments: [],
+    };
+  }
+
+  private async provisionDependantAccount(
+    organizationId: string,
+    owner: Pick<UserRecord, 'id' | 'fullName' | 'email'>,
+    record: ResidentOnboardingRecord,
+    context: AuthAuditContext,
+  ): Promise<{ temporaryPassword?: string; invitationSent: boolean }> {
+    const email = record.nextOfKinEmail?.trim().toLowerCase();
+    const fullName = record.nextOfKinName?.trim();
+    if (!email || !fullName || email === owner.email.toLowerCase()) return { invitationSent: false };
+
+    const existing = await this.users.findByEmail(organizationId, email);
+    if (existing) {
+      await this.audit.record({
+        organizationId,
+        actorId: owner.id,
+        eventType: 'user.created',
+        targetType: 'user',
+        targetId: existing.id,
+        requestId: context.requestId,
+        outcome: 'failure',
+        metadata: { reason: 'dependant_email_already_in_use', ownerUserId: owner.id },
+      });
+      return { invitationSent: false };
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const member = await this.users.create({
+      organizationId,
+      email,
+      passwordHash: await hashPassword(temporaryPassword),
+      fullName,
+      phone: record.nextOfKinPhone,
+      role: 'RESIDENT',
+      status: 'ACTIVE',
+      mustChangePassword: true,
+    });
+    await this.users.createResidentAccountMember(organizationId, owner.id, member.id);
+    if (this.email) {
+      try {
+        await this.email.send({
+          to: email,
+          subject: 'Your Silverstone resident portal access',
+          text: `Hello ${fullName},\n\nYou have been given dependant access to ${owner.fullName ?? owner.email}'s Silverstone resident account.\n\nSign in with this email: ${email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password when you sign in. Your actions will be recorded under your own account.`,
+        });
+      } catch {
+        await this.users.delete(member.id).catch(() => undefined);
+        await this.audit
+          .record({
+            organizationId,
+            actorId: owner.id,
+            eventType: 'user.created',
+            targetType: 'user',
+            targetId: member.id,
+            requestId: context.requestId,
+            outcome: 'failure',
+            metadata: { role: 'RESIDENT', relationship: 'DEPENDANT', reason: 'invitation_delivery_failed' },
+          })
+          .catch(() => undefined);
+        return { invitationSent: false };
+      }
+    }
+
+    await this.audit.record({
+      organizationId,
+      actorId: owner.id,
+      eventType: 'user.created',
+      targetType: 'user',
+      targetId: member.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { role: 'RESIDENT', relationship: 'DEPENDANT', ownerUserId: owner.id },
+    });
+    return this.email?.provider === 'resend'
+      ? { invitationSent: true }
+      : { temporaryPassword, invitationSent: false };
   }
 
   // --- Projection --------------------------------------------------------------

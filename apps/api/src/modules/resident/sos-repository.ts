@@ -33,6 +33,7 @@ export interface CreateSosEventInput {
 export interface OperatorSosQuery {
   organizationId: string;
   status?: SosStatus;
+  estateId?: string;
   /** Active means RAISED + ACKNOWLEDGED. Ignored when `status` is set. */
   activeOnly?: boolean;
   limit?: number;
@@ -126,6 +127,7 @@ export class PrismaSosRepository {
     } else if (query.activeOnly) {
       where.status = { in: ['RAISED', 'ACKNOWLEDGED'] };
     }
+    if (query.estateId) where.property = { estateId: query.estateId };
 
     const rows = await this.prisma.sosEvent.findMany({
       where,

@@ -1,5 +1,9 @@
 import { AppError } from '../../lib/errors.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import {
+  requireAuditActor,
+  requireAuditOrganization,
+  type AuthAuditContext,
+} from '../auth/auth.service.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type {
   OperatorFacilityRecord,
@@ -43,17 +47,28 @@ export class OperatorFacilitiesService {
     return { facilities: records.map(toFacilityDto) };
   }
 
+  async detail(organizationId: string, facilityId: string): Promise<OperatorFacilityResponse> {
+    const record = await this.options.facilities.findFacility(organizationId, facilityId);
+    if (!record) throw new AppError(404, 'NOT_FOUND', 'Facility not found');
+    return { ok: true, facility: toFacilityDto(record) };
+  }
+
   async create(
     context: AuthAuditContext,
     input: OperatorCreateFacilityInput,
   ): Promise<OperatorFacilityResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
 
     const name = parseName(input.name);
     const description = parseDescription(input.description);
     const usageFeeKobo = parseFee(input.usageFeeKobo ?? 0);
     const bookable = input.bookable ?? true;
+    const { openingTime, closingTime } = parseHours(
+      input.openingTime ?? '08:00',
+      input.closingTime ?? '22:00',
+    );
+    const bookingThresholdHours = parseThreshold(input.bookingThresholdHours ?? null);
 
     const estate = await this.options.facilities.findEstate(organizationId, input.estateId);
     if (!estate) {
@@ -67,6 +82,9 @@ export class OperatorFacilitiesService {
       description,
       usageFeeKobo,
       bookable,
+      openingTime,
+      closingTime,
+      bookingThresholdHours,
     });
 
     await this.options.audit.record({
@@ -94,8 +112,8 @@ export class OperatorFacilitiesService {
     facilityId: string,
     input: OperatorUpdateFacilityInput,
   ): Promise<OperatorFacilityResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
 
     const existing = await this.options.facilities.findFacility(organizationId, facilityId);
     if (!existing) {
@@ -115,6 +133,17 @@ export class OperatorFacilitiesService {
       input.description === undefined ? undefined : parseDescription(input.description);
     const usageFeeKobo =
       input.usageFeeKobo === undefined ? undefined : parseFee(input.usageFeeKobo);
+    const hours =
+      input.openingTime !== undefined || input.closingTime !== undefined
+        ? parseHours(
+            input.openingTime ?? existing.openingTime,
+            input.closingTime ?? existing.closingTime,
+          )
+        : undefined;
+    const bookingThresholdHours =
+      input.bookingThresholdHours === undefined
+        ? undefined
+        : parseThreshold(input.bookingThresholdHours);
     let estateId: string | undefined;
     if (input.estateId !== undefined) {
       const estate = await this.options.facilities.findEstate(organizationId, input.estateId);
@@ -130,6 +159,8 @@ export class OperatorFacilitiesService {
       ...(description !== undefined ? { description } : {}),
       ...(usageFeeKobo !== undefined ? { usageFeeKobo } : {}),
       ...(input.bookable !== undefined ? { bookable: input.bookable } : {}),
+      ...(hours ? { openingTime: hours.openingTime, closingTime: hours.closingTime } : {}),
+      ...(bookingThresholdHours !== undefined ? { bookingThresholdHours } : {}),
     });
     if (!updated) {
       throw new AppError(404, 'NOT_FOUND', 'Facility not found');
@@ -166,8 +197,8 @@ export class OperatorFacilitiesService {
   }
 
   async archive(context: AuthAuditContext, facilityId: string): Promise<OperatorFacilityResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
 
     const existing = await this.options.facilities.findFacility(organizationId, facilityId);
     if (!existing) {
@@ -245,6 +276,35 @@ function parseFee(value: number): number {
   return value;
 }
 
+function parseHours(
+  openingTime: string,
+  closingTime: string,
+): { openingTime: string; closingTime: string } {
+  const toMinutes = (value: string) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Facility hours must use HH:MM format');
+    }
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours! * 60 + minutes!;
+  };
+  if (toMinutes(openingTime) >= toMinutes(closingTime)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Closing time must be later than opening time');
+  }
+  return { openingTime, closingTime };
+}
+
+function parseThreshold(value: number | null): number | null {
+  if (value === null) return null;
+  if (!Number.isInteger(value) || value < 1 || value > 720) {
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      'Booking threshold must be between 1 and 720 hours',
+    );
+  }
+  return value;
+}
+
 function toFacilityDto(record: OperatorFacilityRecord): OperatorFacilityDto {
   return {
     id: record.id,
@@ -252,24 +312,13 @@ function toFacilityDto(record: OperatorFacilityRecord): OperatorFacilityDto {
     description: record.description,
     estate: record.estate,
     bookable: record.bookable,
+    openingTime: record.openingTime,
+    closingTime: record.closingTime,
+    bookingThresholdHours: record.bookingThresholdHours,
     usageFeeKobo: record.usageFeeKobo,
     archivedAt: record.archivedAt ? record.archivedAt.toISOString() : null,
     liveBookingCount: record.liveBookingCount,
     waitingWatchCount: record.waitingWatchCount,
     createdAt: record.createdAt.toISOString(),
   };
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
-}
-
-function requireOrganization(context: AuthAuditContext): string {
-  if (!context.organizationId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.organizationId;
 }

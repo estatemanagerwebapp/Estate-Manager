@@ -48,6 +48,7 @@ export interface UserQuery {
   staffOnly?: boolean;
   /** Case-insensitive email prefix search (admin convenience). */
   emailContains?: string;
+  estateId?: string;
 }
 
 export class PrismaUserRepository {
@@ -85,6 +86,7 @@ export class PrismaUserRepository {
     const rows = await this.prisma.user.findMany({
       where: {
         organizationId: query.organizationId,
+        ...(query.estateId ? { estateAssignments: { some: { estateId: query.estateId } } } : {}),
         ...roleFilter,
         ...(query.status ? { status: query.status } : {}),
         ...(query.emailContains ? { email: { contains: query.emailContains.toLowerCase() } } : {}),
@@ -109,6 +111,47 @@ export class PrismaUserRepository {
       },
     });
     return toUserRecord(row);
+  }
+
+  async listEstateAssignments(userId: string): Promise<Array<{ id: string; name: string }>> {
+    const rows = await this.prisma.userEstateAssignment.findMany({
+      where: { userId },
+      select: { estate: { select: { id: true, name: true } } },
+      orderBy: { estate: { name: 'asc' } },
+    });
+    return rows.map((row) => row.estate);
+  }
+
+  async createResidentAccountMember(
+    organizationId: string,
+    ownerUserId: string,
+    memberUserId: string,
+  ): Promise<void> {
+    await this.prisma.residentAccountMember.create({
+      data: { organizationId, ownerUserId, memberUserId, relationship: 'DEPENDANT' },
+    });
+  }
+
+  async replaceEstateAssignments(
+    organizationId: string,
+    userId: string,
+    estateIds: string[],
+  ): Promise<void> {
+    const validEstates = await this.prisma.estate.findMany({
+      where: { organizationId, id: { in: estateIds } },
+      select: { id: true },
+    });
+    if (validEstates.length !== new Set(estateIds).size) {
+      throw new Error('One or more selected estates do not belong to this organization');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userEstateAssignment.deleteMany({ where: { organizationId, userId } });
+      if (estateIds.length) {
+        await tx.userEstateAssignment.createMany({
+          data: [...new Set(estateIds)].map((estateId) => ({ organizationId, userId, estateId })),
+        });
+      }
+    });
   }
 
   /** Set or replace the user's phone (profile edit). */

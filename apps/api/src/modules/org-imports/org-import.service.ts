@@ -62,15 +62,15 @@ export class OrgImportService {
 
   async preview(
     context: AuthAuditContext,
-    input: { filename: string; filePath: string },
+    input: { filename: string; buffer: Buffer },
   ): Promise<OrgImportPreviewResponse> {
     const filename = input.filename.slice(0, 255) || 'organization-import.xlsx';
-    const billingEmails = await extractBillingResidentEmails(input.filePath);
+    const billingEmails = await extractBillingResidentEmails(input.buffer);
     const [validationContext, houseTypes] = await Promise.all([
       this.options.imports.loadValidationContext(context.organizationId, billingEmails),
       this.options.houseTypes.listActive(),
     ]);
-    const parsed = await parseOrgWorkbook(input.filePath, {
+    const parsed = await parseOrgWorkbook(input.buffer, {
       context: validationContext,
       houseTypes,
     });

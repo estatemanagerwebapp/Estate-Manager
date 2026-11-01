@@ -58,23 +58,6 @@ export class NotFoundError extends AppError {
   }
 }
 
-export class DatabaseUnavailableError extends AppError {
-  override name = 'DatabaseUnavailableError';
-
-  constructor(cause?: unknown) {
-    super(503, 'DATABASE_UNAVAILABLE', 'The database is not available', { cause });
-  }
-}
-
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
-}
-
-export function isDatabaseUnavailable(error: unknown): boolean {
-  if (isAppError(error) && error.code === 'DATABASE_UNAVAILABLE') return true;
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    String((error as { name?: unknown }).name ?? '').startsWith('PrismaClient')
-  );
 }

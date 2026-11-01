@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Copy, Check, Plus, TimerReset, Ban, Upload, FileCheck2 } from 'lucide-react';
+import { KeyRound, Copy, Check, Plus, TimerReset, Ban } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { ResidentAccessCodeDto, AccessCodeKind } from '@silverstone/shared';
+import type {
+  ResidentAccessCodeDto,
+  AccessCodeKind,
+  AccessCodeAuthenticationType,
+} from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
 import { useApiQuery } from '../../api/query';
 import { useToast } from '../../toast/Toast';
@@ -18,11 +22,21 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../../components/ui';
+import { formatShortDate } from '../../lib/format';
 
 const KIND_OPTIONS: Array<{ value: AccessCodeKind; label: string }> = [
   { value: 'ENTRY', label: 'Entry' },
   { value: 'EXIT', label: 'Exit' },
   { value: 'BOTH', label: 'Entry & exit' },
+];
+
+const AUTHENTICATION_OPTIONS: Array<{
+  value: AccessCodeAuthenticationType;
+  label: string;
+}> = [
+  { value: 'ID_IMAGE', label: 'ID image' },
+  { value: 'CAR_PLATE', label: 'Car plate' },
+  { value: 'VISITOR_IMAGE', label: 'Visitor image' },
 ];
 
 /**
@@ -38,12 +52,11 @@ export function ResidentCodesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [kind, setKind] = useState<AccessCodeKind>('ENTRY');
+  const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [durationHours, setDurationHours] = useState('');
   const [visitorName, setVisitorName] = useState('');
-  const [carPlate, setCarPlate] = useState('');
-  const [idDocumentUrl, setIdDocumentUrl] = useState<string | null>(null);
-  const [idDocumentName, setIdDocumentName] = useState<string | null>(null);
-  const [uploadingId, setUploadingId] = useState(false);
+  const [authenticationType, setAuthenticationType] =
+    useState<AccessCodeAuthenticationType>('ID_IMAGE');
   const [generating, setGenerating] = useState(false);
 
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
@@ -51,14 +64,24 @@ export function ResidentCodesPage() {
 
   const [busyCodeId, setBusyCodeId] = useState<string | null>(null);
 
+  const { data: propertyResponse } = useApiQuery(
+    ['resident', 'properties'],
+    () => api.getResidentProperties(),
+    'Could not load your properties.',
+  );
+  const properties = propertyResponse?.properties ?? [];
+  useEffect(() => {
+    if (!selectedPropertyId && properties.length > 0) setSelectedPropertyId(properties[0]!.id);
+  }, [properties, selectedPropertyId]);
+
   const {
     data,
     loading,
     error: queryError,
     refresh,
   } = useApiQuery(
-    ['resident', 'codes'],
-    () => api.getResidentCodes(),
+    ['resident', 'codes', selectedPropertyId],
+    () => api.getResidentCodes(selectedPropertyId || undefined),
     'Could not load your access codes.',
   );
   const codes = data?.codes ?? [];
@@ -70,33 +93,14 @@ export function ResidentCodesPage() {
     setDurationHours((current) => (current === '' ? String(data.defaultDurationHours) : current));
   }, [data]);
 
-  async function uploadIdDocument(file: File | null) {
-    if (!file) return;
-    setUploadingId(true);
-    setActionError(null);
-    try {
-      const result = await api.uploadCodeVisitorIdDocument(file);
-      setIdDocumentUrl(result.publicUrl);
-      setIdDocumentName(file.name);
-      toast.success('Visitor ID uploaded.');
-    } catch (err) {
-      setActionError(
-        err instanceof ApiRequestError ? err.message : 'Could not upload the visitor ID.',
-      );
-      toast.error('Could not upload the visitor ID.');
-    } finally {
-      setUploadingId(false);
-    }
-  }
-
   async function generate() {
     const trimmedVisitor = visitorName.trim();
     if (!trimmedVisitor) {
       setActionError('Enter the visitor’s name.');
       return;
     }
-    if (!idDocumentUrl) {
-      setActionError('Upload the visitor’s ID image before generating the code.');
+    if (!selectedPropertyId) {
+      setActionError('Choose the property this visitor is attending.');
       return;
     }
     const hours = durationHours.trim() === '' ? undefined : Number(durationHours);
@@ -117,19 +121,16 @@ export function ResidentCodesPage() {
     setActionError(null);
     try {
       const response = await api.generateResidentAccessCode({
+        propertyId: selectedPropertyId,
         kind,
         durationHours: hours,
         visitorName: trimmedVisitor,
-        carPlate: carPlate.trim() || undefined,
-        idDocumentUrl,
+        authenticationType,
       });
       // The full code is returned exactly once — show it now.
       setIssuedCode(response.code);
       setCopied(false);
       setVisitorName('');
-      setCarPlate('');
-      setIdDocumentUrl(null);
-      setIdDocumentName(null);
       toast.success('Access code generated.');
       void queryClient.invalidateQueries({ queryKey: ['resident', 'dashboard'] });
       await refresh();
@@ -259,6 +260,21 @@ export function ResidentCodesPage() {
         />
         <CardBody>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Estate / property">
+              <select
+                className={inputClass}
+                value={selectedPropertyId}
+                onChange={(event) => setSelectedPropertyId(event.target.value)}
+                required
+              >
+                <option value="">Select a property…</option>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.estate.name} · {property.identifier}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="Type">
               <select
                 className={inputClass}
@@ -299,52 +315,31 @@ export function ResidentCodesPage() {
                 required
               />
             </Field>
-            <Field label="Car plate (optional)" hint="For visitors arriving by vehicle.">
-              <input
-                className={inputClass}
-                value={carPlate}
-                onChange={(event) => setCarPlate(event.target.value.toUpperCase())}
-                maxLength={24}
-                placeholder="e.g. LAG-123-AA"
-                autoCapitalize="characters"
-                spellCheck={false}
-              />
-            </Field>
           </div>
 
           <div className="mt-4">
             <Field
-              label="Visitor ID image"
-              hint="A clear photo of the visitor's government-issued ID. Images up to 5 MB."
+              label="Visitor authentication"
+              hint="The guard will ask the visitor to present this for verification. For car plate, the guard checks the plate shown on arrival."
             >
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-(--color-ink) hover:bg-(--color-surface)">
-                  <Upload aria-hidden size={14} />
-                  {uploadingId ? 'Uploading…' : idDocumentUrl ? 'Replace image' : 'Upload ID image'}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                    className="sr-only"
-                    disabled={uploadingId}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      void uploadIdDocument(file);
-                      event.target.value = '';
-                    }}
-                  />
-                </label>
-                {idDocumentUrl && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700">
-                    <FileCheck2 aria-hidden size={14} />
-                    {idDocumentName ?? 'ID image attached'}
-                  </span>
-                )}
-              </div>
+              <select
+                className={inputClass}
+                value={authenticationType}
+                onChange={(event) =>
+                  setAuthenticationType(event.target.value as AccessCodeAuthenticationType)
+                }
+              >
+                {AUTHENTICATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </Field>
           </div>
 
           <div className="mt-4 flex justify-end">
-            <Button size="sm" onClick={() => void generate()} disabled={generating || uploadingId}>
+            <Button size="sm" onClick={() => void generate()} disabled={generating}>
               {generating ? 'Generating…' : 'Generate code'}
             </Button>
           </div>
@@ -369,6 +364,12 @@ export function ResidentCodesPage() {
                 <CodeRow
                   key={code.id}
                   code={code}
+                  propertyLabel={(() => {
+                    const property = properties.find((item) => item.id === code.propertyId);
+                    return property
+                      ? `${property.estate.name} · ${property.identifier}`
+                      : 'Property';
+                  })()}
                   busy={busyCodeId === code.id}
                   onExtend={() => void extend(code)}
                   onDeactivate={() => void deactivate(code)}
@@ -393,11 +394,13 @@ function PageHeading() {
 
 function CodeRow({
   code,
+  propertyLabel,
   busy,
   onExtend,
   onDeactivate,
 }: {
   code: ResidentAccessCodeDto;
+  propertyLabel: string;
   busy: boolean;
   onExtend: () => void;
   onDeactivate: () => void;
@@ -413,13 +416,16 @@ function CodeRow({
           <Countdown validUntil={code.validUntil} status={code.status} />
         </div>
         <p className="mt-0.5 text-xs text-(--color-ink-muted)">
+          {propertyLabel} · {code.propertyId ? code.propertyId.slice(0, 8) : 'Unassigned'}
+        </p>
+        <p className="mt-0.5 text-xs text-(--color-ink-muted)">
           {code.visitorName ? `Visitor: ${code.visitorName}` : 'Visitor details not recorded'}
           {code.carPlate ? ` · ${code.carPlate}` : ''}
         </p>
         <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-          {code.validUntil ? `Valid until ${formatDate(code.validUntil)}` : 'No expiry'}
-          {code.revokedAt ? ` · deactivated ${formatDate(code.revokedAt)}` : ''}
-          {code.idDocumentUrl ? ' · ID image attached' : ''}
+          {code.validUntil ? `Valid until ${formatShortDate(code.validUntil)}` : 'No expiry'}
+          {code.revokedAt ? ` · deactivated ${formatShortDate(code.revokedAt)}` : ''}
+          {` · Guard verifies: ${authenticationTypeLabel(code.authenticationType)}`}
         </p>
       </div>
       {isActive && (
@@ -448,10 +454,6 @@ function kindLabel(kind: AccessCodeKind): string {
   return KIND_OPTIONS.find((option) => option.value === kind)?.label ?? kind;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+function authenticationTypeLabel(type: AccessCodeAuthenticationType): string {
+  return AUTHENTICATION_OPTIONS.find((option) => option.value === type)?.label ?? type;
 }

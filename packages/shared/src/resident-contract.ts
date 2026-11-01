@@ -55,6 +55,7 @@ export interface ResidentProfileUpdateResponse {
 // --- My Properties (S2) ---------------------------------------------------------
 
 export interface ResidentPropertyDto {
+  id: string;
   identifier: string;
   kind: 'HOUSE' | 'LAND' | 'BOTH';
   kindLabel: string;
@@ -68,7 +69,7 @@ export interface ResidentPropertyDto {
   plotNumber: string | null;
   plotName: string | null;
   status: string;
-  estate: { name: string; slug: string };
+  estate: { id: string; name: string; slug: string };
   /** Formatted full address assembled from the typed address fields. */
   fullAddress: string;
 }
@@ -84,12 +85,19 @@ export type ResidentInvoiceStatus = (typeof RESIDENT_INVOICE_STATUSES)[number];
 
 export interface ResidentInvoiceDto {
   id: string;
+  propertyId: string | null;
+  /** Bill name, e.g. "Security levy". */
+  title: string;
   period: string;
   amountKobo: number;
   currency: string;
   status: ResidentInvoiceStatus;
   dueAt: string;
   issuedAt: string;
+  /** Total the resident has paid so far (may be a part payment). */
+  paidKobo: number;
+  /** What is still owed: amountKobo - paidKobo, never negative. */
+  outstandingKobo: number;
 }
 
 export interface ResidentPaymentDto {
@@ -123,6 +131,8 @@ export interface ResidentFinanceView {
 
 export interface ResidentCreatePaymentInput {
   invoiceId: string;
+  /** Amount tendered. Omit to pay the full outstanding balance. */
+  amountKobo?: number;
   method?: string;
   reference?: string;
 }
@@ -140,8 +150,12 @@ export type AccessCodeKind = (typeof ACCESS_CODE_KINDS)[number];
 export const ACCESS_CODE_STATUSES = ['ACTIVE', 'REVOKED', 'EXPIRED'] as const;
 export type AccessCodeStatus = (typeof ACCESS_CODE_STATUSES)[number];
 
+export const ACCESS_CODE_AUTHENTICATION_TYPES = ['ID_IMAGE', 'CAR_PLATE', 'VISITOR_IMAGE'] as const;
+export type AccessCodeAuthenticationType = (typeof ACCESS_CODE_AUTHENTICATION_TYPES)[number];
+
 export interface ResidentAccessCodeDto {
   id: string;
+  propertyId: string | null;
   kind: AccessCodeKind;
   status: AccessCodeStatus;
   /** First 4 chars of the code for display; the full code is returned only once. */
@@ -155,6 +169,8 @@ export interface ResidentAccessCodeDto {
   carPlate: string | null;
   /** Relative media URL of the visitor's ID image. */
   idDocumentUrl: string | null;
+  /** What the guard should ask the visitor to present. */
+  authenticationType: AccessCodeAuthenticationType;
 }
 
 export interface ResidentAccessCodesResponse {
@@ -166,11 +182,14 @@ export interface ResidentAccessCodesResponse {
 }
 
 export interface ResidentGenerateAccessCodeInput {
+  /** Property/estate this visitor code applies to. */
+  propertyId: string;
   kind: AccessCodeKind;
   /** Validity window in hours; defaults to the estate setting when omitted. */
   durationHours?: number;
   /** Visitor the code is being issued for. */
   visitorName: string;
+  authenticationType: AccessCodeAuthenticationType;
   /** Vehicle plate presented at the gate, when supplied. */
   carPlate?: string;
   /** Uploaded visitor ID image URL. */
@@ -228,6 +247,7 @@ export interface OperatorAccessCodeDto {
   carPlate: string | null;
   /** Relative media URL of the visitor's ID image. */
   idDocumentUrl: string | null;
+  authenticationType: AccessCodeAuthenticationType;
   resident: OperatorResidentSummaryDto | null;
   property: OperatorPropertySummaryDto | null;
 }
@@ -254,6 +274,7 @@ export interface AccessVerificationDto {
   visitorName: string | null;
   carPlate: string | null;
   idDocumentUrl: string | null;
+  authenticationType: AccessCodeAuthenticationType | null;
   resident: OperatorResidentSummaryDto | null;
   property: OperatorPropertySummaryDto | null;
   verifiedBy: OperatorActorSummaryDto | null;
@@ -266,6 +287,30 @@ export interface AccessVerificationsResponse {
 export interface OperatorVerifyAccessCodeInput {
   code: string;
   gate: AccessVerificationGate;
+}
+
+export interface OperatorVerifyAccessCodePreview {
+  found: boolean;
+  outcome: AccessVerificationOutcome | null;
+  reason: AccessVerificationReason | null;
+  gate: AccessVerificationGate;
+  codePrefix: string | null;
+  kind: AccessCodeKind | null;
+  status: AccessCodeStatus | null;
+  validUntil: string | null;
+  issuedAt: string | null;
+  visitorName: string | null;
+  carPlate: string | null;
+  idDocumentUrl: string | null;
+  authenticationType: AccessCodeAuthenticationType | null;
+  resident: OperatorResidentSummaryDto | null;
+  property: OperatorPropertySummaryDto | null;
+  accessCodeId: string | null;
+}
+
+export interface OperatorVerifyAccessCodePreviewResponse {
+  ok: true;
+  preview: OperatorVerifyAccessCodePreview;
 }
 
 export interface OperatorVerifyAccessCodeResponse {
@@ -401,6 +446,33 @@ export interface OperatorMessagesResponse {
   threads: OperatorMessageThreadDto[];
 }
 
+export interface OperatorMessageRecipientDto {
+  id: string;
+  fullName: string | null;
+  email: string;
+  propertyIdentifier: string;
+  estate: { id: string; name: string };
+}
+
+export interface OperatorMessageRecipientsResponse {
+  recipients: OperatorMessageRecipientDto[];
+}
+
+export interface OperatorComposeMessageInput {
+  mode: 'DIRECT' | 'BROADCAST';
+  recipientUserId?: string;
+  estateId?: string;
+  subject: string;
+  body: string;
+}
+
+export interface OperatorComposeMessageResponse {
+  ok: true;
+  recipientCount: number;
+  /** Present when a direct message creates exactly one thread. */
+  threadId?: string;
+}
+
 export interface OperatorMessageReplyInput {
   body: string;
 }
@@ -462,6 +534,7 @@ export type OperatorPaymentMethod = (typeof OPERATOR_PAYMENT_METHODS)[number];
 
 export interface OperatorInvoiceDto {
   id: string;
+  title: string;
   period: string;
   amountKobo: number;
   currency: string;
@@ -475,6 +548,8 @@ export interface OperatorInvoiceDto {
   resident: OperatorResidentSummaryDto | null;
   property: OperatorPropertySummaryDto | null;
   paidKobo: number;
+  /** What is still owed: amountKobo - paidKobo, never negative. */
+  outstandingKobo: number;
   paymentCount: number;
   createdBy: OperatorActorSummaryDto | null;
   voidedAt: string | null;
@@ -486,7 +561,13 @@ export interface OperatorInvoicesResponse {
 }
 
 export interface OperatorCreateInvoiceInput {
+  /** Bill name, e.g. "Security levy". */
+  title: string;
   residentId: string;
+  /** Specific unit to bill when a resident account has multiple properties. */
+  propertyId?: string;
+  /** Estate chosen in the form; checked against the resident's property. */
+  estateId?: string;
   period: string;
   amountKobo: number;
   dueAt: string;
@@ -498,6 +579,8 @@ export interface OperatorInvoiceResponse {
 }
 
 export interface OperatorRecordPaymentInput {
+  /** Amount received. May be less than the outstanding balance. */
+  amountKobo: number;
   method: OperatorPaymentMethod;
   reference?: string;
   paidAt?: string;
@@ -559,6 +642,9 @@ export interface FacilityDto {
   name: string;
   description: string;
   bookable: boolean;
+  openingTime: string;
+  closingTime: string;
+  bookingThresholdHours: number | null;
   /** The facility's estate. Residents only see facilities on their own estate. */
   estate: { id: string; name: string; slug: string };
   /** Flat fee for one booking, in kobo. 0 = free. */
@@ -622,6 +708,9 @@ export interface OperatorFacilityDto {
   description: string;
   estate: { id: string; name: string; slug: string };
   bookable: boolean;
+  openingTime: string;
+  closingTime: string;
+  bookingThresholdHours: number | null;
   usageFeeKobo: number;
   archivedAt: string | null;
   liveBookingCount: number;
@@ -639,6 +728,9 @@ export interface OperatorCreateFacilityInput {
   estateId: string;
   usageFeeKobo?: number;
   bookable?: boolean;
+  openingTime?: string;
+  closingTime?: string;
+  bookingThresholdHours?: number | null;
 }
 
 export interface OperatorUpdateFacilityInput {
@@ -647,6 +739,9 @@ export interface OperatorUpdateFacilityInput {
   estateId?: string;
   usageFeeKobo?: number;
   bookable?: boolean;
+  openingTime?: string;
+  closingTime?: string;
+  bookingThresholdHours?: number | null;
 }
 
 export interface OperatorFacilityResponse {
@@ -816,7 +911,16 @@ export interface OperatorSosMutationResponse {
 
 export interface ResidentNotificationDto {
   id: string;
-  kind: 'BOOKING' | 'ANNOUNCEMENT' | 'BROADCAST' | 'COMPLANT' | 'SYSTEM';
+  kind:
+    | 'BOOKING'
+    | 'ANNOUNCEMENT'
+    | 'BROADCAST'
+    | 'COMPLANT'
+    | 'SYSTEM'
+    | 'CODE'
+    | 'MESSAGE'
+    | 'PAYMENT'
+    | 'SOS';
   title: string;
   body: string;
   read: boolean;

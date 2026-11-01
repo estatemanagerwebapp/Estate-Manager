@@ -1,6 +1,11 @@
 import { AppError } from '../../lib/errors.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import {
+  requireAuditActor,
+  requireAuditOrganization,
+  type AuthAuditContext,
+} from '../auth/auth.service.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
+import type { NotifyInput } from '../resident/notifications.service.js';
 import type {
   OperatorInvoiceRecord,
   OperatorInvoiceFilter,
@@ -8,6 +13,7 @@ import type {
   OperatorPaymentRecord,
   PrismaFinanceRepository,
 } from '../resident/finance-repository.js';
+import { formatNaira } from '@silverstone/shared';
 import type {
   OperatorCreateInvoiceInput,
   OperatorInvoiceDto,
@@ -21,11 +27,17 @@ import type {
 } from '@silverstone/shared';
 
 const MAX_PERIOD_LENGTH = 48;
+const MAX_TITLE_LENGTH = 160;
 const MAX_REFERENCE_LENGTH = 120;
 
 export interface OperatorBillingServiceOptions {
   finance: PrismaFinanceRepository;
   audit: PrismaAuditRepository;
+  /**
+   * Resident inbox hook. A notification failure never undoes a billing
+   * action; the resident simply misses the in-app note.
+   */
+  notify?: (organizationId: string, userId: string, input: NotifyInput) => Promise<void>;
   /** Injectable clock for tests; production uses the wall clock. */
   now?: () => Date;
 }
@@ -56,8 +68,12 @@ export class OperatorBillingService {
     context: AuthAuditContext,
     input: OperatorCreateInvoiceInput,
   ): Promise<OperatorInvoiceResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
+    const title = input.title.trim();
+    if (!title || title.length > MAX_TITLE_LENGTH) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Invalid bill name');
+    }
     const period = input.period.trim();
     if (!period || period.length > MAX_PERIOD_LENGTH) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Invalid billing period');
@@ -74,11 +90,31 @@ export class OperatorBillingService {
     if (!resident) {
       throw new AppError(404, 'NOT_FOUND', 'Resident not found');
     }
+    const linkedProperty = input.propertyId
+      ? resident.properties.find((item) => item.propertyId === input.propertyId)
+      : resident.properties.length === 1
+        ? resident.properties[0]
+        : null;
+    if (!linkedProperty) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        resident.properties.length > 1
+          ? 'Choose which resident property this invoice belongs to'
+          : 'Resident has no active property assignment',
+      );
+    }
+    // The form asks for an estate and unit. Check the pair rather than
+    // trusting the client: a mismatched resident must never be billed.
+    if (input.estateId && linkedProperty.property.estate.id !== input.estateId) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Resident is not in the selected estate');
+    }
 
     const created = await this.options.finance.createInvoice({
       organizationId,
       userId: resident.id,
-      propertyId: resident.propertyId,
+      propertyId: linkedProperty.propertyId,
+      title,
       period,
       amountKobo: input.amountKobo,
       currency: 'NGN',
@@ -104,11 +140,20 @@ export class OperatorBillingService {
       outcome: 'success',
       metadata: {
         residentId: resident.id,
-        propertyId: resident.propertyId,
+        propertyId: linkedProperty.propertyId,
+        estateId: linkedProperty.property.estate.id,
+        title,
         period,
         amountKobo: input.amountKobo,
         dueAt: dueAt.toISOString(),
       },
+    });
+
+    await this.notifyResident(organizationId, resident.id, {
+      kind: 'PAYMENT',
+      title: 'New invoice',
+      body: `${title} (${period}) is now available.`,
+      linkTo: '/resident/app/invoices',
     });
 
     return { ok: true, invoice: toOperatorInvoiceDto(record, this.now()) };
@@ -118,8 +163,8 @@ export class OperatorBillingService {
     context: AuthAuditContext,
     invoiceId: string,
   ): Promise<OperatorInvoiceResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
     const invoice = await this.options.finance.findInvoiceForOrganization(
       organizationId,
       invoiceId,
@@ -170,8 +215,8 @@ export class OperatorBillingService {
     invoiceId: string,
     input: OperatorRecordPaymentInput,
   ): Promise<OperatorRecordPaymentResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
     const invoice = await this.options.finance.findInvoiceForOrganization(
       organizationId,
       invoiceId,
@@ -182,8 +227,19 @@ export class OperatorBillingService {
     if (invoice.status === 'VOID') {
       throw new AppError(409, 'CONFLICT', 'This invoice has been voided');
     }
-    if (invoice.status === 'PAID' || invoice.paymentCount > 0) {
-      throw new AppError(409, 'CONFLICT', 'This invoice is already paid');
+    const outstanding = Math.max(invoice.amountKobo - invoice.paidKobo, 0);
+    if (invoice.status === 'PAID' || outstanding === 0) {
+      throw new AppError(409, 'CONFLICT', 'This invoice is already settled');
+    }
+    if (!Number.isSafeInteger(input.amountKobo) || input.amountKobo <= 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Enter a valid payment amount');
+    }
+    if (input.amountKobo > outstanding) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `The amount exceeds the outstanding balance of ${formatNaira(outstanding)}`,
+      );
     }
 
     const method = input.method.trim();
@@ -196,19 +252,30 @@ export class OperatorBillingService {
     }
     const paidAt = input.paidAt ? parseDate(input.paidAt, 'Invalid payment date') : this.now();
 
-    const payment = await this.options.finance.recordManualPayment({
+    const applied = await this.options.finance.applyInvoicePayment({
       organizationId,
-      userId: invoice.userId,
       invoiceId: invoice.id,
-      period: invoice.period,
-      amountKobo: invoice.amountKobo,
+      amountKobo: input.amountKobo,
       method,
       reference,
       paidAt,
       recordedById: actorId,
     });
-    if (!payment) {
-      throw new AppError(409, 'CONFLICT', 'This invoice is already paid');
+    if (!applied.ok) {
+      if (applied.reason === 'OVERPAYMENT') {
+        throw new AppError(
+          400,
+          'VALIDATION_ERROR',
+          `The amount exceeds the outstanding balance of ${formatNaira(applied.remainingKobo ?? 0)}`,
+        );
+      }
+      if (applied.reason === 'NOT_FOUND') {
+        throw new AppError(404, 'NOT_FOUND', 'Invoice not found');
+      }
+      if (applied.reason === 'VOID') {
+        throw new AppError(409, 'CONFLICT', 'This invoice has been voided');
+      }
+      throw new AppError(409, 'CONFLICT', 'This invoice is already settled');
     }
 
     await this.options.audit.record({
@@ -216,25 +283,39 @@ export class OperatorBillingService {
       actorId,
       eventType: 'payment.recorded',
       targetType: 'payment',
-      targetId: payment.id,
+      targetId: applied.payment.id,
       requestId: context.requestId,
       outcome: 'success',
       metadata: {
         invoiceId: invoice.id,
-        residentId: invoice.userId,
-        amountKobo: invoice.amountKobo,
+        residentId: applied.userId,
+        amountKobo: input.amountKobo,
+        paidKobo: applied.paidKobo,
+        outstandingKobo: applied.outstandingKobo,
+        status: applied.status,
         method,
         reference,
       },
     });
 
     const [savedPayment, savedInvoice] = await Promise.all([
-      this.options.finance.findPaymentForOrganization(organizationId, payment.id),
+      this.options.finance.findPaymentForOrganization(organizationId, applied.payment.id),
       this.options.finance.findInvoiceForOrganization(organizationId, invoice.id),
     ]);
     if (!savedPayment || !savedInvoice) {
       throw new AppError(500, 'INTERNAL_ERROR', 'Payment could not be loaded');
     }
+
+    const label = applied.title || applied.period;
+    await this.notifyResident(organizationId, applied.userId, {
+      kind: 'PAYMENT',
+      title: applied.outstandingKobo === 0 ? 'Invoice settled' : 'Part payment recorded',
+      body:
+        applied.outstandingKobo === 0
+          ? `${label} is fully settled.`
+          : `${formatNaira(input.amountKobo)} recorded towards ${label}. ${formatNaira(applied.outstandingKobo)} still outstanding.`,
+      linkTo: '/resident/app/invoices',
+    });
 
     return {
       ok: true,
@@ -252,6 +333,19 @@ export class OperatorBillingService {
     }
   }
 
+  private async notifyResident(
+    organizationId: string,
+    userId: string,
+    input: NotifyInput,
+  ): Promise<void> {
+    if (!this.options.notify) return;
+    try {
+      await this.options.notify(organizationId, userId, input);
+    } catch {
+      // The inbox is best-effort; the invoice/payment is already committed.
+    }
+  }
+
   private now(): Date {
     return this.options.now?.() ?? new Date();
   }
@@ -263,6 +357,7 @@ export function toOperatorInvoiceDto(record: OperatorInvoiceRecord, now: Date): 
     (record.status === 'UNPAID' && record.dueAt.getTime() < now.getTime());
   return {
     id: record.id,
+    title: record.title,
     period: record.period,
     amountKobo: record.amountKobo,
     currency: record.currency,
@@ -275,6 +370,7 @@ export function toOperatorInvoiceDto(record: OperatorInvoiceRecord, now: Date): 
     resident: record.resident,
     property: record.property,
     paidKobo: record.paidKobo,
+    outstandingKobo: Math.max(record.amountKobo - record.paidKobo, 0),
     paymentCount: record.paymentCount,
     createdBy: record.createdBy,
     voidedAt: record.voidedAt ? record.voidedAt.toISOString() : null,
@@ -296,20 +392,6 @@ export function toOperatorPaymentDto(record: OperatorPaymentRecord): OperatorPay
     property: record.property,
     recordedBy: record.recordedBy,
   };
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
-}
-
-function requireOrganization(context: AuthAuditContext): string {
-  if (!context.organizationId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.organizationId;
 }
 
 function parseDate(value: string, message: string): Date {

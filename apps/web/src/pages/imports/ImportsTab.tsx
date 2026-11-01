@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileUp, Download, LoaderCircle, RefreshCw, Plus } from 'lucide-react';
+import { FileUp, Download, LoaderCircle, Plus } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { EstateDto, ImportBatchDto } from '@silverstone/shared';
@@ -165,10 +165,6 @@ export function ImportsTab({
         <Button variant="ghost" size="sm" onClick={() => void handleDownloadTemplate()}>
           <Download aria-hidden size={13} />
           Template
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => void refresh()}>
-          <RefreshCw aria-hidden size={13} />
-          Refresh
         </Button>
         {canUpload && (
           <Button size="sm" onClick={() => setRegisterOpen(true)}>

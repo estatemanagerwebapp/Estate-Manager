@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { Archive, Building, Pencil, Plus, RefreshCw, Search, TriangleAlert } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Archive, Building, Pencil, Plus, Search, TriangleAlert } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   formatNaira,
@@ -16,6 +17,7 @@ import { useToast } from '../toast/Toast';
 import { Modal, useConfirm } from '../components/dialog';
 import { Badge, Button, Field, inputClass, selectClass, type BadgeTone } from '../components/ui';
 import { DataTable, FilterBar, OperatorPageHeader } from '../components/operator';
+import { formatDate } from '../lib/format';
 
 type FacilityView = 'ALL' | OperatorFacilityStatus;
 
@@ -67,7 +69,7 @@ export function facilityMatchesSearch(facility: OperatorFacilityDto, rawQuery: s
  * Facilities belong to one estate and carry a flat per-booking fee. Staff can
  * create, edit, suspend and archive; archived rows stay visible for history.
  */
-export function FacilitiesPage() {
+export function FacilitiesPage({ fixedEstateId }: { fixedEstateId?: string } = {}) {
   const can = useCan();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -77,7 +79,7 @@ export function FacilitiesPage() {
 
   const [search, setSearch] = useState('');
   const [view, setView] = useState<FacilityView>('ALL');
-  const [estateId, setEstateId] = useState('');
+  const [estateId, setEstateId] = useState(fixedEstateId ?? '');
   const [formFacility, setFormFacility] = useState<OperatorFacilityDto | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [acting, setActing] = useState(false);
@@ -143,6 +145,9 @@ export function FacilitiesPage() {
     estateId: string;
     usageFeeKobo: number;
     bookable: boolean;
+    openingTime: string;
+    closingTime: string;
+    bookingThresholdHours: number | null;
   }) {
     setActing(true);
     setActionError(null);
@@ -170,6 +175,9 @@ export function FacilitiesPage() {
       estateId: string;
       usageFeeKobo: number;
       bookable: boolean;
+      openingTime: string;
+      closingTime: string;
+      bookingThresholdHours: number | null;
     },
   ) {
     setActing(true);
@@ -239,19 +247,6 @@ export function FacilitiesPage() {
                 New facility
               </Button>
             )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void refreshAll()}
-              disabled={facilitiesQuery.fetching}
-            >
-              <RefreshCw
-                aria-hidden
-                size={14}
-                className={facilitiesQuery.fetching ? 'animate-spin' : undefined}
-              />
-              Refresh
-            </Button>
           </>
         }
       />
@@ -300,14 +295,16 @@ export function FacilitiesPage() {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search name, estate or fee"
             aria-label="Search facilities"
-            className="w-64 rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft)"
+            className="w-64 rounded-md border border-slate-300 py-2 pl-9 pr-3 text-base outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft)"
+            style={{ fontSize: '16px' }}
           />
         </div>
         <select
           value={view}
           onChange={(event) => setView(event.target.value as FacilityView)}
           aria-label="Filter facilities by status"
-          className={selectClass}
+          className={`${selectClass} text-base`}
+          style={{ fontSize: '16px' }}
         >
           {FACILITY_VIEWS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -315,12 +312,13 @@ export function FacilitiesPage() {
             </option>
           ))}
         </select>
-        {canReadEstates && (
+        {canReadEstates && !fixedEstateId && (
           <select
             value={estateId}
             onChange={(event) => setEstateId(event.target.value)}
             aria-label="Filter facilities by estate"
-            className={selectClass}
+            className={`${selectClass} text-base`}
+            style={{ fontSize: '16px' }}
           >
             <option value="">All estates</option>
             {estates.map((estate) => (
@@ -339,7 +337,12 @@ export function FacilitiesPage() {
             header: 'Facility',
             cell: (facility) => (
               <div className="min-w-0 max-w-72">
-                <p className="truncate text-xs font-medium text-(--color-ink)">{facility.name}</p>
+                <Link
+                  to={`/app/facilities/${facility.id}`}
+                  className="truncate text-sm font-semibold text-(--color-ink) hover:text-(--color-primary)"
+                >
+                  {facility.name}
+                </Link>
                 <p className="truncate text-[11px] text-(--color-ink-muted)">
                   {facility.description}
                 </p>
@@ -404,6 +407,12 @@ export function FacilitiesPage() {
                 : 'Resolve live bookings before archiving this facility.';
               return (
                 <div className="flex items-center justify-end gap-1">
+                  <Link
+                    to={`/app/facilities/${facility.id}`}
+                    className="rounded px-2 py-1 text-xs font-medium text-(--color-primary) hover:bg-orange-50"
+                  >
+                    Bookings
+                  </Link>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -457,6 +466,7 @@ export function FacilitiesPage() {
 
       {formOpen && (
         <FacilityModal
+          fixedEstateId={fixedEstateId}
           facility={formFacility}
           estates={estates}
           estatesLoading={estatesQuery.loading}
@@ -484,6 +494,7 @@ export function FacilitiesPage() {
 }
 
 function FacilityModal({
+  fixedEstateId,
   facility,
   estates,
   estatesLoading,
@@ -492,6 +503,7 @@ function FacilityModal({
   onClose,
   onSubmit,
 }: {
+  fixedEstateId?: string;
   facility: OperatorFacilityDto | null;
   estates: ReadonlyArray<{ id: string; name: string }>;
   estatesLoading: boolean;
@@ -504,13 +516,21 @@ function FacilityModal({
     estateId: string;
     usageFeeKobo: number;
     bookable: boolean;
+    openingTime: string;
+    closingTime: string;
+    bookingThresholdHours: number | null;
   }) => void;
 }) {
   const [name, setName] = useState(facility?.name ?? '');
   const [description, setDescription] = useState(facility?.description ?? '');
-  const [estateId, setEstateId] = useState(facility?.estate.id ?? '');
+  const [estateId, setEstateId] = useState(fixedEstateId ?? facility?.estate.id ?? '');
   const [feeText, setFeeText] = useState(facility ? String(facility.usageFeeKobo / 100) : '');
   const [bookable, setBookable] = useState(facility?.bookable ?? true);
+  const [openingTime, setOpeningTime] = useState(facility?.openingTime ?? '08:00');
+  const [closingTime, setClosingTime] = useState(facility?.closingTime ?? '22:00');
+  const [thresholdText, setThresholdText] = useState(
+    facility?.bookingThresholdHours == null ? '' : String(facility.bookingThresholdHours),
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   function submit(event: FormEvent) {
@@ -528,6 +548,22 @@ function FacilityModal({
       setFormError('Choose the estate that owns this facility.');
       return;
     }
+    if (!openingTime || !closingTime || openingTime >= closingTime) {
+      setFormError('Closing time must be later than opening time.');
+      return;
+    }
+    let bookingThresholdHours: number | null = null;
+    if (thresholdText.trim()) {
+      bookingThresholdHours = Number(thresholdText);
+      if (
+        !Number.isInteger(bookingThresholdHours) ||
+        bookingThresholdHours < 1 ||
+        bookingThresholdHours > 720
+      ) {
+        setFormError('Enter a booking threshold between 1 and 720 hours, or leave it blank.');
+        return;
+      }
+    }
     let usageFeeKobo = 0;
     if (feeText.trim()) {
       try {
@@ -543,6 +579,9 @@ function FacilityModal({
       estateId,
       usageFeeKobo,
       bookable,
+      openingTime,
+      closingTime,
+      bookingThresholdHours,
     });
   }
 
@@ -554,36 +593,41 @@ function FacilityModal({
             value={name}
             onChange={(event) => setName(event.target.value)}
             maxLength={160}
-            className={inputClass}
+            className={`${inputClass} text-base`}
+            style={{ fontSize: '16px' }}
             disabled={submitting}
             autoFocus
           />
         </Field>
-        <Field label="Description">
+        <Field label="Description and rules" hint="Include any usage rules residents need to know.">
           <textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             maxLength={2000}
             rows={3}
-            className={inputClass}
+            className={`${inputClass} text-base`}
+            style={{ fontSize: '16px' }}
             disabled={submitting}
           />
         </Field>
-        <Field label="Estate" hint="A facility belongs to exactly one estate.">
-          <select
-            value={estateId}
-            onChange={(event) => setEstateId(event.target.value)}
-            className={inputClass}
-            disabled={estatesLoading || submitting}
-          >
-            <option value="">{estatesLoading ? 'Loading estates…' : 'Choose an estate'}</option>
-            {estates.map((estate) => (
-              <option key={estate.id} value={estate.id}>
-                {estate.name}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {!fixedEstateId && (
+          <Field label="Estate" hint="A facility belongs to exactly one estate.">
+            <select
+              value={estateId}
+              onChange={(event) => setEstateId(event.target.value)}
+              className={`${inputClass} text-base`}
+              style={{ fontSize: '16px' }}
+              disabled={estatesLoading || submitting}
+            >
+              <option value="">{estatesLoading ? 'Loading estates…' : 'Choose an estate'}</option>
+              {estates.map((estate) => (
+                <option key={estate.id} value={estate.id}>
+                  {estate.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Usage fee (₦)" hint="Flat per booking. Leave blank or 0 for free.">
             <input
@@ -591,7 +635,8 @@ function FacilityModal({
               onChange={(event) => setFeeText(event.target.value)}
               inputMode="decimal"
               placeholder="0"
-              className={inputClass}
+              className={`${inputClass} text-base`}
+              style={{ fontSize: '16px' }}
               disabled={submitting}
             />
           </Field>
@@ -608,6 +653,47 @@ function FacilityModal({
             </span>
           </Field>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Opening time">
+            <input
+              type="time"
+              value={openingTime}
+              onChange={(event) => setOpeningTime(event.target.value)}
+              className={`${inputClass} text-base`}
+              style={{ fontSize: '16px' }}
+              disabled={submitting}
+              required
+            />
+          </Field>
+          <Field label="Closing time">
+            <input
+              type="time"
+              value={closingTime}
+              onChange={(event) => setClosingTime(event.target.value)}
+              className={`${inputClass} text-base`}
+              style={{ fontSize: '16px' }}
+              disabled={submitting}
+              required
+            />
+          </Field>
+        </div>
+        <Field
+          label="Booking threshold (hours)"
+          hint="Optional minimum notice before a booking can start. Leave blank for no threshold."
+        >
+          <input
+            type="number"
+            min={1}
+            max={720}
+            step={1}
+            value={thresholdText}
+            onChange={(event) => setThresholdText(event.target.value)}
+            placeholder="No minimum notice"
+            className={`${inputClass} text-base`}
+            style={{ fontSize: '16px' }}
+            disabled={submitting}
+          />
+        </Field>
         {!bookable && (
           <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <TriangleAlert aria-hidden size={14} className="mt-0.5 shrink-0" />
@@ -650,8 +736,4 @@ function SummaryCard({ label, value, hint }: { label: string; value: string; hin
       <p className="mt-0.5 text-xs text-(--color-ink-muted)">{hint}</p>
     </div>
   );
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-NG', { dateStyle: 'medium' });
 }

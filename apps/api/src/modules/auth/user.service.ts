@@ -48,13 +48,14 @@ export class UserService {
 
   async list(
     organizationId: string,
-    filter: { role?: string; status?: string; staffOnly?: boolean },
+    filter: { role?: string; status?: string; staffOnly?: boolean; estateId?: string },
   ): Promise<UserListResponse> {
     const records = await this.users.list({
       organizationId,
       role: filter.role,
       status: filter.status,
       staffOnly: filter.staffOnly,
+      estateId: filter.estateId,
     });
     return {
       users: await Promise.all(records.map((record) => this.toDto(record))),
@@ -78,6 +79,13 @@ export class UserService {
     const phone = input.phone?.trim() || null;
 
     assertCanCreateRole(actorRole, input.role);
+    if (input.role !== 'SUPER_ADMIN' && (!input.estateIds || input.estateIds.length === 0)) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'Assign this staff member to at least one estate',
+      );
+    }
 
     const existing = await this.users.findByEmail(context.organizationId, email);
     if (existing) {
@@ -97,6 +105,18 @@ export class UserService {
       status: 'ACTIVE',
       mustChangePassword: true,
     });
+    if (input.role !== 'SUPER_ADMIN' && input.estateIds?.length) {
+      try {
+        await this.users.replaceEstateAssignments(
+          context.organizationId,
+          record.id,
+          input.estateIds,
+        );
+      } catch {
+        await this.users.delete(record.id);
+        throw new AppError(400, 'VALIDATION_ERROR', 'One or more selected estates are invalid');
+      }
+    }
 
     await this.audit.record({
       organizationId: context.organizationId,
@@ -158,6 +178,39 @@ export class UserService {
       throw new AppError(404, 'NOT_FOUND', 'User not found');
     }
     return { user: await this.toDto(record) };
+  }
+
+  async setEstateAssignments(context: AuthAuditContext, targetUserId: string, estateIds: string[]) {
+    const target = await this.users.findById(context.organizationId, targetUserId);
+    if (!target || target.role === 'SUPER_ADMIN') {
+      throw new AppError(404, 'NOT_FOUND', 'Assignable staff account not found');
+    }
+    if (estateIds.length === 0) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'Assign this staff member to at least one estate',
+      );
+    }
+    try {
+      await this.users.replaceEstateAssignments(context.organizationId, target.id, estateIds);
+    } catch {
+      throw new AppError(400, 'VALIDATION_ERROR', 'One or more selected estates are invalid');
+    }
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'user.role_changed',
+      targetType: 'user',
+      targetId: target.id,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { action: 'estate_assignments_changed', estateIds: [...new Set(estateIds)] },
+    });
+    return {
+      ok: true as const,
+      estateAssignments: await this.users.listEstateAssignments(target.id),
+    };
   }
 
   async setStatus(
@@ -342,6 +395,7 @@ export class UserService {
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
       lastPasswordChangedAt: record.lastPasswordChangedAt?.toISOString() ?? null,
+      estateAssignments: await this.users.listEstateAssignments(record.id),
     };
   }
 }

@@ -16,6 +16,7 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../../components/ui';
+import { formatShortDateTime } from '../../lib/format';
 
 /**
  * Resident emergency / SOS page (S9).
@@ -169,7 +170,7 @@ export function ResidentSosPage() {
                     <div className="flex items-center gap-2">
                       <ShieldCheck aria-hidden size={14} className="text-(--color-ink-muted)" />
                       <span className="text-sm font-semibold text-(--color-ink)">
-                        {formatDate(event.raisedAt)}
+                        {formatShortDateTime(event.raisedAt)}
                       </span>
                     </div>
                     <Badge tone={statusTone(event.status)}>{event.status}</Badge>
@@ -181,8 +182,10 @@ export function ResidentSosPage() {
                   )}
                   {event.acknowledgedAt && (
                     <p className="mt-1 text-xs text-(--color-ink-muted)">
-                      Acknowledged {formatDate(event.acknowledgedAt)}
-                      {event.resolvedAt ? ` · resolved ${formatDate(event.resolvedAt)}` : ''}
+                      Acknowledged {formatShortDateTime(event.acknowledgedAt)}
+                      {event.resolvedAt
+                        ? ` · resolved ${formatShortDateTime(event.resolvedAt)}`
+                        : ''}
                     </p>
                   )}
                 </li>
@@ -208,14 +211,4 @@ function statusTone(status: SosEventDto['status']) {
   if (status === 'RESOLVED') return 'success' as const;
   if (status === 'ACKNOWLEDGED') return 'warning' as const;
   return 'danger' as const;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }

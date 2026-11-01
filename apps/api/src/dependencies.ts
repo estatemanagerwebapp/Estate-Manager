@@ -8,7 +8,7 @@
 import { getEnv } from './config/env.js';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { getPrismaClient } from './lib/prisma.js';
+import { assertRlsRuntimeReady, getPrismaClient } from './lib/prisma.js';
 import { logger } from './lib/logger.js';
 import { loadBootstrapConfig } from './modules/organization/bootstrap.js';
 import {
@@ -16,6 +16,7 @@ import {
   OrganizationConfigService,
 } from './modules/organization/config.service.js';
 import { OrganizationSettingsService } from './modules/settings/settings.service.js';
+import { PrismaEstateSettingsRepository } from './modules/settings/estate-settings-repository.js';
 import {
   activeSosContactsFromConfig,
   bankTransferDetailsFromConfig,
@@ -51,7 +52,10 @@ import { OperatorBookingsService } from './modules/facilities/bookings.service.j
 import { AvailabilityService } from './modules/facilities/availability.service.js';
 import { BookingPaymentService } from './modules/facilities/booking-payment.service.js';
 import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
-import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
+import {
+  ResidentNotificationsService,
+  type NotifyInput,
+} from './modules/resident/notifications.service.js';
 import {
   ResidentOnboardingService,
   type PropertyDetail,
@@ -103,6 +107,8 @@ export interface AppDependencies {
   messages: PrismaMessageRepository;
   bookings: PrismaBookingRepository;
   sos: PrismaSosRepository;
+  /** Access codes + verification history for the guard home. */
+  gate: PrismaGateRepository;
   /** Live module flags from the resolved organization configuration. */
   loadModules: () => Promise<ModuleFlags>;
   /** Resolved at startup: the organization's database id. */
@@ -149,6 +155,10 @@ export interface AppDependencies {
   bookingPaymentService: BookingPaymentService;
   /** Phase 3 (S10) — resident notification inbox. */
   residentNotificationsService: ResidentNotificationsService;
+  /** Raw notification rows (badge counts + live sync). */
+  notifications: PrismaNotificationRepository;
+  /** Announcements + estate broadcasts (live-sync change detection). */
+  community: PrismaCommunityRepository;
   /** Phase 8 — curated operational settings. */
   settingsService: OrganizationSettingsService;
   /** Phase 2 — local media storage (ID document uploads). */
@@ -180,12 +190,19 @@ export async function createAppDependencies(): Promise<AppDependencies> {
   const audit = new PrismaAuditRepository(prisma);
 
   const permissions = new PermissionResolver(() => loadOrganizationGrants(configService));
-  const settingsService = new OrganizationSettingsService(configService, audit);
-
-  const loadBankTransferDetails = async () =>
-    bankTransferDetailsFromConfig((await configService.resolve()).config);
-  const loadSosContacts = async () =>
-    activeSosContactsFromConfig((await configService.resolve()).config);
+  const estateSettingsRepository = new PrismaEstateSettingsRepository(prisma);
+  const settingsService = new OrganizationSettingsService(
+    configService,
+    audit,
+    estateSettingsRepository,
+  );
+  const organizationId = await resolveOrganizationId(prisma, configService);
+  const loadSosContacts = async (orgId: string, estateId?: string) => {
+    const config = estateId
+      ? await settingsService.resolveConfigForEstate(orgId, estateId)
+      : (await configService.resolve()).config;
+    return activeSosContactsFromConfig(config);
+  };
 
   const email = createEmailAdapter(env);
 
@@ -274,36 +291,66 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     return {
       identifier: property.identifier,
       name: property.name,
-      estate: { name: estate.name, slug: estate.slug },
+      estate: { id: estate.id, name: estate.name, slug: estate.slug },
     };
   };
+
+  const configForProperty = async (orgId: string, propertyId: string | null) => {
+    if (!propertyId) return (await configService.resolve()).config;
+    const property = await properties.findById(orgId, propertyId);
+    return property
+      ? settingsService.resolveConfigForEstate(orgId, property.estateId)
+      : (await configService.resolve()).config;
+  };
+
+  const configForResident = async (orgId: string, userId: string) => {
+    const draft = await residentDrafts.findByUser(userId);
+    return configForProperty(orgId, draft?.propertyId ?? null);
+  };
+
+  // Resident inbox writer. Constructed early because every operator mutation
+  // that affects a resident (booking decision, gate check, reply, payment,
+  // SOS) enqueues a notification through it.
+  const notificationRepo = new PrismaNotificationRepository(prisma);
+  const residentNotificationsService = new ResidentNotificationsService({
+    notifications: notificationRepo,
+  });
+  const notifyResident = (organizationId: string, userId: string, input: NotifyInput) =>
+    residentNotificationsService.notify(organizationId, userId, input);
 
   const financeRepo = new PrismaFinanceRepository(prisma);
   const residentFinanceService = new ResidentFinanceService({
     finance: financeRepo,
     audit,
-    registrationFee: async () => {
-      const config = (await configService.resolve()).config;
+    registrationFee: async (orgId, propertyId) => {
+      const config = await configForProperty(orgId, propertyId);
       return config.fees?.registration ?? { amountKobo: 0, currency: 'NGN' };
     },
-    paymentDetails: loadBankTransferDetails,
+    paymentDetails: async (orgId, userId) =>
+      bankTransferDetailsFromConfig(await configForResident(orgId, userId)),
   });
-  const operatorBillingService = new OperatorBillingService({ finance: financeRepo, audit });
+  const operatorBillingService = new OperatorBillingService({
+    finance: financeRepo,
+    audit,
+    notify: notifyResident,
+  });
   const gateRepo = new PrismaGateRepository(prisma);
-  const operatorGateService = new OperatorGateService({ gate: gateRepo, audit });
+  const operatorGateService = new OperatorGateService({
+    gate: gateRepo,
+    audit,
+    notify: notifyResident,
+  });
 
   const accessCodeRepo = new PrismaAccessCodeRepository(prisma);
   const residentCodesService = new ResidentCodesService({
     codes: accessCodeRepo,
     audit,
-    // The acting resident's assigned property, resolved through their
-    // onboarding draft — never from the request.
-    loadPropertyId: async (_organizationId, userId) => {
-      const draft = await residentDrafts.findByUser(userId);
-      return draft?.propertyId ?? null;
-    },
-    loadDurationLimits: async () => {
-      const accessCodes = (await configService.resolve()).config.accessCodes;
+    loadDurationLimits: async (orgId, propertyId) => {
+      const accessCodes = (
+        propertyId
+          ? await configForProperty(orgId, propertyId)
+          : (await configService.resolve()).config
+      ).accessCodes;
       return {
         defaultDurationHours: accessCodes.defaultDurationHours,
         maxDurationHours: accessCodes.maxDurationHours,
@@ -344,6 +391,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
   const operatorMessagesService = new OperatorMessagesService({
     messages: messageRepo,
     audit,
+    notifyWithin: (tx, organizationId, userId, input) =>
+      residentNotificationsService.notifyWithin(tx, organizationId, userId, input),
   });
 
   const communityRepo = new PrismaCommunityRepository(prisma);
@@ -359,11 +408,6 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     },
   });
 
-  const notificationRepo = new PrismaNotificationRepository(prisma);
-  const residentNotificationsService = new ResidentNotificationsService({
-    notifications: notificationRepo,
-  });
-
   const bookingRepo = new PrismaBookingRepository(prisma);
   const availabilityService = new AvailabilityService({
     bookings: bookingRepo,
@@ -374,6 +418,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     bookings: bookingRepo,
     audit,
     availability: availabilityService,
+    loadTimeZone: async () => (await configService.resolve()).config.organization.timezone,
     loadEstateId: async (organizationId, userId) => {
       const draft = await residentDrafts.findByUser(userId);
       if (!draft?.propertyId) return null;
@@ -401,6 +446,7 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     bookings: facilitiesRepo,
     audit,
     availability: availabilityService,
+    notify: notifyResident,
   });
   const bookingPaymentService = new BookingPaymentService({
     bookings: facilitiesRepo,
@@ -416,11 +462,13 @@ export async function createAppDependencies(): Promise<AppDependencies> {
       const draft = await residentDrafts.findByUser(userId);
       return draft?.propertyId ?? null;
     },
-    contacts: loadSosContacts,
+    contacts: async (orgId, propertyId) =>
+      activeSosContactsFromConfig(await configForProperty(orgId, propertyId)),
   });
   const operatorSosService = new OperatorSosService({
     sos: sosRepo,
     audit,
+    notify: notifyResident,
     contacts: loadSosContacts,
   });
 
@@ -429,7 +477,10 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     residentDrafts,
     audit,
     permissions,
-    async () => (await configService.resolve()).config,
+    async (estateId) =>
+      estateId
+        ? settingsService.resolveConfigForEstate(organizationId, estateId)
+        : (await configService.resolve()).config,
     loadPropertyDetail,
     async (hook) => {
       await residentFinanceService.seedRegistrationFee(
@@ -439,11 +490,15 @@ export async function createAppDependencies(): Promise<AppDependencies> {
         hook.requestId,
       );
     },
+    async (context, input) => propertyService.create(context, input),
+    async (context, propertyId) => propertyService.delete(context, propertyId),
+    email,
   );
 
   return {
     checkDatabase: async () => {
       await prisma.$queryRaw`SELECT 1`;
+      await assertRlsRuntimeReady();
     },
     configService,
     auth: {
@@ -462,8 +517,9 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     messages: messageRepo,
     bookings: bookingRepo,
     sos: sosRepo,
+    gate: gateRepo,
     loadModules: async () => (await configService.resolve()).config.modules,
-    organizationId: await resolveOrganizationId(prisma, configService),
+    organizationId,
     estateService,
     propertyService,
     importService,
@@ -485,6 +541,8 @@ export async function createAppDependencies(): Promise<AppDependencies> {
     operatorBookingsService,
     bookingPaymentService,
     residentNotificationsService,
+    notifications: notificationRepo,
+    community: communityRepo,
     settingsService,
     mediaStorage,
     loadPropertyDetail,

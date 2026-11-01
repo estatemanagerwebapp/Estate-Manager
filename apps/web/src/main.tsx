@@ -12,17 +12,17 @@ import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { OnboardPage } from './pages/OnboardPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { OverviewPage } from './pages/OverviewPage';
+import { DashboardHome } from './pages/DashboardHome';
 import { ActivityPage } from './pages/activity/ActivityPage';
 import { AccountPage } from './pages/AccountPage';
 import { AdministratorsPage } from './pages/AdministratorsPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { ResidentsPage } from './pages/ResidentsPage';
+import { ResidentDetailPage } from './pages/ResidentDetailPage';
 import { SosAlertsPage } from './pages/SosAlertsPage';
 import { MessagesPage } from './pages/MessagesPage';
-import { ComplaintsPage } from './pages/ComplaintsPage';
 import { BillingPage } from './pages/BillingPage';
 import { FacilitiesPage } from './pages/FacilitiesPage';
+import { FacilityDetailPage } from './pages/FacilityDetailPage';
 import { OrgImportsPage } from './pages/imports/OrgImportsPage';
 import { BookingsPage } from './pages/BookingsPage';
 import { GatePage } from './pages/GatePage';
@@ -34,8 +34,6 @@ import { ResidentProfilePage } from './pages/resident/ResidentProfilePage';
 import { ResidentPropertiesPage } from './pages/resident/ResidentPropertiesPage';
 import { ResidentInvoicesPage } from './pages/resident/ResidentInvoicesPage';
 import { ResidentCodesPage } from './pages/resident/ResidentCodesPage';
-import { ResidentComplaintsPage } from './pages/resident/ResidentComplaintsPage';
-import { ResidentMessagesPage } from './pages/resident/ResidentMessagesPage';
 import { ResidentCommunityPage } from './pages/resident/ResidentCommunityPage';
 import { ResidentFacilitiesPage } from './pages/resident/ResidentFacilitiesPage';
 import { ResidentBookingsPage } from './pages/resident/ResidentBookingsPage';
@@ -44,7 +42,6 @@ import { ResidentNotificationsPage } from './pages/resident/ResidentNotification
 import { EstatesListPage } from './pages/estates/EstatesListPage';
 import { EstateCreatePage } from './pages/estates/EstateCreatePage';
 import { EstateDetailPage } from './pages/estates/EstateDetailPage';
-import { PropertiesListPage } from './pages/properties/PropertiesListPage';
 import { PropertyDetailPage } from './pages/properties/PropertyDetailPage';
 import './index.css';
 
@@ -102,7 +99,7 @@ createRoot(container).render(
                   </RequireAuth>
                 }
               >
-                <Route path="/app" element={<OverviewPage />} />
+                <Route path="/app" element={<DashboardHome />} />
                 <Route
                   path="/app/activity"
                   element={
@@ -130,6 +127,14 @@ createRoot(container).render(
                   }
                 />
                 <Route
+                  path="/app/residents/:residentId"
+                  element={
+                    <RequirePermission permission="user.manage">
+                      <ResidentDetailPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
                   path="/app/billing"
                   element={
                     <RequirePermission permission="billing.read">
@@ -142,6 +147,14 @@ createRoot(container).render(
                   element={
                     <RequirePermission permission="facility.read">
                       <FacilitiesPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/app/facilities/:facilityId"
+                  element={
+                    <RequirePermission permission="facility.read">
+                      <FacilityDetailPage />
                     </RequirePermission>
                   }
                 />
@@ -177,22 +190,7 @@ createRoot(container).render(
                     </RequirePermission>
                   }
                 />
-                <Route
-                  path="/app/complaints"
-                  element={
-                    <RequirePermission permission="complaint.read">
-                      <ComplaintsPage />
-                    </RequirePermission>
-                  }
-                />
-                <Route
-                  path="/app/settings"
-                  element={
-                    <RequirePermission permission="config.manage">
-                      <SettingsPage />
-                    </RequirePermission>
-                  }
-                />
+                <Route path="/app/settings" element={<Navigate to="/app/estates" replace />} />
                 <Route path="/app/account" element={<AccountPage />} />
 
                 {/* Phase 2: estates */}
@@ -222,14 +220,7 @@ createRoot(container).render(
                 />
 
                 {/* Phase 2: properties */}
-                <Route
-                  path="/app/properties"
-                  element={
-                    <RequirePermission permission="property.read">
-                      <PropertiesListPage />
-                    </RequirePermission>
-                  }
-                />
+                <Route path="/app/properties" element={<Navigate to="/app/estates" replace />} />
                 <Route
                   path="/app/properties/:propertyId"
                   element={
@@ -272,8 +263,6 @@ createRoot(container).render(
                 <Route path="properties" element={<ResidentPropertiesPage />} />
                 <Route path="invoices" element={<ResidentInvoicesPage />} />
                 <Route path="codes" element={<ResidentCodesPage />} />
-                <Route path="complaints" element={<ResidentComplaintsPage />} />
-                <Route path="messages" element={<ResidentMessagesPage />} />
                 <Route path="community" element={<ResidentCommunityPage />} />
                 <Route path="facilities" element={<ResidentFacilitiesPage />} />
                 <Route path="bookings" element={<ResidentBookingsPage />} />

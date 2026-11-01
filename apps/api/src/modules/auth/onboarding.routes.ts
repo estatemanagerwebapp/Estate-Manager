@@ -19,22 +19,25 @@
  * The code is persistent (no TTL, no attempt cap, not single-use) and
  * belongs to the draft record, not to a pre-created user.
  */
-import { Router, type Request, type Response, type RequestHandler } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
+import { sha256Hex } from '../../lib/password.js';
+import { withRequestDatabaseScope } from '../../middleware/auth-guard.js';
 import { createRateLimitedResponse } from '../../lib/rate-limit-response.js';
 import {
   requireAuth,
   requirePermission,
   getAuth,
-  auditContext,
+  routeAuditContext,
 } from '../../middleware/auth-guard.js';
 import type { PrismaSessionRepository } from './session-repository.js';
 import type { PermissionResolver } from './permission-resolver.js';
 import type { ResidentOnboardingService } from './resident-onboarding.service.js';
 import type { MediaStorage } from '../media/media-storage.js';
+import { PROPERTY_KINDS } from '@silverstone/shared';
 
 export interface OnboardingRouteOptions {
   residentOnboarding: ResidentOnboardingService;
@@ -54,28 +57,7 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
 
   const verifySession = (sessionId: string) => sessions.verify(sessionId);
   const authGuard = requireAuth(verifySession);
-  const userManage = requirePermission((ctx) => permissions.can(ctx.role, 'user.manage'));
-
-  function makeContext(req: Request, res: Response) {
-    const ctx = auditContext(req, res);
-    return {
-      organizationId: ctx.organizationId ?? organizationId,
-      actorId: ctx.actorId,
-      requestId: ctx.requestId ?? null,
-    };
-  }
-
-  const asyncWrap =
-    (handler: RequestHandler): RequestHandler =>
-    (req, res, next) => {
-      void (async () => {
-        try {
-          await handler(req, res, next);
-        } catch (error) {
-          if (!res.headersSent) next(error);
-        }
-      })();
-    };
+  const residentManage = requirePermission((ctx) => permissions.can(ctx.role, 'resident.manage'));
 
   const guestLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -89,291 +71,295 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
     },
   });
 
+  const guestOnboardingScope = (req: Request, res: Response, next: NextFunction) => {
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
+    if (typeof code !== 'string' || code.trim().length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
+      return;
+    }
+    withRequestDatabaseScope(
+      {
+        organizationId,
+        userId: '',
+        role: 'ONBOARDING',
+        residentAccountUserIds: [],
+        estateIds: [],
+        propertyIds: [],
+        onboardingCodeHash: sha256Hex(code),
+      },
+      res,
+      next,
+    );
+  };
+
   // --- Admin: POST /residents ---------------------------------------------------
 
-  router.post(
-    '/residents',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const body = z
-        .object({
-          firstName: z.string().trim().min(1).max(120),
-          email: z.string().trim().min(1).max(255).nullish(),
-          phone: z.string().trim().min(1).max(40).nullish(),
-          propertyId: z.string().trim().min(1),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid register input'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.registerResident(context, auth.role, {
-        firstName: body.data.firstName,
-        email: body.data.email ?? null,
-        phone: body.data.phone ?? null,
-        propertyId: body.data.propertyId,
-      });
-      res.status(201).json({ data: response });
-    }),
-  );
+  router.post('/residents', authGuard, residentManage, async (req, res, next) => {
+    const body = z
+      .object({
+        firstName: z.string().trim().min(1).max(120),
+        email: z.string().trim().min(1).max(255).nullish(),
+        phone: z.string().trim().min(1).max(40).nullish(),
+        existingResidentUserId: z.string().uuid().optional(),
+        propertyId: z.string().trim().min(1).optional(),
+        property: z
+          .object({
+            estateId: z.string().trim().min(1),
+            kind: z.enum(PROPERTY_KINDS),
+            houseType: z.string().trim().min(1).max(48).nullish(),
+            name: z.string().trim().max(120).optional(),
+            streetName: z.string().trim().max(120),
+            houseNumber: z.string().trim().max(32).nullish(),
+            blockName: z.string().trim().max(64).nullish(),
+            floorNumber: z.string().trim().max(16).nullish(),
+            unitNumber: z.string().trim().max(32).nullish(),
+            plotNumber: z.string().trim().max(32).nullish(),
+            plotName: z.string().trim().max(64).nullish(),
+          })
+          .optional(),
+      })
+      .refine((value) => Boolean(value.propertyId) !== Boolean(value.property), {
+        message: 'Provide either an existing property ID or new property details',
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid register input'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.registerResident(context, auth.role, {
+      firstName: body.data.firstName,
+      email: body.data.email ?? null,
+      phone: body.data.phone ?? null,
+      existingResidentUserId: body.data.existingResidentUserId,
+      propertyId: body.data.propertyId,
+      property: body.data.property,
+    });
+    res.status(201).json({ data: response });
+  });
 
   // --- Admin: GET /residents ----------------------------------------------------
 
-  router.get(
-    '/residents',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res) => {
-      const context = makeContext(req, res);
-      const residents = await residentOnboarding.list(context);
-      res.status(200).json({ data: { residents } });
-    }),
-  );
+  router.get('/residents/account-match', authGuard, residentManage, async (req, res, next) => {
+    const email = typeof req.query.email === 'string' ? req.query.email.trim() : '';
+    if (!email || email.length > 255) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Enter a valid resident email'));
+      return;
+    }
+    const match = await residentOnboarding.residentAccountMatch(organizationId, email);
+    res.status(200).json({ data: { match } });
+  });
+
+  router.get('/residents', authGuard, residentManage, async (req, res) => {
+    const context = routeAuditContext(req, res, organizationId);
+    const residents = await residentOnboarding.list(context);
+    res.status(200).json({ data: { residents } });
+  });
 
   // --- Admin: PATCH /residents/:id ---------------------------------------------
 
-  router.patch(
-    '/residents/:id',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof id !== 'string' || id.length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
-        return;
-      }
-      const body = z
-        .object({
-          firstName: z.string().trim().min(1).max(120).optional(),
-          email: z.string().trim().max(255).nullish(),
-          phone: z.string().trim().max(40).nullish(),
-          propertyId: z.string().trim().min(1).optional(),
-        })
-        .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid resident update input'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.update(context, auth.role, id, {
-        firstName: body.data.firstName,
-        email: body.data.email,
-        phone: body.data.phone,
-        propertyId: body.data.propertyId,
-      });
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.patch('/residents/:id', authGuard, residentManage, async (req, res, next) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof id !== 'string' || id.length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+      return;
+    }
+    const body = z
+      .object({
+        firstName: z.string().trim().min(1).max(120).optional(),
+        email: z.string().trim().max(255).nullish(),
+        phone: z.string().trim().max(40).nullish(),
+        propertyId: z.string().trim().min(1).optional(),
+      })
+      .refine((value) => Object.keys(value).length > 0, 'At least one field is required')
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid resident update input'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.update(context, auth.role, id, {
+      firstName: body.data.firstName,
+      email: body.data.email,
+      phone: body.data.phone,
+      propertyId: body.data.propertyId,
+    });
+    res.status(200).json({ data: response });
+  });
 
   // --- Admin: POST /residents/:id/archive --------------------------------------
 
-  router.post(
-    '/residents/:id/archive',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof id !== 'string' || id.length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.archive(context, auth.role, id);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/residents/:id/archive', authGuard, residentManage, async (req, res, next) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof id !== 'string' || id.length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.archive(context, auth.role, id);
+    res.status(200).json({ data: response });
+  });
 
   // --- Admin: POST /residents/:id/restore --------------------------------------
 
-  router.post(
-    '/residents/:id/restore',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof id !== 'string' || id.length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.restore(context, auth.role, id);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/residents/:id/restore', authGuard, residentManage, async (req, res, next) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof id !== 'string' || id.length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.restore(context, auth.role, id);
+    res.status(200).json({ data: response });
+  });
 
   // --- Admin: POST /residents/:id/portal-access --------------------------------
 
-  router.post(
-    '/residents/:id/portal-access',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof id !== 'string' || id.length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
-        return;
-      }
-      const body = z
-        .object({
-          enabled: z.boolean(),
-          reason: z.string().trim().max(200).nullish(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid portal access input'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.setPortalAccess(context, auth.role, id, {
-        enabled: body.data.enabled,
-        reason: body.data.reason ?? null,
-      });
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/residents/:id/portal-access', authGuard, residentManage, async (req, res, next) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof id !== 'string' || id.length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+      return;
+    }
+    const body = z
+      .object({
+        enabled: z.boolean(),
+        reason: z.string().trim().max(200).nullish(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid portal access input'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.setPortalAccess(context, auth.role, id, {
+      enabled: body.data.enabled,
+      reason: body.data.reason ?? null,
+    });
+    res.status(200).json({ data: response });
+  });
 
   // --- Admin: POST /residents/:id/payment ---------------------------------------
 
-  router.post(
-    '/residents/:id/payment',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof id !== 'string' || id.length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const body = z
-        .object({
-          paymentRef: z.string().trim().min(1).max(120).nullish(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid payment input'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.markPaid(context, auth.role, id, {
-        paymentRef: body.data.paymentRef ?? null,
-      });
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/residents/:id/payment', authGuard, residentManage, async (req, res, next) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof id !== 'string' || id.length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const body = z
+      .object({
+        paymentRef: z.string().trim().min(1).max(120).nullish(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid payment input'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.markPaid(context, auth.role, id, {
+      paymentRef: body.data.paymentRef ?? null,
+    });
+    res.status(200).json({ data: response });
+  });
 
   // --- Admin: DELETE /residents/:id --------------------------------------------
 
-  router.delete(
-    '/residents/:id',
-    authGuard,
-    userManage,
-    asyncWrap(async (req, res, next) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof id !== 'string' || id.length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
-        return;
-      }
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
-      const context = makeContext(req, res);
-      const response = await residentOnboarding.remove(context, auth.role, id);
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.delete('/residents/:id', authGuard, residentManage, async (req, res, next) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof id !== 'string' || id.length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing resident id'));
+      return;
+    }
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await residentOnboarding.remove(context, auth.role, id);
+    res.status(200).json({ data: response });
+  });
 
   // --- Guest: GET /by-code/:code -------------------------------------------------
 
-  router.get(
-    '/by-code/:code',
-    guestLimiter,
-    asyncWrap(async (req, res, next) => {
-      const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
-      if (typeof code !== 'string' || code.trim().length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
-        return;
-      }
-      const view = await residentOnboarding.viewByCode(organizationId, code);
-      res.status(200).json({ data: view });
-    }),
-  );
+  router.get('/by-code/:code', guestLimiter, guestOnboardingScope, async (req, res, next) => {
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
+    if (typeof code !== 'string' || code.trim().length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
+      return;
+    }
+    const view = await residentOnboarding.viewByCode(organizationId, code);
+    res.status(200).json({ data: view });
+  });
 
   // --- Guest: PATCH /by-code/:code ------------------------------------------------
 
-  router.patch(
-    '/by-code/:code',
-    guestLimiter,
-    asyncWrap(async (req, res, next) => {
-      const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
-      if (typeof code !== 'string' || code.trim().length === 0) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
-        return;
-      }
-      const body = z
-        .object({
-          gender: z.string().trim().max(16).nullish(),
-          maritalStatus: z.string().trim().max(16).nullish(),
-          propertyType: z.string().trim().max(48).nullish(),
-          nextOfKinName: z.string().trim().max(160).nullish(),
-          nextOfKinPhone: z.string().trim().max(40).nullish(),
-          nextOfKinEmail: z.string().trim().max(255).nullish(),
-          idType: z.string().trim().max(32).nullish(),
-          idDocumentUrl: z.string().trim().max(2048).nullish(),
-        })
-        .safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid save input'));
-        return;
-      }
-      const response = await residentOnboarding.saveDraft(organizationId, {
-        code,
-        gender: body.data.gender ?? null,
-        maritalStatus: body.data.maritalStatus ?? null,
-        propertyType: body.data.propertyType ?? null,
-        nextOfKinName: body.data.nextOfKinName ?? null,
-        nextOfKinPhone: body.data.nextOfKinPhone ?? null,
-        nextOfKinEmail: body.data.nextOfKinEmail ?? null,
-        idType: body.data.idType ?? null,
-        idDocumentUrl: body.data.idDocumentUrl ?? null,
-      });
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.patch('/by-code/:code', guestLimiter, guestOnboardingScope, async (req, res, next) => {
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
+    if (typeof code !== 'string' || code.trim().length === 0) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
+      return;
+    }
+    const body = z
+      .object({
+        gender: z.string().trim().max(16).nullish(),
+        maritalStatus: z.string().trim().max(16).nullish(),
+        propertyType: z.string().trim().max(48).nullish(),
+        nextOfKinName: z.string().trim().max(160).nullish(),
+        nextOfKinPhone: z.string().trim().max(40).nullish(),
+        nextOfKinEmail: z.string().trim().max(255).nullish(),
+        idType: z.string().trim().max(32).nullish(),
+        idDocumentUrl: z.string().trim().max(2048).nullish(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid save input'));
+      return;
+    }
+    const response = await residentOnboarding.saveDraft(organizationId, {
+      code,
+      gender: body.data.gender ?? null,
+      maritalStatus: body.data.maritalStatus ?? null,
+      propertyType: body.data.propertyType ?? null,
+      nextOfKinName: body.data.nextOfKinName ?? null,
+      nextOfKinPhone: body.data.nextOfKinPhone ?? null,
+      nextOfKinEmail: body.data.nextOfKinEmail ?? null,
+      idType: body.data.idType ?? null,
+      idDocumentUrl: body.data.idDocumentUrl ?? null,
+    });
+    res.status(200).json({ data: response });
+  });
 
   // --- Guest: POST /by-code/:code/payment-note ------------------------------------
   // Temporary walk-through while the payment gateway is not connected: the
@@ -383,7 +369,8 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
   router.post(
     '/by-code/:code/payment-note',
     guestLimiter,
-    asyncWrap(async (req, res, next) => {
+    guestOnboardingScope,
+    async (req, res, next) => {
       const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
       if (typeof code !== 'string' || code.trim().length === 0) {
         next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
@@ -404,7 +391,7 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
         body.data.paymentRef,
       );
       res.status(200).json({ data: response });
-    }),
+    },
   );
 
   // --- Guest: POST /by-code/:code/complete -----------------------------------------
@@ -412,16 +399,17 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
   router.post(
     '/by-code/:code/complete',
     guestLimiter,
-    asyncWrap(async (req, res, next) => {
+    guestOnboardingScope,
+    async (req, res, next) => {
       const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
       if (typeof code !== 'string' || code.trim().length === 0) {
         next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
         return;
       }
-      const context = makeContext(req, res);
+      const context = routeAuditContext(req, res, organizationId);
       const response = await residentOnboarding.complete(organizationId, { code }, context);
       res.status(200).json({ data: response });
-    }),
+    },
   );
 
   // --- Guest: POST /by-code/:code/id-document (multipart) ---------------------------
@@ -442,6 +430,7 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
     router.post(
       '/by-code/:code/id-document',
       guestLimiter,
+      guestOnboardingScope,
       (req, res, next) => {
         upload.single('file')(req, res, (err) => {
           if (err) {
@@ -452,7 +441,7 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
           next();
         });
       },
-      asyncWrap(async (req, res, next) => {
+      async (req, res, next) => {
         const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
         if (typeof code !== 'string' || code.trim().length === 0) {
           next(new AppError(400, 'VALIDATION_ERROR', 'Missing onboarding code'));
@@ -472,7 +461,7 @@ export function createOnboardingRouter(options: OnboardingRouteOptions): Router 
         });
         await residentOnboarding.attachIdDocument(organizationId, code, result.publicUrl);
         res.status(201).json({ data: result });
-      }),
+      },
     );
   }
 

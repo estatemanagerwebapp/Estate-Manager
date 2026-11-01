@@ -56,7 +56,10 @@ export type Permission = (typeof PERMISSIONS)[number];
 const ALL_PERMISSIONS = [...PERMISSIONS] satisfies Permission[];
 
 const ADMIN_PERMISSIONS = ALL_PERMISSIONS.filter(
-  (permission) => permission !== 'organization.manage' && permission !== 'config.manage',
+  (permission) =>
+    permission !== 'organization.manage' &&
+    permission !== 'config.manage' &&
+    permission !== 'user.manage',
 );
 
 const AUDITOR_PERMISSIONS: Permission[] = [
@@ -76,13 +79,6 @@ const AUDITOR_PERMISSIONS: Permission[] = [
 ];
 
 /**
- * Deployment-level account administration (create/suspend/reassign roles).
- * Granted to SUPER_ADMIN and ESTATE_ADMIN, denied to AUDITOR (read-only),
- * GUARD and RESIDENT by the baselines below.
- */
-const USER_ADMIN_PERMISSIONS: readonly Permission[] = ['user.manage'];
-
-/**
  * Baseline role → permission map.
  *
  * This is a *default* only: deployments may narrow or extend it through
@@ -91,7 +87,7 @@ const USER_ADMIN_PERMISSIONS: readonly Permission[] = ['user.manage'];
  */
 export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
   SUPER_ADMIN: ALL_PERMISSIONS,
-  ESTATE_ADMIN: [...ADMIN_PERMISSIONS, ...USER_ADMIN_PERMISSIONS],
+  ESTATE_ADMIN: ADMIN_PERMISSIONS,
   GUARD: [
     'gate.manage',
     'gate.read',

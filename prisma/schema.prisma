@@ -14,8 +14,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime connection. The API must use a dedicated NOSUPERUSER NOBYPASSRLS
+  // role that does not own protected tables.
+  url       = env("DATABASE_URL")
+  // Schema owner used by Prisma Migrate (and seeds/tests), never by the API.
+  directUrl = env("DIRECT_URL")
 }
 
 enum ConfigStatus {
@@ -35,6 +39,8 @@ model Organization {
 
   configs                   OrganizationConfig[]
   users                     User[]
+  userEstateAssignments     UserEstateAssignment[]
+  residentAccountMemberships ResidentAccountMember[] @relation("ResidentAccountOrganization")
   estates                   Estate[]
   residentOnboardings       ResidentOnboarding[]
   mediaFiles                MediaFile[]
@@ -110,7 +116,9 @@ model User {
   resetTokens             PasswordResetToken[]
   auditEvents             AuditEvent[]
   mediaFiles              MediaFile[]
-  residentOnboarding      ResidentOnboarding?
+  residentOnboardings     ResidentOnboarding[]
+  residentAccountsOwned   ResidentAccountMember[]     @relation("ResidentAccountOwner")
+  residentAccountsJoined  ResidentAccountMember[]     @relation("ResidentAccountMember")
   invoices                Invoice[]
   invoicesCreated         Invoice[]                   @relation("InvoiceCreatedBy")
   invoicesVoided          Invoice[]                   @relation("InvoiceVoidedBy")
@@ -131,6 +139,7 @@ model User {
   sosAcknowledgements     SosEvent[]                  @relation("SosAcknowledgedBy")
   sosResolutions          SosEvent[]                  @relation("SosResolvedBy")
   notifications           Notification[]
+  estateAssignments      UserEstateAssignment[]
 
   @@unique([organizationId, email])
   @@index([organizationId, role])
@@ -189,7 +198,7 @@ model ResidentOnboarding {
   paidAt        DateTime? @map("paid_at") @db.Timestamptz(6)
 
   /// Set when the account is created after payment.
-  userId      String?   @unique @map("user_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
   completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
 
   /// Soft archive. Archived records remain in the register for history but
@@ -209,7 +218,26 @@ model ResidentOnboarding {
   @@index([organizationId, status])
   @@index([organizationId, archivedAt])
   @@index([propertyId])
+  @@index([userId])
   @@map("resident_onboardings")
+}
+
+/// A dependant or next-of-kin login linked to a resident's account. Each
+/// person keeps their own credentials and user ID so activity is attributable.
+model ResidentAccountMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  ownerUserId    String   @map("owner_user_id") @db.Uuid
+  memberUserId   String   @unique @map("member_user_id") @db.Uuid
+  relationship   String   @default("DEPENDANT") @db.VarChar(32)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation("ResidentAccountOrganization", fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User         @relation("ResidentAccountOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  member       User         @relation("ResidentAccountMember", fields: [memberUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, ownerUserId])
+  @@map("resident_account_members")
 }
 
 /// A media file stored on the local volume (cloud storage — R2 — will be
@@ -245,6 +273,8 @@ model Invoice {
   propertyId     String?  @map("property_id") @db.Uuid
   /// Billing period label, e.g. "Registration fee" or "2026-11".
   period         String   @db.VarChar(48)
+  /// Bill name shown with the period, e.g. "Security levy".
+  title          String   @default("") @db.VarChar(160)
   amountKobo     Int      @map("amount_kobo")
   currency       String   @default("NGN") @db.VarChar(8)
   /// UNPAID | PAID | OVERDUE | VOID.
@@ -345,6 +375,8 @@ model AccessCode {
   carPlate       String?   @map("car_plate") @db.VarChar(24)
   /// Relative media URL of the visitor's ID image, uploaded by the resident.
   idDocumentUrl  String?   @map("id_document_url") @db.VarChar(255)
+  /// Verification item a guard must request: ID_IMAGE, CAR_PLATE, or VISITOR_IMAGE.
+  authenticationType String @default("ID_IMAGE") @map("authentication_type") @db.VarChar(24)
   issuedAt       DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -531,17 +563,20 @@ model EstateBroadcast {
 // flat usage fees and date/time-specific availability watches.
 
 model Facility {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  estateId       String    @map("estate_id") @db.Uuid
-  name           String    @db.VarChar(160)
-  description    String
-  bookable       Boolean   @default(true)
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  estateId              String    @map("estate_id") @db.Uuid
+  name                  String    @db.VarChar(160)
+  description           String
+  bookable              Boolean   @default(true)
+  openingTime           String    @default("08:00") @map("opening_time") @db.VarChar(5)
+  closingTime           String    @default("22:00") @map("closing_time") @db.VarChar(5)
+  bookingThresholdHours Int?      @map("booking_threshold_hours")
   /// Flat fee for one booking, in kobo. 0 = free.
-  usageFeeKobo   Int       @default(0) @map("usage_fee_kobo")
+  usageFeeKobo          Int       @default(0) @map("usage_fee_kobo")
   /// Null = active. Set when the facility is retired from the register.
-  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  archivedAt            DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   estate       Estate                      @relation(fields: [estateId], references: [id], onDelete: Cascade)
@@ -752,18 +787,20 @@ model AuditEvent {
 /// A managed community or development. The natural duplicate-detection key
 /// is the organization-scoped slug.
 model Estate {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
   /// Lowercase slug; unique per organization. Used as `{estate_slug}` in
   /// identifier templates. Changing a slug does NOT rewrite existing property
   /// identifiers (they were derived at create time and are immutable).
-  slug           String   @db.VarChar(64)
-  name           String   @db.VarChar(160)
+  slug                String   @db.VarChar(64)
+  name                String   @db.VarChar(160)
   /// Free-text location/description. Not part of the identifier.
-  address        String?  @db.VarChar(500)
-  status         String   @default("ACTIVE") @db.VarChar(20)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  address             String?  @db.VarChar(500)
+  status              String   @default("ACTIVE") @db.VarChar(20)
+  operationalSettings Json     @default("{}") @map("operational_settings")
+  settingsVersion     Int      @default(0) @map("settings_version")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   properties          Property[]
@@ -771,10 +808,30 @@ model Estate {
   residentOnboardings ResidentOnboarding[]
   estateBroadcasts    EstateBroadcast[]
   facilities          Facility[]
+  staffAssignments   UserEstateAssignment[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
   @@map("estates")
+}
+
+/// Staff access is explicitly assigned per estate. SUPER_ADMIN accounts do
+/// not need assignments and retain organization-wide access.
+model UserEstateAssignment {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  estateId       String   @map("estate_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  estate       Estate       @relation(fields: [estateId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, estateId])
+  @@index([organizationId, estateId])
+  @@index([organizationId, userId])
+  @@map("user_estate_assignments")
 }
 
 /// The organization's house-type catalogue. This is a real domain table, not a
@@ -1038,6 +1095,7 @@ enum AuditEventType {
   user_created
   user_sessions_revoked
   message_replied
+  message_sent
   message_thread_closed
   message_thread_reopened
   complaint_replied

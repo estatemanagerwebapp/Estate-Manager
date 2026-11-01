@@ -1,5 +1,5 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
-import { Download, FileSpreadsheet, FileUp, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Download, FileSpreadsheet, FileUp, LoaderCircle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ORG_IMPORT_SHEETS,
@@ -134,10 +134,6 @@ export function OrgImportsPage() {
             <Button variant="ghost" size="sm" onClick={() => void handleDownloadTemplate()}>
               <Download aria-hidden size={13} />
               Template
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => void refreshList()}>
-              <RefreshCw aria-hidden size={13} />
-              Refresh
             </Button>
             {canImport && (
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-(--radius-control) bg-(--color-primary) px-3 py-2 text-xs font-medium text-white hover:opacity-90">
@@ -360,10 +356,6 @@ function BatchDetailPanel({
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => void refresh()}>
-            <RefreshCw aria-hidden size={13} />
-            Refresh
           </Button>
           {isPreviewed && (
             <Button size="sm" onClick={() => void commit()} disabled={committing}>

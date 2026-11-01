@@ -14,7 +14,7 @@ import {
   sha256Hex,
   generateOpaqueToken,
 } from './lib/password.js';
-import { validatePassword, meetsPasswordPolicy } from './modules/auth/password-policy.js';
+import { validatePasswordPolicy } from '@silverstone/shared';
 import { generateTemporaryPassword } from './lib/temporary-password.js';
 import {
   assertCanCreateRole,
@@ -65,28 +65,28 @@ describe('password hashing', () => {
 
 describe('password policy', () => {
   it('rejects short passwords', () => {
-    expect(validatePassword('Ab1!short')).toHaveLength(1);
-    expect(meetsPasswordPolicy('Ab1!short')).toBe(false);
+    expect(validatePasswordPolicy('Ab1!short')).toHaveLength(1);
   });
 
   it('rejects passwords missing a class', () => {
-    expect(validatePassword('alllowercase1')).toContain(
+    expect(validatePasswordPolicy('alllowercase1')).toContain(
       'Password must contain an uppercase letter',
     );
-    expect(validatePassword('ALLUPPERCASE1')).toContain('Password must contain a lowercase letter');
-    expect(validatePassword('NoDigitsHere!')).toContain('Password must contain a digit');
+    expect(validatePasswordPolicy('ALLUPPERCASE1')).toContain(
+      'Password must contain a lowercase letter',
+    );
+    expect(validatePasswordPolicy('NoDigitsHere!')).toContain('Password must contain a digit');
   });
 
   it('accepts a compliant password', () => {
-    const problems = validatePassword('Correct-Horse-77!');
+    const problems = validatePasswordPolicy('Correct-Horse-77!');
     expect(problems).toHaveLength(0);
-    expect(meetsPasswordPolicy('Correct-Horse-77!')).toBe(true);
   });
 
   it('generates a one-time password that satisfies the policy', () => {
     const password = generateTemporaryPassword();
     expect(password).toHaveLength(16);
-    expect(validatePassword(password)).toHaveLength(0);
+    expect(validatePasswordPolicy(password)).toHaveLength(0);
     expect(generateTemporaryPassword()).not.toBe(password);
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   UserRound,
   Plus,
@@ -7,7 +8,6 @@ import {
   Clock,
   CheckCircle2,
   Eye,
-  FileText,
   Trash2,
   Copy,
   CreditCard,
@@ -22,9 +22,6 @@ import {
   type PropertyDto,
   type RegisterResidentResponse,
   type ResidentOnboardingDto,
-  GENDERS,
-  MARITAL_STATUSES,
-  RESIDENT_ID_TYPES,
 } from '@silverstone/shared';
 import { api, ApiRequestError } from '../api/client';
 import { useApiQuery } from '../api/query';
@@ -65,17 +62,20 @@ export function ResidentsPage() {
   const toast = useToast();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<ResidentFilter>('ACTIVE');
   const [search, setSearch] = useState('');
   const [registerOpen, setRegisterOpen] = useState(false);
   const [issuedCode, setIssuedCode] = useState<RegisterResidentResponse | null>(null);
-  const [detail, setDetail] = useState<ResidentOnboardingDto | null>(null);
   const [editTarget, setEditTarget] = useState<ResidentOnboardingDto | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [demoPassword, setDemoPassword] = useState<string | null>(null);
   const [demoPasswordResident, setDemoPasswordResident] = useState<string | null>(null);
+  const [dependantPassword, setDependantPassword] = useState<string | null>(null);
+  const [dependantEmail, setDependantEmail] = useState<string | null>(null);
+  const [dependantInvitationSent, setDependantInvitationSent] = useState(false);
 
   const { data, loading, error, refresh } = useApiQuery(
     queryKeys.residents.all,
@@ -85,7 +85,6 @@ export function ResidentsPage() {
   const residents = useMemo(() => data?.residents ?? [], [data]);
 
   function syncResident(updated: ResidentOnboardingDto) {
-    setDetail((current) => (current && current.id === updated.id ? updated : current));
     setEditTarget((current) => (current && current.id === updated.id ? updated : current));
   }
 
@@ -103,7 +102,16 @@ export function ResidentsPage() {
           `Payment recorded, but account not created — missing: ${response.missingFields.join(', ')}.`,
         );
       } else {
-        toast.success(`Payment recorded for ${resident.firstName}.`);
+        toast.success(
+          response.accountLinked
+            ? `Property added to ${resident.firstName}'s existing resident account.`
+            : `Payment recorded for ${resident.firstName}.`,
+        );
+      }
+      if (response.dependantTemporaryPassword || response.dependantInvitationSent) {
+        setDependantPassword(response.dependantTemporaryPassword ?? null);
+        setDependantEmail(resident.nextOfKinEmail);
+        setDependantInvitationSent(response.dependantInvitationSent ?? false);
       }
       void queryClient.invalidateQueries({ queryKey: ['users'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -194,7 +202,6 @@ export function ResidentsPage() {
     setDeletingId(resident.id);
     try {
       await api.deleteResident(resident.id);
-      if (detail?.id === resident.id) setDetail(null);
       toast.success(`Deleted ${resident.firstName}.`);
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       void invalidateNavigationCounts(queryClient);
@@ -278,14 +285,14 @@ export function ResidentsPage() {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by name, email or property"
             aria-label="Search residents by name, email or property"
-            className="w-64 rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft)"
+            className="min-h-11 w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-base outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft) sm:min-h-0 sm:w-64 sm:text-sm"
           />
         </div>
         <select
           value={filter}
           onChange={(event) => setFilter(event.target.value as ResidentFilter)}
           aria-label="Filter residents by onboarding status"
-          className={selectClass}
+          className={`${selectClass} min-h-11 w-full text-base sm:min-h-0 sm:w-auto sm:text-sm`}
         >
           <option value="ACTIVE">Active residents</option>
           <option value="PENDING">Onboarding pending</option>
@@ -314,24 +321,212 @@ export function ResidentsPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {visibleResidents.map((resident) => (
-              <ResidentCard
-                key={resident.id}
-                resident={resident}
-                busy={actingId === resident.id}
-                deleting={deletingId === resident.id}
-                copiedId={copiedId}
-                onMarkPaid={() => void markPaid(resident)}
-                onEdit={() => setEditTarget(resident)}
-                onArchive={() => void archiveResident(resident)}
-                onRestore={() => void restoreResident(resident)}
-                onTogglePortal={() => void togglePortalAccess(resident)}
-                onDelete={() => void deleteResident(resident)}
-                onCopyCode={() => void copyResidentCode(resident.onboardingCode, resident.id)}
-                onDetails={() => setDetail(resident)}
-              />
-            ))}
+          <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white shadow-(--shadow-card)">
+            <table className="w-full min-w-[1080px] text-left text-sm">
+              <thead className="border-b border-slate-200/80 bg-(--color-surface) text-xs font-semibold uppercase tracking-wide text-(--color-ink-muted)">
+                <tr>
+                  <th scope="col" className="px-4 py-3">
+                    Resident
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    Property
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    Onboarding
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    Payment
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    Portal
+                  </th>
+                  <th scope="col" className="px-4 py-3">
+                    Registered
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {visibleResidents.map((resident) => {
+                  const archived = resident.archivedAt !== null;
+                  const completed = resident.status === 'COMPLETED';
+                  const paid = resident.paymentStatus === 'PAID';
+                  const portalActive = resident.accountStatus === 'ACTIVE';
+                  const hasPortal = resident.accountStatus !== null;
+                  const busy = actingId === resident.id;
+                  const deleting = deletingId === resident.id;
+                  return (
+                    <tr key={resident.id} className="align-middle hover:bg-(--color-surface)">
+                      <td className="max-w-[220px] px-4 py-3">
+                        <p className="truncate font-semibold text-(--color-ink)">
+                          {resident.firstName}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-(--color-ink-muted)">
+                          {resident.email || 'No email'}
+                        </p>
+                        {resident.phone && (
+                          <p className="mt-0.5 text-xs text-(--color-ink-muted)">
+                            {resident.phone}
+                          </p>
+                        )}
+                      </td>
+                      <td className="max-w-[280px] px-4 py-3">
+                        <p
+                          className="truncate font-medium text-(--color-ink)"
+                          title={resident.property.name || resident.property.estate.name}
+                        >
+                          {resident.property.name || resident.property.estate.name}
+                        </p>
+                        <p
+                          className="mt-0.5 truncate text-xs text-(--color-ink-muted)"
+                          title={resident.property.identifier}
+                        >
+                          {resident.property.identifier}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col items-start gap-1.5">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${archived ? 'bg-slate-100 text-slate-700' : completed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                          >
+                            {archived ? 'Archived' : completed ? 'Account created' : 'In progress'}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              className={`max-w-[150px] truncate rounded border border-slate-200 bg-(--color-surface) px-2 py-1 font-mono text-xs ${archived ? 'text-(--color-ink-muted) line-through' : 'text-(--color-ink)'}`}
+                              title={resident.onboardingCode ?? 'No code available'}
+                            >
+                              {resident.onboardingCode ?? '—'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void copyResidentCode(resident.onboardingCode, resident.id)
+                              }
+                              disabled={
+                                !resident.onboardingCode || archived || copiedId === resident.id
+                              }
+                              aria-label={
+                                copiedId === resident.id
+                                  ? 'Copied onboarding code'
+                                  : 'Copy onboarding code'
+                              }
+                              className="rounded border border-slate-300 p-1.5 text-(--color-ink-muted) hover:bg-(--color-surface) disabled:opacity-50"
+                            >
+                              {copiedId === resident.id ? (
+                                <CheckCircle2 aria-hidden size={13} className="text-emerald-600" />
+                              ) : (
+                                <Copy aria-hidden size={13} />
+                              )}
+                            </button>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${paid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                        >
+                          {paid ? 'Paid' : 'Unpaid'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {hasPortal ? (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${portalActive ? 'bg-sky-50 text-sky-700' : 'bg-rose-50 text-rose-700'}`}
+                          >
+                            {resident.accountStatus === 'ACTIVE'
+                              ? 'Active'
+                              : resident.accountStatus === 'SUSPENDED'
+                                ? 'Suspended'
+                                : 'Disabled'}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-(--color-ink-muted)">Not created</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-(--color-ink-muted)">
+                        {new Date(resident.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1.5">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="min-h-9"
+                            onClick={() => navigate(`/app/residents/${resident.id}`)}
+                          >
+                            <Eye aria-hidden size={13} /> Details
+                          </Button>
+                          {!archived && resident.status === 'PENDING' && !paid && (
+                            <IconAction
+                              label="Mark paid"
+                              tone="success"
+                              onClick={() => void markPaid(resident)}
+                              disabled={busy}
+                            >
+                              {busy ? <ActionSpinner /> : <CreditCard aria-hidden size={14} />}
+                            </IconAction>
+                          )}
+                          {hasPortal && (
+                            <IconAction
+                              label={
+                                portalActive ? 'Disable portal access' : 'Enable portal access'
+                              }
+                              tone={portalActive ? 'default' : 'success'}
+                              onClick={() => void togglePortalAccess(resident)}
+                              disabled={busy}
+                            >
+                              {portalActive ? (
+                                <PowerOff aria-hidden size={14} />
+                              ) : (
+                                <Power aria-hidden size={14} />
+                              )}
+                            </IconAction>
+                          )}
+                          <IconAction
+                            label="Edit resident"
+                            onClick={() => setEditTarget(resident)}
+                            disabled={busy}
+                          >
+                            <Pencil aria-hidden size={14} />
+                          </IconAction>
+                          {archived ? (
+                            <IconAction
+                              label="Restore resident"
+                              tone="success"
+                              onClick={() => void restoreResident(resident)}
+                              disabled={busy}
+                            >
+                              <RotateCcw aria-hidden size={14} />
+                            </IconAction>
+                          ) : (
+                            <IconAction
+                              label="Archive resident"
+                              onClick={() => void archiveResident(resident)}
+                              disabled={busy}
+                            >
+                              <Archive aria-hidden size={14} />
+                            </IconAction>
+                          )}
+                          {!resident.userId && (
+                            <IconAction
+                              label="Delete resident"
+                              tone="danger"
+                              onClick={() => void deleteResident(resident)}
+                              disabled={busy || deleting}
+                            >
+                              {deleting ? <ActionSpinner /> : <Trash2 aria-hidden size={14} />}
+                            </IconAction>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -342,6 +537,8 @@ export function ResidentsPage() {
           onRegistered={(result) => {
             setRegisterOpen(false);
             setIssuedCode(result);
+            void queryClient.invalidateQueries({ queryKey: ['properties'], refetchType: 'none' });
+            void queryClient.invalidateQueries({ queryKey: ['estates'], refetchType: 'none' });
             void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
             void invalidateNavigationCounts(queryClient);
             void refresh();
@@ -352,8 +549,6 @@ export function ResidentsPage() {
       {issuedCode && (
         <OnboardingCodePanel result={issuedCode} onClose={() => setIssuedCode(null)} />
       )}
-
-      {detail && <ResidentDetailModal resident={detail} onClose={() => setDetail(null)} />}
 
       {editTarget && (
         <ResidentEditModal
@@ -373,8 +568,17 @@ export function ResidentsPage() {
 
       {confirmDialog}
 
-      {demoPassword && (
-        <Modal open onClose={() => setDemoPassword(null)} title="Account created">
+      {(demoPassword || dependantPassword || dependantInvitationSent) && (
+        <Modal
+          open
+          onClose={() => {
+            setDemoPassword(null);
+            setDependantPassword(null);
+            setDependantEmail(null);
+            setDependantInvitationSent(false);
+          }}
+          title="Resident access ready"
+        >
           <div className="flex flex-col items-center text-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
               <CheckCircle2 aria-hidden size={22} />
@@ -382,246 +586,58 @@ export function ResidentsPage() {
             <p className="mt-1 text-sm font-medium text-(--color-ink)">
               Account created for {demoPasswordResident}.
             </p>
-            <div className="flex items-center gap-2 w-full max-w-xs">
-              <input
-                type="text"
-                readOnly
-                value={demoPassword}
-                className="flex-1 rounded-md border border-slate-300 bg-(--color-surface) px-3 py-2 text-sm font-mono text-(--color-ink) outline-none select-all"
-              />
-              <button
-                type="button"
-                onClick={() => void navigator.clipboard.writeText(demoPassword ?? '')}
-                className="rounded-md border border-slate-300 bg-(--color-surface) px-2.5 py-2 text-[10px] font-medium text-(--color-ink) hover:bg-(--color-surface-soft)"
-                aria-label="Copy password"
-              >
-                <Copy aria-hidden size={12} />
-              </button>
-            </div>
-            <p className="mt-1 text-[11px] text-(--color-ink-muted)">
-              Share this demo password with the resident. They will be forced to change it on first
-              login.
-            </p>
-            <Button onClick={() => setDemoPassword(null)}>Got it</Button>
+            {demoPassword && (
+              <div className="flex items-center gap-2 w-full max-w-xs">
+                <input
+                  type="text"
+                  readOnly
+                  value={demoPassword}
+                  className="flex-1 rounded-md border border-slate-300 bg-(--color-surface) px-3 py-2 text-sm font-mono text-(--color-ink) outline-none select-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => void navigator.clipboard.writeText(demoPassword ?? '')}
+                  className="rounded-md border border-slate-300 bg-(--color-surface) px-2.5 py-2 text-[10px] font-medium text-(--color-ink) hover:bg-(--color-surface-soft)"
+                  aria-label="Copy password"
+                >
+                  <Copy aria-hidden size={12} />
+                </button>
+              </div>
+            )}
+            {demoPassword && (
+              <p className="mt-1 text-[11px] text-(--color-ink-muted)">
+                Share this demo password with the resident. They will be forced to change it on
+                first login.
+              </p>
+            )}
+            {dependantInvitationSent && (
+              <p className="text-sm text-emerald-700">
+                A separate dependant login was emailed to {dependantEmail}.
+              </p>
+            )}
+            {dependantPassword && (
+              <div className="w-full rounded-md bg-orange-50 p-3 text-left">
+                <p className="text-sm font-medium">Dependant login · {dependantEmail}</p>
+                <p className="mt-1 font-mono text-sm">{dependantPassword}</p>
+                <p className="mt-1 text-xs text-(--color-ink-muted)">
+                  They must change this password at first sign-in.
+                </p>
+              </div>
+            )}
+            <Button
+              onClick={() => {
+                setDemoPassword(null);
+                setDependantPassword(null);
+                setDependantEmail(null);
+                setDependantInvitationSent(false);
+              }}
+            >
+              Got it
+            </Button>
           </div>
         </Modal>
       )}
     </div>
-  );
-}
-
-/**
- * A single resident card shown in the register grid. Keeps the most useful
- * fields visible at a glance with actions for details, editing, payment,
- * archive/restore and portal access.
- */
-function ResidentCard({
-  resident,
-  busy,
-  deleting,
-  copiedId,
-  onMarkPaid,
-  onEdit,
-  onArchive,
-  onRestore,
-  onTogglePortal,
-  onDelete,
-  onCopyCode,
-  onDetails,
-}: {
-  resident: ResidentOnboardingDto;
-  busy: boolean;
-  deleting: boolean;
-  copiedId: string | null;
-  onMarkPaid: () => void;
-  onEdit: () => void;
-  onArchive: () => void;
-  onRestore: () => void;
-  onTogglePortal: () => void;
-  onDelete: () => void;
-  onCopyCode: () => void;
-  onDetails: () => void;
-}) {
-  const archived = resident.archivedAt !== null;
-  const paid = resident.paymentStatus === 'PAID';
-  const completed = resident.status === 'COMPLETED';
-  const canMarkPaid = !archived && resident.status === 'PENDING' && !paid;
-  const portalActive = resident.accountStatus === 'ACTIVE';
-  const hasPortal = resident.accountStatus !== null;
-  const portalLabel =
-    resident.accountStatus === 'ACTIVE'
-      ? 'Portal active'
-      : resident.accountStatus === 'SUSPENDED'
-        ? 'Portal suspended'
-        : 'Portal disabled';
-
-  return (
-    <article className="overflow-hidden rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card) transition-all hover:shadow-md">
-      <div className="p-4">
-        {/* Header: name + onboarding status */}
-        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-          <div>
-            <h3 className="font-semibold text-(--color-ink) leading-snug">{resident.firstName}</h3>
-            <p className="mt-0.5 text-[12px] text-(--color-ink-muted)">
-              {resident.email ? (
-                <span>{resident.email}</span>
-              ) : (
-                <span className="italic">no email</span>
-              )}
-              {resident.phone && resident.email ? (
-                <span className="block mt-0.5">{resident.phone}</span>
-              ) : null}
-            </p>
-          </div>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              archived
-                ? 'bg-slate-100 text-slate-700'
-                : completed
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-amber-50 text-amber-700'
-            }`}
-          >
-            {archived ? (
-              <Archive aria-hidden size={10} />
-            ) : completed ? (
-              <CheckCircle2 aria-hidden size={10} />
-            ) : (
-              <Clock aria-hidden size={10} />
-            )}
-            {archived ? 'Archived' : completed ? 'Account created' : 'In progress'}
-          </span>
-        </div>
-
-        {/* Property section */}
-        <div className="mb-3">
-          <p className="text-[10px] font-medium text-(--color-ink-muted) uppercase tracking-wider mb-1">
-            Property
-          </p>
-          <p className="text-[12px] text-(--color-ink) leading-none">
-            {resident.property.identifier}
-          </p>
-          {resident.property.name ? (
-            <p className="mt-0.5 text-[12px] font-medium text-(--color-ink)">
-              {resident.property.name}
-            </p>
-          ) : null}
-          <p className="mt-1 text-[11px] text-(--color-ink-muted)">
-            {resident.property.estate.name}
-          </p>
-        </div>
-
-        {/* Onboarding code + copy */}
-        <div className="mb-3 flex items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-md border border-slate-200 bg-(--color-surface) px-2.5 py-1.5 text-[11px] font-medium select-all truncate max-w-[140px] ${
-              archived ? 'text-(--color-ink-muted) line-through' : 'text-(--color-ink)'
-            }`}
-            title={
-              archived
-                ? 'Archived onboarding codes no longer work'
-                : (resident.onboardingCode ?? 'No code available')
-            }
-          >
-            {resident.onboardingCode ?? <span className="text-(--color-ink-muted) italic">—</span>}
-          </span>
-          <button
-            type="button"
-            onClick={onCopyCode}
-            disabled={!resident.onboardingCode || archived || copiedId === resident.id}
-            aria-label={copiedId === resident.id ? 'Copied' : 'Copy onboarding code'}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-[10px] font-medium text-(--color-ink-muted) hover:bg-(--color-surface) disabled:opacity-50"
-          >
-            {copiedId === resident.id ? (
-              <CheckCircle2 aria-hidden size={10} className="text-emerald-600" />
-            ) : (
-              <Copy aria-hidden size={10} />
-            )}
-          </button>
-        </div>
-
-        {/* Payment status + portal access + registered */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                paid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-              }`}
-            >
-              {paid ? <CheckCircle2 aria-hidden size={10} /> : <Clock aria-hidden size={10} />}
-              {paid ? 'Paid' : 'Unpaid'}
-            </span>
-            {hasPortal && (
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  portalActive ? 'bg-sky-50 text-sky-700' : 'bg-rose-50 text-rose-700'
-                }`}
-              >
-                {portalActive ? (
-                  <Power aria-hidden size={10} />
-                ) : (
-                  <PowerOff aria-hidden size={10} />
-                )}
-                {portalLabel}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-(--color-ink-muted)">
-            Registered {new Date(resident.createdAt).toLocaleDateString()}
-          </p>
-        </div>
-      </div>
-
-      <div className="border-t border-slate-100 bg-(--color-surface-soft)/50 p-3 flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={onDetails}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-(--color-ink) hover:bg-(--color-surface)"
-        >
-          <Eye aria-hidden size={12} />
-          Details
-        </button>
-        <div className="flex items-center gap-1">
-          {canMarkPaid && (
-            <IconAction label="Mark paid" tone="success" onClick={onMarkPaid} disabled={busy}>
-              {busy ? <ActionSpinner /> : <CreditCard aria-hidden size={14} />}
-            </IconAction>
-          )}
-          {hasPortal && (
-            <IconAction
-              label={portalActive ? 'Disable portal access' : 'Enable portal access'}
-              tone={portalActive ? 'default' : 'success'}
-              onClick={onTogglePortal}
-              disabled={busy}
-            >
-              {portalActive ? <PowerOff aria-hidden size={14} /> : <Power aria-hidden size={14} />}
-            </IconAction>
-          )}
-          <IconAction label="Edit resident" onClick={onEdit} disabled={busy}>
-            <Pencil aria-hidden size={14} />
-          </IconAction>
-          {archived ? (
-            <IconAction label="Restore resident" tone="success" onClick={onRestore} disabled={busy}>
-              <RotateCcw aria-hidden size={14} />
-            </IconAction>
-          ) : (
-            <IconAction label="Archive resident" onClick={onArchive} disabled={busy}>
-              <Archive aria-hidden size={14} />
-            </IconAction>
-          )}
-          {!resident.userId && (
-            <IconAction
-              label="Delete resident"
-              tone="danger"
-              onClick={onDelete}
-              disabled={busy || deleting}
-            >
-              {deleting ? <ActionSpinner /> : <Trash2 aria-hidden size={14} />}
-            </IconAction>
-          )}
-        </div>
-      </div>
-    </article>
   );
 }
 
@@ -883,113 +899,3 @@ function ResidentEditModal({
  * Read-only view of everything the resident has provided so far, plus the
  * payment record. Useful for the admin to see what is still outstanding.
  */
-function ResidentDetailModal({
-  resident,
-  onClose,
-}: {
-  resident: ResidentOnboardingDto;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`${resident.firstName} — onboarding details`}
-      footer={
-        <Button variant="secondary" onClick={onClose}>
-          Close
-        </Button>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <section>
-          <h3 className="text-xs font-semibold text-(--color-ink-muted)">Assignment</h3>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
-            <dt className="text-(--color-ink-muted)">Property</dt>
-            <dd>{resident.property.identifier}</dd>
-            <dt className="text-(--color-ink-muted)">Estate</dt>
-            <dd>{resident.property.estate.name}</dd>
-            <dt className="text-(--color-ink-muted)">Email</dt>
-            <dd>{resident.email ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">Phone</dt>
-            <dd>{resident.phone ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">Record</dt>
-            <dd>
-              {resident.archivedAt
-                ? `Archived ${new Date(resident.archivedAt).toLocaleDateString()}`
-                : 'Active'}
-            </dd>
-          </dl>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-(--color-ink-muted)">Resident-provided</h3>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
-            <dt className="text-(--color-ink-muted)">Gender</dt>
-            <dd>{label(resident.gender, GENDERS)}</dd>
-            <dt className="text-(--color-ink-muted)">Marital status</dt>
-            <dd>{label(resident.maritalStatus, MARITAL_STATUSES)}</dd>
-            <dt className="text-(--color-ink-muted)">Property type</dt>
-            <dd>{resident.propertyType ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">Next of kin</dt>
-            <dd>{resident.nextOfKinName ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">Next of kin phone</dt>
-            <dd>{resident.nextOfKinPhone ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">Next of kin email</dt>
-            <dd>{resident.nextOfKinEmail ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">ID type</dt>
-            <dd>{label(resident.idType, RESIDENT_ID_TYPES)}</dd>
-            <dt className="text-(--color-ink-muted)">ID document</dt>
-            <dd>
-              {resident.idDocumentUrl ? (
-                <a
-                  href={resident.idDocumentUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 underline underline-offset-2"
-                >
-                  <FileText aria-hidden size={12} />
-                  View document
-                </a>
-              ) : (
-                'Not uploaded'
-              )}
-            </dd>
-          </dl>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-semibold text-(--color-ink-muted)">Payment</h3>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
-            <dt className="text-(--color-ink-muted)">Status</dt>
-            <dd>{resident.paymentStatus === 'PAID' ? 'Paid' : 'Unpaid'}</dd>
-            <dt className="text-(--color-ink-muted)">Reference</dt>
-            <dd>{resident.paymentRef ?? '—'}</dd>
-            <dt className="text-(--color-ink-muted)">Account</dt>
-            <dd>
-              {resident.userId
-                ? 'Created — portal account linked'
-                : resident.status === 'COMPLETED'
-                  ? 'Account deleted'
-                  : 'Not created yet'}
-            </dd>
-            <dt className="text-(--color-ink-muted)">Portal access</dt>
-            <dd>{portalAccessLabel(resident.accountStatus)}</dd>
-          </dl>
-        </section>
-      </div>
-    </Modal>
-  );
-}
-
-function portalAccessLabel(status: ResidentOnboardingDto['accountStatus']): string {
-  if (status === 'ACTIVE') return 'Enabled';
-  if (status === 'DISABLED') return 'Disabled';
-  if (status === 'SUSPENDED') return 'Suspended';
-  return 'No portal account';
-}
-
-function label(value: string | null, options: readonly string[]): string {
-  if (!value) return '—';
-  return options.includes(value) ? value.replaceAll('_', ' ').toLowerCase() : value;
-}

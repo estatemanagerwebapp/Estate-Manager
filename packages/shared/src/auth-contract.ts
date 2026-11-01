@@ -1,6 +1,7 @@
 import type { RoleKey, StaffRole } from './roles.js';
 import type { Permission } from './permissions.js';
 import type { BankTransferDetailsDto } from './settings-contract.js';
+import type { CreatePropertyInput } from './property-contract.js';
 
 /**
  * Phase 1 identity, authentication and user-management wire contracts.
@@ -30,6 +31,8 @@ export interface UserDto {
   createdAt: string;
   updatedAt: string;
   lastPasswordChangedAt: string | null;
+  /** Estates this staff member is assigned to; super administrators are global. */
+  estateAssignments?: Array<{ id: string; name: string }>;
 }
 
 export interface MeResponse {
@@ -89,6 +92,7 @@ export interface AdminCreateUserInput {
   fullName: string;
   phone?: string | null;
   role: StaffRole;
+  estateIds?: string[];
 }
 
 /**
@@ -132,18 +136,30 @@ export const RESIDENT_ID_TYPES = [
 export type ResidentIdType = (typeof RESIDENT_ID_TYPES)[number];
 
 /**
- * A resident registered by an admin with a first name + property assignment
- * (email/phone optional). A PERSISTENT onboarding code is issued — no TTL,
+ * A resident registered by an admin with first name + property details
+ * (email/phone optional). The property is created and assigned together with
+ * the resident draft. A PERSISTENT onboarding code is issued — no TTL,
  * no attempt cap, resumable — so the resident can complete onboarding at
  * their own pace. The User account is created only after verified payment.
  */
 export interface RegisterResidentInput {
-  /** First name — the only required field. */
+  /** Resident identity details. */
   firstName: string;
   email?: string | null;
   phone?: string | null;
-  /** Assigned property/estate (required). */
-  propertyId: string;
+  /** Existing resident account explicitly confirmed by the operator. */
+  existingResidentUserId?: string;
+  /** Existing property assignment, retained for older integrations. */
+  propertyId?: string;
+  /** New property details to create and assign as part of onboarding. */
+  property?: CreatePropertyInput;
+}
+
+export interface ResidentAccountMatchDto {
+  id: string;
+  email: string;
+  fullName: string | null;
+  propertyCount: number;
 }
 
 export interface RegisterResidentResponse {
@@ -242,8 +258,13 @@ export interface CompleteResidentOnboardingInput {
 export interface CompleteResidentOnboardingResponse {
   ok: true;
   user: UserListItemDto;
-  /** The generated demo password, returned exactly once. */
-  demoPassword: string;
+  /** Present only when onboarding created a new resident account. */
+  demoPassword?: string;
+  /** Fallback credential for a dependant when email delivery is not configured. */
+  dependantTemporaryPassword?: string;
+  dependantInvitationSent?: boolean;
+  /** True when this property was added to an existing resident account. */
+  accountLinked?: boolean;
 }
 
 export interface AdminMarkPaidInput {
@@ -259,6 +280,9 @@ export interface AdminMarkPaidResponse {
   /** The generated demo password, returned exactly once when the account is
    *  created. Shown to the admin so they can share it with the resident. */
   demoPassword?: string;
+  dependantTemporaryPassword?: string;
+  dependantInvitationSent?: boolean;
+  accountLinked?: boolean;
   /** Required resident fields still missing before an account can be created.
    *  Present only when payment was recorded but the account was not created. */
   missingFields?: string[];
@@ -339,6 +363,7 @@ export const AUDIT_EVENT_TYPES = [
   'user.created',
   'user.sessions_revoked',
   'message.replied',
+  'message.sent',
   'message.thread_closed',
   'message.thread_reopened',
   'complaint.replied',
@@ -417,6 +442,8 @@ export interface AuditEventFilter {
   eventType?: AuditEventType;
   outcome?: AuditEventOutcome;
   targetType?: AuditTargetType;
+  /** Scope events associated with one estate. */
+  estateId?: string;
   actorId?: string;
   /** Inclusive ISO timestamp lower bound. */
   from?: string;

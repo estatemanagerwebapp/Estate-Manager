@@ -1,12 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import {
-  CalendarDays,
-  CheckCircle2,
-  CircleDollarSign,
-  RefreshCw,
-  Search,
-  XCircle,
-} from 'lucide-react';
+import { CalendarDays, CheckCircle2, CircleDollarSign, Search, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -32,6 +25,7 @@ import {
   OperatorPageHeader,
   StatusBadge,
 } from '../components/operator';
+import { formatTime, formatDate, formatDateTime } from '../lib/format';
 
 export type BookingView = 'ALL' | BookingStatus;
 export type PaymentView = 'ALL' | BookingPaymentStatus;
@@ -65,11 +59,13 @@ export function bookingFilterForView(
   facilityId: string,
   from: string,
   to: string,
+  estateId?: string,
 ): OperatorBookingFilter {
   return {
     ...(view === 'ALL' ? {} : { status: view }),
     ...(paymentView === 'ALL' ? {} : { paymentStatus: paymentView }),
     ...(facilityId ? { facilityId } : {}),
+    ...(estateId ? { estateId } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
   };
@@ -154,7 +150,7 @@ export function bookingCanConfirm(booking: OperatorBookingDto): boolean {
  * creates the paid invoice but leaves the booking REQUESTED; confirmation is
  * a separate action and stays blocked while a paid-fee booking is UNPAID.
  */
-export function BookingsPage() {
+export function BookingsPage({ fixedEstateId }: { fixedEstateId?: string } = {}) {
   const can = useCan();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -182,8 +178,9 @@ export function BookingsPage() {
         facilityId,
         fromDate ? startOfLocalDay(fromDate) : '',
         toDate ? endOfLocalDay(toDate) : '',
+        fixedEstateId,
       ),
-    [view, paymentView, facilityId, fromDate, toDate],
+    [view, paymentView, facilityId, fromDate, toDate, fixedEstateId],
   );
 
   const bookingsQuery = useApiQuery(
@@ -193,7 +190,11 @@ export function BookingsPage() {
   );
   const facilitiesQuery = useApiQuery(
     queryKeys.facilities.list({ limit: 200 }),
-    () => api.listOperatorFacilities({ limit: 200 }),
+    () =>
+      api.listOperatorFacilities({
+        limit: 200,
+        ...(fixedEstateId ? { estateId: fixedEstateId } : {}),
+      }),
     'Could not load facilities.',
     canReadFacilities,
   );
@@ -315,21 +316,6 @@ export function BookingsPage() {
         icon={<CalendarDays aria-hidden size={20} className="text-(--color-primary)" />}
         title="Bookings"
         description="Review facility requests, verify payments and confirm bookings."
-        actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void refreshAll()}
-            disabled={bookingsQuery.fetching}
-          >
-            <RefreshCw
-              aria-hidden
-              size={14}
-              className={bookingsQuery.fetching ? 'animate-spin' : undefined}
-            />
-            Refresh
-          </Button>
-        }
       />
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -888,19 +874,4 @@ export function formatWindow(startsAt: string, endsAt: string): string {
     year: 'numeric',
   });
   return `${day} · ${formatTime(starts)}–${formatTime(ends)}`;
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-NG', { dateStyle: 'medium' });
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }

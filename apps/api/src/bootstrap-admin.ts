@@ -31,7 +31,7 @@ import { PrismaPasswordResetRepository } from './modules/auth/reset-token-reposi
 import { PermissionResolver } from './modules/auth/permission-resolver.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { ConsoleEmailAdapter, type EmailAdapter } from './modules/auth/email-adapter.js';
-import { validatePassword } from './modules/auth/password-policy.js';
+import { validatePasswordPolicy } from '@silverstone/shared';
 import { logger } from './lib/logger.js';
 
 function prompt(label: string): Promise<string> {
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
   }
 
   // Fail fast on a policy-violating password before touching the database.
-  const problems = validatePassword(password);
+  const problems = validatePasswordPolicy(password);
   if (problems.length > 0) {
     for (const problem of problems) {
       logger.error({ problem }, 'password does not meet policy');

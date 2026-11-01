@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
 import { AppError } from '../../lib/errors.js';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
@@ -33,7 +33,7 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
 
   const verifySession = (sessionId: string) => sessions.verify(sessionId);
   const authGuard = requireAuth(verifySession);
-  const userManage = requirePermission((ctx) => permissions.can(ctx.role, 'user.manage'));
+  const residentManage = requirePermission((ctx) => permissions.can(ctx.role, 'resident.manage'));
 
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -48,24 +48,12 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
     },
   });
 
-  const asyncWrap =
-    (handler: RequestHandler): RequestHandler =>
-    (req, res, next) => {
-      void (async () => {
-        try {
-          await handler(req, res, next);
-        } catch (error) {
-          if (!res.headersSent) next(error);
-        }
-      })();
-    };
-
   // --- POST /uploads ----------------------------------------------------------
 
   router.post(
     '/uploads',
     authGuard,
-    userManage,
+    residentManage,
     (req, res, next) => {
       upload.single('file')(req, res, (err) => {
         if (err) {
@@ -76,7 +64,7 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
         next();
       });
     },
-    asyncWrap(async (req, res) => {
+    async (req, res) => {
       const file = req.file;
       if (!file) {
         throw new AppError(400, 'MEDIA_NO_FILE', 'No file uploaded (field name: "file")');
@@ -99,46 +87,43 @@ export function createMediaRouter(options: MediaRouteOptions): Router {
       }
 
       res.status(201).json({ data: result });
-    }),
+    },
   );
 
   // --- GET /:org/:id (authorization-checked serving) ---------------------------
 
-  router.get(
-    '/:org/:id',
-    authGuard,
-    asyncWrap(async (req, res) => {
-      const orgId = Array.isArray(req.params.org) ? req.params.org[0] : req.params.org;
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (typeof orgId !== 'string' || typeof id !== 'string') {
-        throw new AppError(400, 'VALIDATION_ERROR', 'Missing media parameters');
-      }
-      const auth = getAuth(req);
-      if (!auth) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-      if (auth.organizationId !== organizationId || orgId !== organizationId) {
-        throw new AppError(404, 'NOT_FOUND', 'Media file not found');
-      }
-      const canManageUsers = await permissions.can(auth.role, 'user.manage');
-      const canViewGateDocuments = await permissions.can(auth.role, 'gate.read');
-      const relativePath = `${orgId}/${id}`;
-      const file = await storage.get(relativePath, {
-        organizationId,
-        userId: auth.userId,
-        canManageUsers,
-        canViewGateDocuments,
-      });
-      if (!file) {
-        throw new AppError(404, 'NOT_FOUND', 'Media file not found');
-      }
-      const inline = req.query.inline === '1' && file.mimeType.startsWith('image/');
-      res.setHeader('Content-Type', file.mimeType);
-      res.setHeader('Content-Length', file.sizeBytes);
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Disposition', inline ? 'inline' : 'attachment');
-      res.setHeader('Cache-Control', 'private, no-store');
-      res.status(200).send(file.buffer);
-    }),
-  );
+  router.get('/:org/:id', authGuard, async (req, res) => {
+    const orgId = Array.isArray(req.params.org) ? req.params.org[0] : req.params.org;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (typeof orgId !== 'string' || typeof id !== 'string') {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Missing media parameters');
+    }
+    const auth = getAuth(req);
+    if (!auth) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+    if (auth.organizationId !== organizationId || orgId !== organizationId) {
+      throw new AppError(404, 'NOT_FOUND', 'Media file not found');
+    }
+    const canManageUsers = await permissions.can(auth.role, 'user.manage');
+    const canViewGateDocuments = await permissions.can(auth.role, 'gate.read');
+    const relativePath = `${orgId}/${id}`;
+    const file = await storage.get(relativePath, {
+      organizationId,
+      userId: auth.userId,
+      canManageUsers,
+      estateIds: auth.estateIds,
+      canViewGateDocuments,
+    });
+    if (!file) {
+      throw new AppError(404, 'NOT_FOUND', 'Media file not found');
+    }
+    const inline = req.query.inline === '1' && file.mimeType.startsWith('image/');
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', file.sizeBytes);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', inline ? 'inline' : 'attachment');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(200).send(file.buffer);
+  });
 
   return router;
 }

@@ -1,6 +1,11 @@
 import { AppError } from '../../lib/errors.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import {
+  requireAuditActor,
+  requireAuditOrganization,
+  type AuthAuditContext,
+} from '../auth/auth.service.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
+import type { NotifyInput } from '../resident/notifications.service.js';
 import type {
   OperatorBookingFilter,
   OperatorBookingRecord,
@@ -18,6 +23,8 @@ export interface OperatorBookingsServiceOptions {
   bookings: PrismaFacilitiesRepository;
   audit: PrismaAuditRepository;
   availability?: AvailabilityService;
+  /** Resident inbox hook; failures never undo a transition. */
+  notify?: (organizationId: string, userId: string, input: NotifyInput) => Promise<void>;
   now?: () => Date;
 }
 
@@ -41,8 +48,8 @@ export class OperatorBookingsService {
   }
 
   async confirm(context: AuthAuditContext, bookingId: string): Promise<OperatorBookingResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
     const booking = await this.options.bookings.findBooking(organizationId, bookingId);
     if (!booking) {
       throw new AppError(404, 'NOT_FOUND', 'Booking not found');
@@ -73,12 +80,19 @@ export class OperatorBookingsService {
       metadata: bookingAuditMetadata(updated),
     });
 
+    await this.notifyResident(organizationId, updated.userId, {
+      kind: 'BOOKING',
+      title: 'Booking confirmed',
+      body: `${updated.facility.name} is confirmed for ${formatWindow(updated.startsAt, updated.endsAt)}.`,
+      linkTo: '/resident/app/bookings',
+    });
+
     return { ok: true, booking: toOperatorBookingDto(updated) };
   }
 
   async cancel(context: AuthAuditContext, bookingId: string): Promise<OperatorBookingResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
     const booking = await this.options.bookings.findBooking(organizationId, bookingId);
     if (!booking) {
       throw new AppError(404, 'NOT_FOUND', 'Booking not found');
@@ -119,12 +133,19 @@ export class OperatorBookingsService {
       },
     });
 
+    await this.notifyResident(organizationId, updated.userId, {
+      kind: 'BOOKING',
+      title: 'Booking cancelled',
+      body: `${updated.facility.name} on ${formatWindow(updated.startsAt, updated.endsAt)} was cancelled.`,
+      linkTo: '/resident/app/bookings',
+    });
+
     return { ok: true, booking: toOperatorBookingDto(updated) };
   }
 
   async complete(context: AuthAuditContext, bookingId: string): Promise<OperatorBookingResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
     const booking = await this.options.bookings.findBooking(organizationId, bookingId);
     if (!booking) {
       throw new AppError(404, 'NOT_FOUND', 'Booking not found');
@@ -155,7 +176,27 @@ export class OperatorBookingsService {
       metadata: bookingAuditMetadata(updated),
     });
 
+    await this.notifyResident(organizationId, updated.userId, {
+      kind: 'BOOKING',
+      title: 'Booking completed',
+      body: `${updated.facility.name} on ${formatWindow(updated.startsAt, updated.endsAt)} is complete.`,
+      linkTo: '/resident/app/bookings',
+    });
+
     return { ok: true, booking: toOperatorBookingDto(updated) };
+  }
+
+  private async notifyResident(
+    organizationId: string,
+    userId: string,
+    input: NotifyInput,
+  ): Promise<void> {
+    if (!this.options.notify) return;
+    try {
+      await this.options.notify(organizationId, userId, input);
+    } catch {
+      // The inbox is best-effort; the booking transition is already committed.
+    }
   }
 
   private now(): Date {
@@ -201,6 +242,13 @@ export function isSettled(status: BookingPaymentStatus): boolean {
   return status === 'PAID' || status === 'NOT_REQUIRED';
 }
 
+/** Short human window used in resident notifications. */
+function formatWindow(startsAt: Date, endsAt: Date): string {
+  const start = startsAt.toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+  const end = endsAt.toLocaleString('en-NG', { timeStyle: 'short' });
+  return `${start} – ${end}`;
+}
+
 export function toOperatorBookingDto(record: OperatorBookingRecord): OperatorBookingDto {
   return {
     id: record.id,
@@ -231,18 +279,4 @@ function bookingAuditMetadata(record: OperatorBookingRecord) {
     feeKobo: record.feeKobo,
     paymentStatus: record.paymentStatus,
   };
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
-}
-
-function requireOrganization(context: AuthAuditContext): string {
-  if (!context.organizationId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.organizationId;
 }

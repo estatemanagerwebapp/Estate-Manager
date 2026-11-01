@@ -15,6 +15,7 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../../components/ui';
+import { formatShortDateTime } from '../../lib/format';
 
 /**
  * Resident notifications page (S10).
@@ -146,13 +147,18 @@ export function ResidentNotificationsPage() {
                         {notification.body}
                       </p>
                       <p className="mt-1 text-xs text-(--color-ink-muted)">
-                        {formatDate(notification.createdAt)}
+                        {formatShortDateTime(notification.createdAt)}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {notification.linkTo && (
                         <Link
                           to={notification.linkTo}
+                          onClick={() => {
+                            // Following the update counts as reading it: clear
+                            // the badge without a separate "Mark read" step.
+                            if (!notification.read) void markRead(notification);
+                          }}
                           className="text-xs font-medium text-(--color-primary) underline underline-offset-2"
                         >
                           View
@@ -199,21 +205,12 @@ function PageHeading({ unreadCount }: { unreadCount: number }) {
 }
 
 function kindTone(kind: ResidentNotificationDto['kind']) {
-  if (kind === 'BROADCAST') return 'danger' as const;
+  if (kind === 'BROADCAST' || kind === 'SOS') return 'danger' as const;
   if (kind === 'BOOKING') return 'success' as const;
-  if (kind === 'COMPLANT') return 'warning' as const;
+  if (kind === 'COMPLANT' || kind === 'PAYMENT') return 'warning' as const;
+  if (kind === 'CODE' || kind === 'MESSAGE') return 'info' as const;
   if (kind === 'ANNOUNCEMENT') return 'neutral' as const;
   return 'neutral' as const;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function formatWindow(booking: BookingDto): string {

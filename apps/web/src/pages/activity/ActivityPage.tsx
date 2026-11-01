@@ -1,5 +1,6 @@
 import { ChevronDown, Download, Eye, FilterX, History } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import {
   AUDIT_EVENT_OUTCOMES,
@@ -12,8 +13,9 @@ import {
   type AuditTargetType,
 } from '@silverstone/shared';
 import { api, ApiRequestError } from '../../api/client';
-import { apiErrorMessage } from '../../api/query';
+import { apiErrorMessage, useApiQuery } from '../../api/query';
 import { queryKeys } from '../../api/query-keys';
+import { useCan } from '../../auth/useCan';
 import { useToast } from '../../toast/Toast';
 import { Button, ErrorBanner, inputClass, selectClass } from '../../components/ui';
 import {
@@ -33,6 +35,8 @@ type ActivityFilterState = {
   targetType: AuditTargetType | '';
   from: string;
   to: string;
+  estateId: string;
+  actorId?: string;
 };
 
 const EMPTY_FILTERS: ActivityFilterState = {
@@ -41,6 +45,8 @@ const EMPTY_FILTERS: ActivityFilterState = {
   targetType: '',
   from: '',
   to: '',
+  estateId: '',
+  actorId: '',
 };
 
 /**
@@ -86,7 +92,13 @@ const EVENT_GROUPS = AUDIT_EVENT_TYPES.reduce<Map<string, AuditEventType[]>>((gr
 
 function isFiltered(filters: ActivityFilterState): boolean {
   return Boolean(
-    filters.eventType || filters.outcome || filters.targetType || filters.from || filters.to,
+    filters.eventType ||
+    filters.outcome ||
+    filters.targetType ||
+    filters.from ||
+    filters.to ||
+    filters.estateId ||
+    filters.actorId,
   );
 }
 
@@ -96,6 +108,8 @@ export function buildActivityFilter(filters: ActivityFilterState): AuditEventFil
     ...(filters.eventType ? { eventType: filters.eventType } : {}),
     ...(filters.outcome ? { outcome: filters.outcome } : {}),
     ...(filters.targetType ? { targetType: filters.targetType } : {}),
+    ...(filters.estateId ? { estateId: filters.estateId } : {}),
+    ...(filters.actorId ? { actorId: filters.actorId } : {}),
     ...(filters.from ? { from: new Date(`${filters.from}T00:00:00`).toISOString() } : {}),
     ...(filters.to ? { to: new Date(`${filters.to}T23:59:59.999`).toISOString() } : {}),
   };
@@ -120,11 +134,26 @@ function shortId(value: string | null): string {
  * Filters live in the query key, so changing one starts a fresh cursor chain.
  * The header Refresh re-reads every page that is currently loaded.
  */
-export function ActivityPage() {
+export function ActivityPage({ fixedEstateId }: { fixedEstateId?: string } = {}) {
+  const can = useCan();
+  const canReadEstates = can['estate.read'] === true;
   const toast = useToast();
-  const [filters, setFilters] = useState<ActivityFilterState>(EMPTY_FILTERS);
+  const [searchParams] = useSearchParams();
+  const [filters, setFilters] = useState<ActivityFilterState>(() => ({
+    ...EMPTY_FILTERS,
+    actorId: searchParams.get('actorId') ?? '',
+    estateId: fixedEstateId ?? searchParams.get('estateId') ?? '',
+  }));
   const [selected, setSelected] = useState<AuditEventDto | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  const estatesQuery = useApiQuery(
+    ['estates', { status: 'ACTIVE' }],
+    () => api.listEstates({ status: 'ACTIVE' }),
+    'Could not load estates.',
+    canReadEstates && !fixedEstateId,
+  );
+  const estates = estatesQuery.data?.estates ?? [];
 
   const queryFilter = useMemo(() => buildActivityFilter(filters), [filters]);
 
@@ -274,11 +303,31 @@ export function ActivityPage() {
           ) : undefined
         }
       >
+        {canReadEstates && !fixedEstateId && (
+          <label className="flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
+            Estate
+            <select
+              aria-label="Filter by estate"
+              className={`${selectClass} w-auto text-base`}
+              style={{ fontSize: '16px' }}
+              value={filters.estateId}
+              onChange={(event) => updateFilter('estateId', event.target.value)}
+            >
+              <option value="">All estates</option>
+              {estates.map((estate) => (
+                <option key={estate.id} value={estate.id}>
+                  {estate.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
           Event
           <select
             aria-label="Filter by event type"
-            className={`${selectClass} w-auto`}
+            className={`${selectClass} w-auto text-base`}
+            style={{ fontSize: '16px' }}
             value={filters.eventType}
             onChange={(event) =>
               updateFilter('eventType', event.target.value as ActivityFilterState['eventType'])
@@ -301,7 +350,8 @@ export function ActivityPage() {
           Outcome
           <select
             aria-label="Filter by outcome"
-            className={`${selectClass} w-auto`}
+            className={`${selectClass} w-auto text-base`}
+            style={{ fontSize: '16px' }}
             value={filters.outcome}
             onChange={(event) =>
               updateFilter('outcome', event.target.value as ActivityFilterState['outcome'])
@@ -320,7 +370,8 @@ export function ActivityPage() {
           Target
           <select
             aria-label="Filter by target type"
-            className={`${selectClass} w-auto`}
+            className={`${selectClass} w-auto text-base`}
+            style={{ fontSize: '16px' }}
             value={filters.targetType}
             onChange={(event) =>
               updateFilter('targetType', event.target.value as ActivityFilterState['targetType'])
@@ -340,7 +391,8 @@ export function ActivityPage() {
           <input
             type="date"
             aria-label="Filter from date"
-            className={`${inputClass} w-auto`}
+            className={`${inputClass} w-auto text-base`}
+            style={{ fontSize: '16px' }}
             value={filters.from}
             max={filters.to || undefined}
             onChange={(event) => updateFilter('from', event.target.value)}
@@ -352,7 +404,8 @@ export function ActivityPage() {
           <input
             type="date"
             aria-label="Filter to date"
-            className={`${inputClass} w-auto`}
+            className={`${inputClass} w-auto text-base`}
+            style={{ fontSize: '16px' }}
             value={filters.to}
             min={filters.from || undefined}
             onChange={(event) => updateFilter('to', event.target.value)}

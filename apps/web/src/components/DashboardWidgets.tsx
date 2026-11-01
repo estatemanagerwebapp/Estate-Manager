@@ -38,22 +38,35 @@ interface KpiCardProps {
   icon: React.ReactNode;
   /** Optional sub-line, e.g. "active / total". */
   detail?: string;
+  tone?: 'orange' | 'green' | 'slate' | 'rose';
 }
 
-function KpiCard({ label, value, icon, detail }: KpiCardProps) {
+function KpiCard({ label, value, icon, detail, tone = 'orange' }: KpiCardProps) {
+  const iconTone = {
+    orange: 'bg-orange-50 text-orange-600',
+    green: 'bg-emerald-50 text-emerald-600',
+    slate: 'bg-slate-100 text-slate-600',
+    rose: 'bg-rose-50 text-rose-600',
+  }[tone];
   return (
     <section
       aria-label={label}
-      className="rounded-(--radius-card) border border-slate-200/80 bg-white p-5 shadow-(--shadow-card)"
+      className="relative min-h-[148px] rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_10px_rgba(15,23,42,0.035)] sm:p-5"
     >
-      <div className="flex items-center gap-2 text-xs font-medium text-(--color-ink-muted)">
-        <span className="text-(--color-primary)">{icon}</span>
-        {label}
+      <div className="flex items-start gap-3.5">
+        <span
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconTone}`}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1 pt-1">
+          <p className="truncate pr-5 text-xs font-medium text-slate-600">{label}</p>
+          <p className="mt-1 text-[26px] font-semibold leading-none tracking-tight text-slate-950">
+            {value === null ? 'n/a' : value}
+          </p>
+          {detail && <p className="mt-2 truncate text-[11px] text-slate-500">{detail}</p>}
+        </div>
       </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-(--color-ink)">
-        {value === null ? 'n/a' : value}
-      </p>
-      {detail && <p className="mt-1 text-xs text-(--color-ink-muted)">{detail}</p>}
     </section>
   );
 }
@@ -62,7 +75,7 @@ function KpiSkeleton() {
   return (
     <div
       aria-hidden
-      className="h-[120px] animate-pulse rounded-(--radius-card) border border-slate-200/80 bg-white p-5 shadow-(--shadow-card)"
+      className="h-[148px] animate-pulse rounded-xl border border-slate-200/80 bg-white p-5 shadow-(--shadow-card)"
     >
       <div className="h-3 w-24 rounded bg-slate-200" />
       <div className="mt-4 h-7 w-16 rounded bg-slate-200" />
@@ -80,11 +93,11 @@ export function KpiRow({ kpis }: { kpis: DashboardKpis | null }) {
   const outstanding =
     kpis?.outstandingKobo != null ? formatNaira(kpis.outstandingKobo, { compact: true }) : null;
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Key metrics">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Key metrics">
       <KpiCard
         label="Residents"
         value={kpis?.residents ?? null}
-        icon={<UserRound aria-hidden size={14} />}
+        icon={<UserRound aria-hidden size={22} />}
         detail={
           kpis?.pendingInvitations != null
             ? `${kpis.pendingInvitations} pending invitation${kpis.pendingInvitations === 1 ? '' : 's'}`
@@ -94,17 +107,19 @@ export function KpiRow({ kpis }: { kpis: DashboardKpis | null }) {
       <KpiCard
         label="Active properties"
         value={kpis?.activeProperties ?? null}
-        icon={<Building2 aria-hidden size={14} />}
+        icon={<Building2 aria-hidden size={22} />}
+        tone="green"
         detail={
           kpis?.totalProperties != null
-            ? `${kpis.activeProperties ?? 0} of ${kpis.totalProperties}`
+            ? `${kpis.activeProperties ?? 0} of ${kpis.totalProperties} active`
             : undefined
         }
       />
       <KpiCard
         label="Outstanding invoices"
         value={outstanding}
-        icon={<Wallet aria-hidden size={14} />}
+        icon={<Wallet aria-hidden size={22} />}
+        tone="slate"
         detail={
           kpis?.outstandingInvoices != null
             ? `${kpis.outstandingInvoices} invoice${kpis.outstandingInvoices === 1 ? '' : 's'} · ${kpis.overdueInvoices ?? 0} overdue`
@@ -114,7 +129,8 @@ export function KpiRow({ kpis }: { kpis: DashboardKpis | null }) {
       <KpiCard
         label="Active SOS alerts"
         value={kpis?.activeSos ?? null}
-        icon={<Siren aria-hidden size={14} />}
+        icon={<Siren aria-hidden size={22} />}
+        tone="rose"
         detail={
           kpis?.openComplaints != null
             ? `${kpis.openComplaints} open complaint${kpis.openComplaints === 1 ? '' : 's'}`
@@ -127,7 +143,7 @@ export function KpiRow({ kpis }: { kpis: DashboardKpis | null }) {
 
 export function KpiRowSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-hidden>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-hidden>
       <KpiSkeleton />
       <KpiSkeleton />
       <KpiSkeleton />
@@ -160,13 +176,13 @@ export function NeedsAttentionPanel({
   return (
     <section
       aria-label="Needs attention"
-      className="rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)"
+      className="flex min-h-[280px] flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.035)]"
     >
       <div className="flex items-center gap-2 border-b border-slate-200/80 px-5 py-4">
         <CircleAlert aria-hidden size={16} className="text-(--color-primary)" />
         <h2 className="text-sm font-semibold text-(--color-ink)">Needs attention</h2>
       </div>
-      <div className="p-5">
+      <div className="flex flex-1 flex-col p-5">
         {loading ? (
           <ul className="flex flex-col gap-3" aria-hidden>
             {Array.from({ length: 3 }).map((_, i) => (
@@ -174,9 +190,17 @@ export function NeedsAttentionPanel({
             ))}
           </ul>
         ) : !items || items.length === 0 ? (
-          <p className="text-xs text-(--color-ink-muted)">
-            Nothing needs attention right now. Operational queues are clear.
-          </p>
+          <div className="flex flex-1 flex-col items-center justify-center py-5 text-center">
+            <span className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-orange-200 bg-white/80">
+                <ClipboardList aria-hidden size={27} strokeWidth={1.5} />
+              </span>
+            </span>
+            <p className="text-sm font-semibold text-slate-700">
+              Nothing needs attention right now.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Operational queues are clear.</p>
+          </div>
         ) : (
           <ul className="flex flex-col divide-y divide-slate-100">
             {items.map((item) => (
@@ -369,6 +393,7 @@ const ACTIVITY_LABELS: Record<AuditEventType, string> = {
   'user.created': 'created an administrator',
   'user.sessions_revoked': 'revoked user sessions',
   'message.replied': 'replied to a message',
+  'message.sent': 'started a message conversation',
   'message.thread_closed': 'closed a message thread',
   'message.thread_reopened': 'reopened a message thread',
   'complaint.replied': 'replied to a complaint',
@@ -480,7 +505,7 @@ export function RecentActivityPanel({
   return (
     <section
       aria-label="Recent activity"
-      className="rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)"
+      className="flex min-h-[280px] flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.035)]"
     >
       <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
         <div className="flex items-center gap-2">
@@ -499,7 +524,7 @@ export function RecentActivityPanel({
         )}
       </div>
 
-      <div className="p-5">
+      <div className="flex-1 p-5">
         {loading ? (
           <ul className="flex flex-col gap-3" aria-hidden>
             {Array.from({ length: 5 }).map((_, i) => (
@@ -531,7 +556,7 @@ export function RecentActivityPanel({
 /** One audit event, shared by the dashboard feed and the full activity page. */
 export function ActivityRow({ event }: { event: AuditEventDto }) {
   return (
-    <li className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+    <li className="grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-3 first:pt-0 last:pb-0 sm:flex">
       <span
         aria-hidden
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${
@@ -552,7 +577,7 @@ export function ActivityRow({ event }: { event: AuditEventDto }) {
       >
         {ACTIVITY_LABELS[event.eventType] ?? event.eventType}
       </span>
-      <span className="w-20 shrink-0 text-right text-[11px] text-(--color-ink-muted)">
+      <span className="col-start-2 text-[10px] text-slate-500 sm:w-20 sm:shrink-0 sm:text-right sm:text-[11px]">
         {relativeTime(event.createdAt)}
       </span>
     </li>
@@ -638,7 +663,7 @@ export function SystemHealthStrip() {
   return (
     <section
       aria-label="System status"
-      className="flex flex-col gap-4 rounded-(--radius-card) border border-slate-200/80 bg-white p-5 shadow-(--shadow-card) sm:flex-row sm:items-center"
+      className="flex flex-col gap-4 rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_10px_rgba(15,23,42,0.035)] lg:flex-row lg:items-center lg:gap-5"
     >
       <div className="flex items-center gap-3">
         <span className={`flex h-9 w-9 items-center justify-center rounded-full ${tone}`}>
@@ -657,12 +682,14 @@ export function SystemHealthStrip() {
               ? 'Checking…'
               : error
                 ? 'Unreachable'
-                : `${status === 'ok' ? 'Ready' : 'Degraded'}`}
+                : status === 'ok'
+                  ? 'All systems are running smoothly.'
+                  : 'Service needs attention.'}
           </p>
         </div>
       </div>
 
-      <dl className="grid flex-1 grid-cols-2 gap-3 sm:max-w-sm sm:grid-cols-3">
+      <dl className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
         <HealthMetric
           label="Application"
           value={loading ? '…' : 'OK'}
@@ -675,11 +702,16 @@ export function SystemHealthStrip() {
           icon={<Database aria-hidden size={12} />}
         />
         <HealthMetric
-          label="Uptime"
+          label="Service"
           value={loading ? '…' : status}
           icon={<ShieldCheck aria-hidden size={12} />}
         />
       </dl>
+      <p className="border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500 lg:max-w-[190px] lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+        API version 0.1
+        <br />
+        Payments are recorded manually by estate staff.
+      </p>
     </section>
   );
 }
@@ -729,7 +761,7 @@ export function PropertyStatusCard({
   return (
     <section
       aria-label="Property status"
-      className="rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)"
+      className="flex min-h-[214px] flex-col rounded-xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.035)]"
     >
       <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-4">
         <div className="flex items-center gap-2">
@@ -742,7 +774,7 @@ export function PropertyStatusCard({
           </Link>
         )}
       </div>
-      <div className="p-5">
+      <div className="flex flex-1 items-center p-4 sm:p-5">
         {total === null && active === null ? (
           <p className="text-xs text-(--color-ink-muted)">
             Your role does not have read access to the property registry.

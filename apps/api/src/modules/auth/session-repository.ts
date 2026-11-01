@@ -18,7 +18,14 @@ export interface SessionRecord {
 }
 
 export interface VerifiedSession {
-  user: { id: string; organizationId: string; status: string; role: string };
+  user: {
+    id: string;
+    organizationId: string;
+    status: string;
+    role: string;
+    estateIds?: string[];
+    propertyIds?: string[];
+  };
   session: { expiresAt: Date | null };
 }
 
@@ -46,7 +53,15 @@ export class PrismaSessionRepository {
   async verify(id: string): Promise<VerifiedSession | null> {
     const row = await this.prisma.session.findUnique({
       where: { id },
-      include: { user: { select: { organizationId: true, status: true, role: true } } },
+      include: {
+        user: {
+          select: {
+            organizationId: true,
+            status: true,
+            role: true,
+          },
+        },
+      },
     });
     if (!row) return null;
     return {

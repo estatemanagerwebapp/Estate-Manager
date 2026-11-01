@@ -73,6 +73,7 @@ import {
   createSettingsRouter,
   type SettingsRouteOptions,
 } from './modules/settings/settings.routes.js';
+import { createSyncRouter, type SyncRouteOptions } from './modules/sync/sync.routes.js';
 
 export interface AppOptions {
   /**
@@ -124,6 +125,8 @@ export interface AppOptions {
   bookings?: OperatorBookingRouteOptions;
   /** Phase 8 curated operational settings (`/settings`). */
   settings?: SettingsRouteOptions;
+  /** Live badges + changed-domain feed (`/sync`). */
+  sync?: SyncRouteOptions;
   /** Override the max requests per window (tests use a small limit). */
   rateLimitMax?: number;
 }
@@ -160,29 +163,8 @@ export function createApp(options: AppOptions = {}): Express {
   // Body parsers with a bounded size; JSON only.
   app.use(express.json({ limit: env.BODY_LIMIT, strict: true }));
 
-  const router = createVersionedRoutes({
-    checkDatabase: options.checkDatabase,
-    configService: options.configService,
-    auth: options.auth,
-    estates: options.estates,
-    properties: options.properties,
-    imports: options.imports,
-    orgImports: options.orgImports,
-    onboarding: options.onboarding,
-    media: options.media,
-    dashboard: options.dashboard,
-    navigation: options.navigation,
-    audit: options.audit,
-    resident: options.resident,
-    sos: options.sos,
-    messages: options.messages,
-    complaints: options.complaints,
-    billing: options.billing,
-    gate: options.gate,
-    facilities: options.facilities,
-    bookings: options.bookings,
-    settings: options.settings,
-  });
+  const router = createVersionedRoutes(options);
+
   app.use(env.API_BASE_PATH, router);
 
   // Anything that fell through: 404 in the standard envelope.
@@ -195,29 +177,7 @@ export function createApp(options: AppOptions = {}): Express {
   return app;
 }
 
-function createVersionedRoutes(options: {
-  checkDatabase?: () => Promise<void>;
-  configService?: OrganizationConfigService;
-  auth?: AuthRouteOptions;
-  estates?: EstateRouteOptions;
-  properties?: PropertyRouteOptions;
-  imports?: ImportRouteOptions;
-  orgImports?: OrgImportRouteOptions;
-  onboarding?: OnboardingRouteOptions;
-  media?: MediaRouteOptions;
-  dashboard?: DashboardRouteOptions;
-  navigation?: NavigationRouteOptions;
-  audit?: AuditRouteOptions;
-  resident?: ResidentRouteOptions;
-  sos?: OperatorSosRouteOptions;
-  messages?: OperatorMessagesRouteOptions;
-  complaints?: OperatorComplaintsRouteOptions;
-  billing?: OperatorBillingRouteOptions;
-  gate?: OperatorGateRouteOptions;
-  facilities?: OperatorFacilityRouteOptions;
-  bookings?: OperatorBookingRouteOptions;
-  settings?: SettingsRouteOptions;
-}): IRouter {
+function createVersionedRoutes(options: Omit<AppOptions, 'rateLimitMax'>): IRouter {
   const router: IRouter = express.Router();
   const {
     checkDatabase,
@@ -241,6 +201,7 @@ function createVersionedRoutes(options: {
     facilities,
     bookings,
     settings,
+    sync,
   } = options;
 
   router.use(
@@ -351,8 +312,17 @@ function createVersionedRoutes(options: {
   }
 
   if (settings) {
-    // Phase 8: curated operational settings (fees, codes, payments, SOS).
+    // Organization-level fallback settings retained for compatibility.
     router.use('/settings', createSettingsRouter(settings));
+    router.use(
+      '/estates/:estateId/settings',
+      createSettingsRouter({ ...settings, estateScoped: true }),
+    );
+  }
+
+  if (sync) {
+    // Live badges + changed-domain feed for both shells.
+    router.use('/sync', createSyncRouter(sync));
   }
 
   return router;

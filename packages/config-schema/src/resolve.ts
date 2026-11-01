@@ -6,16 +6,13 @@ import {
 import {
   CONFIG_SCHEMA_VERSION,
   type AccessCodesConfig,
-  type AssetModel,
   type Branding,
-  type CustomField,
   type FeesConfig,
   type ModulesConfig,
   type OnboardingConfig,
   type OrganizationConfig,
   type OrganizationIdentity,
   type PaymentsConfig,
-  type PropertyOptions,
   type RolesConfig,
   type SosConfig,
 } from './organization-config.schema.js';
@@ -31,8 +28,6 @@ export interface StoredConfigPayload {
   schemaVersion: string;
   organization: OrganizationIdentity;
   branding: Branding;
-  assetModel: AssetModel;
-  propertyOptions: PropertyOptions;
   modules: ModulesConfig;
   fees: FeesConfig;
   onboarding: OnboardingConfig;
@@ -40,7 +35,6 @@ export interface StoredConfigPayload {
   payments: PaymentsConfig;
   sos: SosConfig;
   roles: RolesConfig;
-  customFields: CustomField[];
 }
 
 /** A row from the database's organization configuration table. */
@@ -109,8 +103,6 @@ export function toStoredPayload(config: OrganizationConfig): StoredConfigPayload
   return {
     organization: config.organization,
     branding: config.branding,
-    assetModel: config.assetModel,
-    propertyOptions: config.propertyOptions,
     modules: config.modules,
     fees: config.fees,
     onboarding: config.onboarding,
@@ -118,7 +110,6 @@ export function toStoredPayload(config: OrganizationConfig): StoredConfigPayload
     payments: config.payments,
     sos: config.sos,
     roles: config.roles,
-    customFields: config.customFields,
     schemaVersion: CONFIG_SCHEMA_VERSION,
   };
 }

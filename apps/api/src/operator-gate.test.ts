@@ -7,6 +7,8 @@
  *   - derived ACTIVE/EXPIRED/REVOKED filters and kind filtering;
  *   - guard verification grants, denies revoked/expired/wrong-direction and
  *     unknown codes, and normalizes case/whitespace;
+ *   - `POST /verifications/preview` resolves a code and its visitor details
+ *     without writing a verification row or an audit event;
  *   - `GET /verifications` requires `verification.read`, while recording an
  *     attempt requires `gate.manage`;
  *   - residents are kept out and auditors remain read-only;
@@ -33,6 +35,8 @@ import { PrismaPropertyRepository } from './modules/properties/property-reposito
 import { PrismaAccessCodeRepository } from './modules/resident/codes-repository.js';
 import { PrismaGateRepository } from './modules/gate/gate-repository.js';
 import { OperatorGateService } from './modules/gate/gate.service.js';
+import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
+import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 
 let prisma: PrismaClient;
 let app: Express;
@@ -140,6 +144,9 @@ beforeAll(async () => {
   );
   const userService = new UserService(users, sessions, audit, permissions);
   const gateRepo = new PrismaGateRepository(prisma);
+  const notifications = new ResidentNotificationsService({
+    notifications: new PrismaNotificationRepository(prisma),
+  });
 
   app = createApp({
     checkDatabase: async () => {},
@@ -156,7 +163,12 @@ beforeAll(async () => {
       sessions,
       permissions,
       organizationId,
-      gate: new OperatorGateService({ gate: gateRepo, audit }),
+      gate: new OperatorGateService({
+        gate: gateRepo,
+        audit,
+        notify: (organizationId, userId, input) =>
+          notifications.notify(organizationId, userId, input),
+      }),
     },
   });
 
@@ -268,6 +280,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const orgIds = [organizationId, otherOrganizationId];
+  await prisma.notification.deleteMany({ where: { organizationId: { in: orgIds } } });
   await prisma.accessVerification.deleteMany({ where: { organizationId: { in: orgIds } } });
   await prisma.accessCode.deleteMany({ where: { organizationId: { in: orgIds } } });
   await prisma.residentOnboarding.deleteMany({ where: { organizationId: { in: orgIds } } });
@@ -379,6 +392,75 @@ describe('operator gate access', () => {
     ).toBe(400);
   });
 
+  it('previews a code and its visitor without recording anything', async () => {
+    const verificationsBefore = await prisma.accessVerification.count({
+      where: { organizationId },
+    });
+    const auditBefore = await prisma.auditEvent.count({ where: { organizationId } });
+
+    const preview = await request(app)
+      .post('/api/v1/verifications/preview')
+      .set('Cookie', guardCookie)
+      .send({ code: ` ${entryCode.toLowerCase()} `, gate: 'ENTRY' });
+    expect(preview.status).toBe(200);
+    const detail = preview.body.data.preview;
+    expect(detail.found).toBe(true);
+    expect(detail.outcome).toBe('GRANTED');
+    expect(detail.reason).toBeNull();
+    expect(detail.gate).toBe('ENTRY');
+    expect(detail.codePrefix).toBe(entryCode.slice(0, 4));
+    expect(detail.visitorName).toBe('Chinedu Okafor');
+    expect(detail.carPlate).toBe('LAG-123-AA');
+    expect(detail.resident.fullName).toBe('Ada Okafor');
+    expect(detail.property.identifier).toBeTruthy();
+    expect(detail.accessCodeId).toBeTruthy();
+
+    // A preview writes nothing: no verification row and no audit event.
+    expect(await prisma.accessVerification.count({ where: { organizationId } })).toBe(
+      verificationsBefore,
+    );
+    expect(await prisma.auditEvent.count({ where: { organizationId } })).toBe(auditBefore);
+
+    const expired = await request(app)
+      .post('/api/v1/verifications/preview')
+      .set('Cookie', guardCookie)
+      .send({ code: expiredCode, gate: 'ENTRY' });
+    expect(expired.status).toBe(200);
+    expect(expired.body.data.preview.found).toBe(true);
+    expect(expired.body.data.preview.outcome).toBe('DENIED');
+    expect(expired.body.data.preview.reason).toBe('EXPIRED');
+
+    const unknown = await request(app)
+      .post('/api/v1/verifications/preview')
+      .set('Cookie', guardCookie)
+      .send({ code: 'ZZZZ9999', gate: 'ENTRY' });
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.data.preview.found).toBe(false);
+    expect(unknown.body.data.preview.outcome).toBe('DENIED');
+    expect(unknown.body.data.preview.reason).toBe('NOT_FOUND');
+    expect(unknown.body.data.preview.resident).toBeNull();
+
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/verifications/preview')
+          .set('Cookie', auditorCookie)
+          .send({ code: entryCode, gate: 'ENTRY' })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/verifications/preview')
+          .set('Cookie', residentCookie)
+          .send({ code: entryCode, gate: 'ENTRY' })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await request(app).post('/api/v1/verifications/preview').send({ code: entryCode })).status,
+    ).toBe(401);
+  });
+
   it('grants an active code, normalizes input and audits the attempt', async () => {
     const response = await request(app)
       .post('/api/v1/verifications')
@@ -414,6 +496,15 @@ describe('operator gate access', () => {
     });
     expect(audit?.actorId).toBe(guardId);
     expect(audit?.targetType).toBe('access_verification');
+
+    // The code owner is told their visitor arrived.
+    const notification = await prisma.notification.findFirst({
+      where: { organizationId, userId: residentId, linkTo: '/resident/app/codes' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(notification?.kind).toBe('CODE');
+    expect(notification?.title).toContain('access code');
+    expect(notification?.read).toBe(false);
   });
 
   it('denies wrong-direction, revoked, expired and unknown codes', async () => {

@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import {
-  NAV_SECTIONS,
-  PRIMARY_NAV,
-  SETTINGS_NAV,
-  isNavItemVisible,
-  sectionLabelForPath,
-} from './navigation';
+import { NAV_SECTIONS, SETTINGS_NAV, isNavItemVisible, sectionLabelForPath } from './navigation';
 
 function item(label: string) {
-  const found = [...PRIMARY_NAV, ...SETTINGS_NAV].find((entry) => entry.label === label);
+  const found = [...NAV_SECTIONS.flatMap((section) => section.items), ...SETTINGS_NAV].find(
+    (entry) => entry.label === label,
+  );
   if (!found) throw new Error(`Missing nav item: ${label}`);
   return found;
 }
@@ -24,11 +20,14 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('Estate settings'), { 'config.manage': true }, false)).toBe(true);
   });
 
-  it('gates estate and property links on their read permissions', () => {
+  it('gates the estate link on its read permission', () => {
     expect(isNavItemVisible(item('Estates'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Estates'), { 'estate.read': true }, false)).toBe(true);
-    expect(isNavItemVisible(item('Properties'), {}, false)).toBe(false);
-    expect(isNavItemVisible(item('Properties'), { 'property.read': true }, false)).toBe(true);
+    expect(
+      NAV_SECTIONS.flatMap((section) => section.items).some(
+        (entry) => entry.label === 'Properties',
+      ),
+    ).toBe(false);
   });
 
   it('gates account-administration links on user management', () => {
@@ -55,8 +54,8 @@ describe('operator navigation registry', () => {
     const labels = (id: string) =>
       NAV_SECTIONS.find((section) => section.id === id)?.items.map((entry) => entry.label);
 
-    expect(labels('front-desk')).toEqual(['SOS alerts', 'Messages', 'Complaints']);
-    expect(labels('portfolio')).toEqual(['Estates', 'Properties', 'Residents']);
+    expect(labels('front-desk')).toEqual(['SOS alerts', 'Messages']);
+    expect(labels('portfolio')).toEqual(['Estates', 'Residents']);
     expect(labels('operations')).toEqual(['Billing', 'Facilities', 'Bookings', 'Gate access']);
     expect(labels('administration')).toEqual(['Activity', 'Data import', 'Administrators']);
   });
@@ -64,7 +63,6 @@ describe('operator navigation registry', () => {
   it('assigns counters only to actionable destinations', () => {
     expect(item('SOS alerts').badge).toBe('sosAlerts');
     expect(item('Messages').badge).toBe('unreadMessages');
-    expect(item('Complaints').badge).toBe('openComplaints');
     expect(item('Residents').badge).toBe('pendingResidents');
     expect(item('Billing').badge).toBe('overdueInvoices');
     expect(item('Facilities').badge).toBe('facilityWaitlist');
@@ -93,18 +91,16 @@ describe('operator navigation registry', () => {
     expect(isNavItemVisible(item('Gate access'), { 'verification.read': true }, false)).toBe(true);
   });
 
-  it('gates messages and complaints on their read permissions', () => {
+  it('gates messages on the message read permission', () => {
     expect(isNavItemVisible(item('Messages'), {}, false)).toBe(false);
     expect(isNavItemVisible(item('Messages'), { 'message.read': true }, false)).toBe(true);
-    expect(isNavItemVisible(item('Complaints'), {}, false)).toBe(false);
-    expect(isNavItemVisible(item('Complaints'), { 'complaint.read': true }, false)).toBe(true);
   });
 
   it('derives the sticky-header section from the current path', () => {
     expect(sectionLabelForPath('/app')).toBe('Overview');
     expect(sectionLabelForPath('/app/estates/123')).toBe('Estates');
     expect(sectionLabelForPath('/app/properties/123')).toBe('Property');
-    expect(sectionLabelForPath('/app/properties')).toBe('Properties');
+    expect(sectionLabelForPath('/app/properties')).toBe('Estates');
     expect(sectionLabelForPath('/app/imports')).toBe('Data import');
     expect(sectionLabelForPath('/app/billing')).toBe('Billing');
     expect(sectionLabelForPath('/app/residents')).toBe('Residents');
@@ -113,7 +109,6 @@ describe('operator navigation registry', () => {
     expect(sectionLabelForPath('/app/users')).toBe('Administrators');
     expect(sectionLabelForPath('/app/sos')).toBe('SOS alerts');
     expect(sectionLabelForPath('/app/messages')).toBe('Messages');
-    expect(sectionLabelForPath('/app/complaints')).toBe('Complaints');
     expect(sectionLabelForPath('/app/gate')).toBe('Gate access');
     expect(sectionLabelForPath('/app/activity')).toBe('Activity');
     expect(sectionLabelForPath('/app/settings')).toBe('Settings');

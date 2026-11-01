@@ -1,5 +1,7 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Data access for the resident finance domain (S3): invoices, payments and
  * the transaction ledger.
@@ -14,6 +16,7 @@ export interface FinanceInvoiceRecord {
   organizationId: string;
   userId: string;
   propertyId: string | null;
+  title: string;
   period: string;
   amountKobo: number;
   currency: string;
@@ -53,6 +56,7 @@ export interface CreateInvoiceInput {
   organizationId: string;
   userId: string;
   propertyId?: string | null;
+  title?: string;
   period: string;
   amountKobo: number;
   currency?: string;
@@ -116,6 +120,7 @@ export interface OperatorPaymentRecord extends FinancePaymentRecord {
 
 export interface OperatorInvoiceFilter {
   status?: FinanceInvoiceRecord['status'];
+  estateId?: string;
   limit?: number;
 }
 
@@ -129,10 +134,12 @@ export interface OutstandingInvoiceSummary {
 }
 
 export interface OperatorPaymentFilter {
+  estateId?: string;
   limit?: number;
 }
 
 export interface OperatorResidentBillingContext extends OperatorBillingResidentRecord {
+  properties: Array<{ propertyId: string; property: OperatorBillingPropertyRecord }>;
   propertyId: string | null;
   property: OperatorBillingPropertyRecord | null;
 }
@@ -158,6 +165,41 @@ export interface RecordManualPaymentInput {
   paidAt: Date;
   recordedById: string;
 }
+
+export interface InvoiceWithTotals {
+  invoice: FinanceInvoiceRecord;
+  paidKobo: number;
+}
+
+export interface ApplyInvoicePaymentInput {
+  organizationId: string;
+  invoiceId: string;
+  /** Pins the owner for resident paths; staff paths omit it. */
+  userId?: string;
+  /** Amount received. A part payment is valid while it fits the balance. */
+  amountKobo: number;
+  method: string;
+  reference: string | null;
+  paidAt: Date;
+  recordedById: string | null;
+}
+
+export type ApplyInvoicePaymentResult =
+  | {
+      ok: true;
+      payment: FinancePaymentRecord;
+      paidKobo: number;
+      outstandingKobo: number;
+      status: FinanceInvoiceRecord['status'];
+      userId: string;
+      title: string;
+      period: string;
+    }
+  | {
+      ok: false;
+      reason: 'NOT_FOUND' | 'VOID' | 'PAID' | 'INVALID_AMOUNT' | 'OVERPAYMENT';
+      remainingKobo?: number;
+    };
 
 export interface CreatePaidBookingInvoiceInput {
   organizationId: string;
@@ -239,6 +281,7 @@ export class PrismaFinanceRepository {
         organizationId: input.organizationId,
         userId: input.userId,
         propertyId: input.propertyId ?? null,
+        title: input.title?.trim() || input.period,
         period: input.period,
         amountKobo: input.amountKobo,
         currency: input.currency ?? 'NGN',
@@ -261,6 +304,24 @@ export class PrismaFinanceRepository {
     return row ? toInvoice(row) : null;
   }
 
+  /** One invoice plus how much the resident has already paid against it. */
+  async findInvoiceWithTotals(
+    organizationId: string,
+    userIds: string | readonly string[],
+    invoiceId: string,
+  ): Promise<InvoiceWithTotals | null> {
+    if (!UUID_PATTERN.test(invoiceId)) return null;
+    const row = await this.prisma.invoice.findFirst({
+      where: { organizationId, userId: { in: normalizeUserIds(userIds) }, id: invoiceId },
+      include: { payments: { select: { amountKobo: true } } },
+    });
+    if (!row) return null;
+    return {
+      invoice: toInvoice(row),
+      paidKobo: row.payments.reduce((total, payment) => total + payment.amountKobo, 0),
+    };
+  }
+
   async listInvoicesByStatus(
     organizationId: string,
     userId: string,
@@ -271,6 +332,32 @@ export class PrismaFinanceRepository {
       orderBy: [{ dueAt: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map(toInvoice);
+  }
+
+  /**
+   * The resident's invoices with how much has been paid against each.
+   *
+   * Outstanding lists include OVERDUE as well as UNPAID so a past-due invoice
+   * never disappears from the resident's finance page.
+   */
+  async listInvoicesWithTotals(
+    organizationId: string,
+    userIds: string | readonly string[],
+    statuses: ReadonlyArray<FinanceInvoiceRecord['status']>,
+  ): Promise<InvoiceWithTotals[]> {
+    const rows = await this.prisma.invoice.findMany({
+      where: {
+        organizationId,
+        userId: { in: normalizeUserIds(userIds) },
+        status: { in: [...statuses] },
+      },
+      orderBy: [{ dueAt: 'asc' }, { createdAt: 'asc' }],
+      include: { payments: { select: { amountKobo: true } } },
+    });
+    return rows.map((row) => ({
+      invoice: toInvoice(row),
+      paidKobo: row.payments.reduce((total, payment) => total + payment.amountKobo, 0),
+    }));
   }
 
   async markInvoicePaid(invoiceId: string): Promise<FinanceInvoiceRecord | null> {
@@ -302,24 +389,63 @@ export class PrismaFinanceRepository {
    * ledger entries. Returns null when another request has already paid or
    * voided the invoice, so a duplicate operator payment cannot settle twice.
    */
-  async recordManualPayment(input: RecordManualPaymentInput): Promise<FinancePaymentRecord | null> {
-    return this.prisma.$transaction(async (transaction) => {
-      const claimed = await transaction.invoice.updateMany({
-        where: {
-          organizationId: input.organizationId,
-          id: input.invoiceId,
-          status: { in: ['UNPAID', 'OVERDUE'] },
-          payments: { none: {} },
-        },
-        data: { status: 'PAID' },
-      });
-      if (claimed.count === 0) return null;
+  /**
+   * Apply a full or partial payment to one invoice, atomically.
+   *
+   * The invoice row is locked first, so two concurrent payments cannot both
+   * claim the same balance. A payment writes the Payment row, the two ledger
+   * entries and the invoice status together: the invoice flips to PAID only
+   * when the cumulative payments cover the amount, and stays UNPAID/OVERDUE
+   * (with the remainder visible) otherwise.
+   */
+  async applyInvoicePayment(input: ApplyInvoicePaymentInput): Promise<ApplyInvoicePaymentResult> {
+    if (!UUID_PATTERN.test(input.invoiceId)) return { ok: false, reason: 'NOT_FOUND' };
 
-      const payment = await transaction.payment.create({
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize concurrent payments on this invoice.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "invoices"
+        WHERE id = ${input.invoiceId}::uuid
+          AND organization_id = ${input.organizationId}::uuid
+        FOR UPDATE
+      `;
+      if (locked.length === 0) return { ok: false, reason: 'NOT_FOUND' };
+
+      const invoice = await tx.invoice.findFirst({
+        where: {
+          id: input.invoiceId,
+          organizationId: input.organizationId,
+          ...(input.userId ? { userId: input.userId } : {}),
+        },
+      });
+      if (!invoice) return { ok: false, reason: 'NOT_FOUND' };
+      if (invoice.status === 'VOID') return { ok: false, reason: 'VOID' };
+
+      const paidAggregate = await tx.payment.aggregate({
+        where: { invoiceId: invoice.id, organizationId: input.organizationId },
+        _sum: { amountKobo: true },
+      });
+      const alreadyPaid = paidAggregate._sum.amountKobo ?? 0;
+      const remaining = Math.max(invoice.amountKobo - alreadyPaid, 0);
+
+      if (remaining <= 0) {
+        if (invoice.status !== 'PAID') {
+          await tx.invoice.update({ where: { id: invoice.id }, data: { status: 'PAID' } });
+        }
+        return { ok: false, reason: 'PAID' };
+      }
+      if (!Number.isSafeInteger(input.amountKobo) || input.amountKobo <= 0) {
+        return { ok: false, reason: 'INVALID_AMOUNT' };
+      }
+      if (input.amountKobo > remaining) {
+        return { ok: false, reason: 'OVERPAYMENT', remainingKobo: remaining };
+      }
+
+      const payment = await tx.payment.create({
         data: {
           organizationId: input.organizationId,
-          userId: input.userId,
-          invoiceId: input.invoiceId,
+          userId: invoice.userId,
+          invoiceId: invoice.id,
           amountKobo: input.amountKobo,
           method: input.method,
           reference: input.reference,
@@ -328,30 +454,47 @@ export class PrismaFinanceRepository {
         },
       });
 
-      await transaction.transaction.createMany({
+      const paidKobo = alreadyPaid + input.amountKobo;
+      const outstandingKobo = Math.max(invoice.amountKobo - paidKobo, 0);
+      const status = outstandingKobo === 0 ? 'PAID' : (invoice.status as 'UNPAID' | 'OVERDUE');
+      await tx.invoice.update({ where: { id: invoice.id }, data: { status } });
+
+      await tx.transaction.createMany({
         data: [
           {
             organizationId: input.organizationId,
-            userId: input.userId,
+            userId: invoice.userId,
             kind: 'PAYMENT',
             amountKobo: input.amountKobo,
             signed: input.amountKobo,
-            memo: `Payment against ${input.period}`,
+            memo: `Payment against ${invoice.title || invoice.period}`,
             reference: payment.id,
           },
           {
             organizationId: input.organizationId,
-            userId: input.userId,
+            userId: invoice.userId,
             kind: 'INVOICE',
             amountKobo: input.amountKobo,
             signed: -input.amountKobo,
-            memo: `${input.period} settled`,
-            reference: input.invoiceId,
+            memo:
+              outstandingKobo === 0
+                ? `${invoice.title || invoice.period} settled`
+                : `Part payment against ${invoice.title || invoice.period}`,
+            reference: invoice.id,
           },
         ],
       });
 
-      return toPayment(payment);
+      return {
+        ok: true,
+        payment: toPayment(payment),
+        paidKobo,
+        outstandingKobo,
+        status,
+        userId: invoice.userId,
+        title: invoice.title,
+        period: invoice.period,
+      };
     });
   }
 
@@ -440,11 +583,11 @@ export class PrismaFinanceRepository {
 
   async listPayments(
     organizationId: string,
-    userId: string,
+    userIds: string | readonly string[],
     limit = 50,
   ): Promise<FinancePaymentRecord[]> {
     const rows = await this.prisma.payment.findMany({
-      where: { organizationId, userId },
+      where: { organizationId, userId: { in: normalizeUserIds(userIds) } },
       orderBy: { paidAt: 'desc' },
       take: limit,
     });
@@ -468,11 +611,11 @@ export class PrismaFinanceRepository {
 
   async listTransactions(
     organizationId: string,
-    userId: string,
+    userIds: string | readonly string[],
     limit = 100,
   ): Promise<FinanceTransactionRecord[]> {
     const rows = await this.prisma.transaction.findMany({
-      where: { organizationId, userId },
+      where: { organizationId, userId: { in: normalizeUserIds(userIds) } },
       orderBy: { occurredAt: 'desc' },
       take: limit,
     });
@@ -488,7 +631,8 @@ export class PrismaFinanceRepository {
       where: { organizationId, id: residentId, role: 'RESIDENT' },
       select: {
         ...OPERATOR_RESIDENT_SELECT,
-        residentOnboarding: {
+        residentOnboardings: {
+          where: { status: 'COMPLETED', archivedAt: null },
           select: {
             propertyId: true,
             property: { select: OPERATOR_PROPERTY_SELECT },
@@ -502,8 +646,12 @@ export class PrismaFinanceRepository {
       fullName: row.fullName,
       email: row.email,
       phone: row.phone,
-      propertyId: row.residentOnboarding?.propertyId ?? null,
-      property: row.residentOnboarding?.property ?? null,
+      properties: row.residentOnboardings.map((onboarding) => ({
+        propertyId: onboarding.propertyId,
+        property: onboarding.property,
+      })),
+      propertyId: row.residentOnboardings[0]?.propertyId ?? null,
+      property: row.residentOnboardings[0]?.property ?? null,
     };
   }
 
@@ -515,6 +663,7 @@ export class PrismaFinanceRepository {
     const rows = await this.prisma.invoice.findMany({
       where: {
         organizationId,
+        ...(filter.estateId ? { property: { is: { estateId: filter.estateId } } } : {}),
         // The operator UI shows a past-due UNPAID invoice as Overdue even
         // before a background job flips the stored status. Match that view.
         ...(filter.status === 'OVERDUE'
@@ -548,27 +697,35 @@ export class PrismaFinanceRepository {
   }
 
   async summarizeOutstanding(organizationId: string): Promise<OutstandingInvoiceSummary> {
-    const outstandingWhere = {
-      organizationId,
-      status: { in: ['UNPAID', 'OVERDUE'] },
-    } satisfies Prisma.InvoiceWhereInput;
-    const [sum, outstandingInvoices, overdueInvoices] = await Promise.all([
-      this.prisma.invoice.aggregate({
-        where: outstandingWhere,
-        _sum: { amountKobo: true },
-      }),
-      this.prisma.invoice.count({ where: outstandingWhere }),
-      this.prisma.invoice.count({
-        where: {
-          organizationId,
-          OR: [{ status: 'OVERDUE' }, { status: 'UNPAID', dueAt: { lt: new Date() } }],
-        },
-      }),
-    ]);
+    // Partial payments mean the outstanding total is the invoice amount minus
+    // everything already paid, not the sum of the invoice totals. One grouped
+    // aggregate keeps the dashboard poll cheap.
+    const [summary] = await this.prisma.$queryRaw<
+      Array<{
+        outstandingKobo: number;
+        outstandingInvoices: number;
+        overdueInvoices: number;
+      }>
+    >`
+      SELECT
+        COALESCE(SUM(i."amount_kobo" - COALESCE(p."paid", 0)), 0)::int AS "outstandingKobo",
+        COUNT(*)::int AS "outstandingInvoices",
+        COUNT(*) FILTER (
+          WHERE i."status" = 'OVERDUE' OR (i."status" = 'UNPAID' AND i."due_at" < NOW())
+        )::int AS "overdueInvoices"
+      FROM "invoices" i
+      LEFT JOIN (
+        SELECT "invoice_id", SUM("amount_kobo") AS paid
+        FROM "payments"
+        GROUP BY "invoice_id"
+      ) p ON p."invoice_id" = i."id"
+      WHERE i."organization_id" = ${organizationId}::uuid
+        AND i."status" IN ('UNPAID', 'OVERDUE')
+    `;
     return {
-      outstandingKobo: sum._sum.amountKobo ?? 0,
-      outstandingInvoices,
-      overdueInvoices,
+      outstandingKobo: summary?.outstandingKobo ?? 0,
+      outstandingInvoices: summary?.outstandingInvoices ?? 0,
+      overdueInvoices: summary?.overdueInvoices ?? 0,
     };
   }
 
@@ -613,7 +770,12 @@ export class PrismaFinanceRepository {
     filter: OperatorPaymentFilter = {},
   ): Promise<OperatorPaymentRecord[]> {
     const rows = await this.prisma.payment.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(filter.estateId
+          ? { invoice: { property: { is: { estateId: filter.estateId } } } }
+          : {}),
+      },
       orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
       take: filter.limit ?? 100,
       include: OPERATOR_PAYMENT_INCLUDE,
@@ -653,6 +815,7 @@ function toInvoice(row: PrismaInvoiceRow): FinanceInvoiceRecord {
     organizationId: row.organizationId,
     userId: row.userId,
     propertyId: row.propertyId,
+    title: row.title,
     period: row.period,
     amountKobo: row.amountKobo,
     currency: row.currency,
@@ -662,6 +825,10 @@ function toInvoice(row: PrismaInvoiceRow): FinanceInvoiceRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function normalizeUserIds(userIds: string | readonly string[]): string[] {
+  return [...new Set(typeof userIds === 'string' ? [userIds] : userIds)];
 }
 
 function toPayment(row: PrismaPaymentRow): FinancePaymentRecord {

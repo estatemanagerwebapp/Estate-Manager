@@ -15,12 +15,14 @@ export function Modal({
   title,
   children,
   footer,
+  panelClassName = '',
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  panelClassName?: string;
 }) {
   if (!open) return null;
 
@@ -34,7 +36,9 @@ export function Modal({
         if (event.key === 'Escape') onClose();
       }}
     >
-      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-(--radius-card) bg-white shadow-(--shadow-card)">
+      <div
+        className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-(--radius-card) bg-white shadow-(--shadow-card) ${panelClassName}`}
+      >
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200/80 px-5 py-4">
           <h2 className="text-sm font-semibold text-(--color-ink)">{title}</h2>
           <button

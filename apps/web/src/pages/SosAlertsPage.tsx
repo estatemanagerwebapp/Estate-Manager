@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, CheckCircle2, Mail, Phone, RefreshCw, Search, Siren } from 'lucide-react';
+import { Check, CheckCircle2, ChevronRight, Mail, Phone, Search, Siren } from 'lucide-react';
 import {
   SOS_CONTACT_CATEGORY_LABELS,
   type SosOperatorEventDto,
@@ -13,16 +13,9 @@ import { invalidateNavigationCounts } from '../api/navigation';
 import { useCan } from '../auth/useCan';
 import { useToast } from '../toast/Toast';
 import { Modal } from '../components/dialog';
-import {
-  Button,
-  EmptyState,
-  ErrorBanner,
-  Field,
-  Skeleton,
-  inputClass,
-  selectClass,
-} from '../components/ui';
-import { FilterBar, OperatorPageHeader, StatusBadge } from '../components/operator';
+import { Button, ErrorBanner, Field, Skeleton, inputClass, selectClass } from '../components/ui';
+import { FilterBar, StatusBadge } from '../components/operator';
+import { formatDateTime } from '../lib/format';
 
 export type SosView = 'ACTIVE' | 'ALL' | SosStatus;
 
@@ -49,10 +42,11 @@ const ICON_TONES: Record<SosStatus, string> = {
 };
 
 /** Build the API filter for a queue view. */
-export function filterForView(view: SosView): OperatorSosFilter {
-  if (view === 'ACTIVE') return { active: true };
-  if (view === 'ALL') return {};
-  return { status: view };
+export function filterForView(view: SosView, estateId = ''): OperatorSosFilter {
+  const estateFilter = estateId ? { estateId } : {};
+  if (view === 'ACTIVE') return { active: true, ...estateFilter };
+  if (view === 'ALL') return estateFilter;
+  return { status: view, ...estateFilter };
 }
 
 export function sosStatusLabel(status: SosStatus): string {
@@ -105,17 +99,23 @@ export function SosAlertsPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [view, setView] = useState<SosView>('ACTIVE');
+  const [estateId, setEstateId] = useState('');
   const [search, setSearch] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [resolving, setResolving] = useState<SosOperatorEventDto | null>(null);
 
-  const filter = useMemo(() => filterForView(view), [view]);
+  const filter = useMemo(() => filterForView(view, estateId), [view, estateId]);
+  const { data: estateData } = useApiQuery(
+    ['estates', {}],
+    () => api.listEstates(),
+    'Could not load estates.',
+  );
+  const estates = estateData?.estates ?? [];
   const sosKey = queryKeys.sos.list(filter);
   const {
     data,
     loading,
-    fetching,
     error: queryError,
     errorObject,
     refresh,
@@ -157,41 +157,46 @@ export function SosAlertsPage() {
   }
 
   return (
-    <div>
-      <OperatorPageHeader
-        icon={<Siren aria-hidden size={20} className="text-rose-600" />}
-        title="SOS alerts"
-        description="Emergency alerts raised by residents. This screen refreshes automatically."
-        actions={
-          <>
-            <span className="inline-flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
-              <span className="relative flex h-2 w-2" aria-hidden>
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
-              Live · every 15s
+    <div className="min-w-0">
+      <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-2 text-sm text-slate-500">
+        <span>Front Desk</span>
+        <ChevronRight aria-hidden size={14} />
+        <span className="font-medium text-slate-800" aria-current="page">
+          SOS alerts
+        </span>
+      </nav>
+
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 items-start gap-3.5">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+            <Siren aria-hidden size={26} strokeWidth={1.8} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">SOS alerts</h1>
+            <p className="mt-1 max-w-2xl text-base leading-6 text-slate-600">
+              Emergency alerts raised by residents. This screen refreshes automatically.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:pt-1">
+          <span className="inline-flex items-center gap-2 text-sm text-slate-600">
+            <span className="relative flex h-2 w-2" aria-hidden>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
             </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void refresh()}
-              disabled={fetching}
-            >
-              <RefreshCw aria-hidden size={14} className={fetching ? 'animate-spin' : undefined} />
-              Refresh
-            </Button>
-          </>
-        }
-      />
+            Live · every 15s
+          </span>
+        </div>
+      </header>
 
       {contacts.length > 0 && (
-        <div className="mt-4 rounded-md border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)">
+        <div className="mt-4 rounded-lg border border-slate-200/80 bg-white px-4 py-3">
+          <p className="text-sm font-semibold uppercase tracking-wide text-(--color-ink-muted)">
             Emergency contacts
           </p>
           <ul className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5">
             {contacts.map((contact) => (
-              <li key={contact.id} className="text-xs">
+              <li key={contact.id} className="text-base">
                 <span className="text-(--color-ink-muted)">
                   {SOS_CONTACT_CATEGORY_LABELS[contact.category]}:
                 </span>{' '}
@@ -215,26 +220,42 @@ export function SosAlertsPage() {
           </span>
         }
       >
-        <div className="relative">
+        <select
+          value={estateId}
+          onChange={(event) => setEstateId(event.target.value)}
+          aria-label="Filter SOS alerts by estate"
+          className={`${selectClass} min-h-11 w-full rounded-lg bg-white text-base sm:w-auto`}
+          style={{ fontSize: '16px' }}
+        >
+          <option value="">All estates</option>
+          {estates.map((estate) => (
+            <option key={estate.id} value={estate.id}>
+              {estate.name}
+            </option>
+          ))}
+        </select>
+        <div className="relative w-full sm:w-[360px] sm:flex-none">
           <Search
             aria-hidden
-            size={14}
+            size={18}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-(--color-ink-muted)"
           />
           <input
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search resident, property or note"
+            placeholder="Search resident, property or alert…"
             aria-label="Search SOS alerts"
-            className="w-64 rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft)"
+            className="h-11 w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-base outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-soft)"
+            style={{ fontSize: '16px' }}
           />
         </div>
         <select
           value={view}
           onChange={(event) => setView(event.target.value as SosView)}
           aria-label="Filter SOS alerts"
-          className={selectClass}
+          className={`${selectClass} min-h-11 w-full rounded-lg bg-white text-base sm:w-auto`}
+          style={{ fontSize: '16px' }}
         >
           {VIEW_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -264,16 +285,19 @@ export function SosAlertsPage() {
           ))}
         </div>
       ) : visibleEvents.length === 0 ? (
-        <div className="mt-4 rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)">
-          <EmptyState
-            title={search.trim() ? 'No alerts match your search' : 'No SOS alerts in this view'}
-            body={
-              search.trim()
-                ? 'Clear the search or switch to another queue view.'
-                : 'New resident alerts appear here automatically while the screen is open.'
-            }
-          />
-        </div>
+        <section className="mt-4 flex min-h-[204px] flex-col items-center justify-center rounded-xl border border-slate-200/80 bg-white px-5 py-8 text-center shadow-[0_2px_10px_rgba(15,23,42,0.035)] sm:min-h-[224px]">
+          <span className="mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+            <Siren aria-hidden size={36} strokeWidth={1.7} />
+          </span>
+          <h2 className="text-base font-semibold text-slate-900">
+            {search.trim() ? 'No alerts match your search' : 'No SOS alerts in this view'}
+          </h2>
+          <p className="mt-1 max-w-xl text-base leading-6 text-slate-600">
+            {search.trim()
+              ? 'Clear the search or switch to another queue view.'
+              : 'New resident alerts appear here automatically while the screen is open.'}
+          </p>
+        </section>
       ) : (
         <ul className="mt-4 space-y-3">
           {visibleEvents.map((event) => (
@@ -316,14 +340,14 @@ function SosAlertCard({
   const resident = event.resident;
   return (
     <li
-      className={`rounded-(--radius-card) border border-slate-200/80 border-l-4 p-4 shadow-(--shadow-card) ${CARD_TONES[event.status]}`}
+      className={`rounded-xl border border-slate-200/80 border-l-4 p-4 shadow-(--shadow-card) sm:p-5 ${CARD_TONES[event.status]}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3.5">
           <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${ICON_TONES[event.status]}`}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[event.status]}`}
           >
-            <Siren aria-hidden size={17} />
+            <Siren aria-hidden size={22} />
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -332,21 +356,23 @@ function SosAlertCard({
                 label={sosStatusLabel(event.status)}
                 tone={event.status === 'RAISED' ? 'danger' : undefined}
               />
-              <span className="text-[11px] text-(--color-ink-muted)">
+              <span className="text-sm text-(--color-ink-muted)">
                 Raised {formatDateTime(event.raisedAt)}
               </span>
             </div>
-            <h2 className="mt-1 truncate text-base font-semibold text-(--color-ink)">
+            <h2 className="mt-1 break-words text-base font-semibold text-(--color-ink)">
               {sosResidentLabel(event)}
             </h2>
-            <p className="text-xs text-(--color-ink-muted)">{sosPropertyLabel(event)}</p>
+            <p className="break-words text-sm leading-5 text-(--color-ink-muted)">
+              {sosPropertyLabel(event)}
+            </p>
             {resident && (
-              <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-(--color-ink-muted)">
+              <div className="mt-2 flex flex-col items-start gap-1.5 text-sm text-(--color-ink-muted) sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <a
                   href={`mailto:${resident.email}`}
                   className="inline-flex items-center gap-1 hover:text-(--color-primary)"
                 >
-                  <Mail aria-hidden size={12} />
+                  <Mail aria-hidden size={15} />
                   {resident.email}
                 </a>
                 {resident.phone && (
@@ -354,7 +380,7 @@ function SosAlertCard({
                     href={`tel:${resident.phone}`}
                     className="inline-flex items-center gap-1 hover:text-(--color-primary)"
                   >
-                    <Phone aria-hidden size={12} />
+                    <Phone aria-hidden size={15} />
                     {resident.phone}
                   </a>
                 )}
@@ -363,19 +389,30 @@ function SosAlertCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:pt-1">
           {!canManage && event.status !== 'RESOLVED' && (
             <span className="text-[11px] text-(--color-ink-muted)">Read-only</span>
           )}
           {canManage && event.status === 'RAISED' && (
-            <Button size="sm" onClick={onAcknowledge} disabled={busy}>
-              <Check aria-hidden size={14} />
+            <Button
+              size="sm"
+              onClick={onAcknowledge}
+              disabled={busy}
+              className="min-h-11 w-full rounded-lg text-base sm:w-auto"
+            >
+              <Check aria-hidden size={18} />
               {busy ? 'Acknowledging…' : 'Acknowledge'}
             </Button>
           )}
           {canManage && event.status === 'ACKNOWLEDGED' && (
-            <Button size="sm" variant="secondary" onClick={onResolve} disabled={busy}>
-              <CheckCircle2 aria-hidden size={14} />
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onResolve}
+              disabled={busy}
+              className="min-h-11 w-full rounded-lg text-base sm:w-auto"
+            >
+              <CheckCircle2 aria-hidden size={18} />
               Resolve
             </Button>
           )}
@@ -383,20 +420,20 @@ function SosAlertCard({
       </div>
 
       {event.note ? (
-        <blockquote className="mt-3 rounded-md border-l-2 border-slate-300 bg-white/70 px-3 py-2 text-sm text-(--color-ink)">
+        <blockquote className="mt-3 rounded-lg border-l-2 border-slate-300 bg-white/75 px-3 py-3 text-base leading-6 text-(--color-ink)">
           {event.note}
         </blockquote>
       ) : (
-        <p className="mt-3 text-xs text-(--color-ink-muted)">No note supplied by the resident.</p>
+        <p className="mt-3 text-sm text-(--color-ink-muted)">No note supplied by the resident.</p>
       )}
 
-      <dl className="mt-3 grid gap-2 text-[11px] text-(--color-ink-muted) sm:grid-cols-3">
-        <div>
-          <dt className="font-medium uppercase tracking-wide">Raised</dt>
+      <dl className="mt-4 grid divide-y divide-slate-200/80 text-sm text-(--color-ink-muted) sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <div className="py-2 sm:py-0 sm:pr-4">
+          <dt className="text-xs font-medium uppercase tracking-wide">Raised</dt>
           <dd>{formatDateTime(event.raisedAt)}</dd>
         </div>
-        <div>
-          <dt className="font-medium uppercase tracking-wide">Acknowledged</dt>
+        <div className="py-2 sm:px-4 sm:py-0">
+          <dt className="text-xs font-medium uppercase tracking-wide">Acknowledged</dt>
           <dd>
             {event.acknowledgedAt
               ? `${formatDateTime(event.acknowledgedAt)}${
@@ -407,8 +444,8 @@ function SosAlertCard({
               : 'Pending'}
           </dd>
         </div>
-        <div>
-          <dt className="font-medium uppercase tracking-wide">Resolved</dt>
+        <div className="py-2 sm:py-0 sm:pl-4">
+          <dt className="text-xs font-medium uppercase tracking-wide">Resolved</dt>
           <dd>
             {event.resolvedAt
               ? `${formatDateTime(event.resolvedAt)}${
@@ -467,7 +504,7 @@ function ResolveSosDialog({
           Resolve the alert raised by <strong>{sosResidentLabel(event)}</strong> at{' '}
           {sosPropertyLabel(event)}.
         </p>
-        <p className="mt-1 text-xs text-(--color-ink-muted)">
+        <p className="mt-1 text-sm text-(--color-ink-muted)">
           Resolution is final. The resident sees the status and timestamps, but not the internal
           note below.
         </p>
@@ -482,7 +519,8 @@ function ResolveSosDialog({
               maxLength={500}
               rows={4}
               placeholder="What was done to close the alert?"
-              className={`${inputClass} min-h-28 resize-y`}
+              className={`${inputClass} min-h-28 resize-y text-base`}
+              style={{ fontSize: '16px' }}
             />
           </Field>
           <p className="mt-1 text-right text-[11px] text-(--color-ink-muted)">{note.length}/500</p>
@@ -504,11 +542,4 @@ function ResolveSosDialog({
       </form>
     </Modal>
   );
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }

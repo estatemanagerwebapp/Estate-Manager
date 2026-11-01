@@ -23,6 +23,7 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../../components/ui';
+import { formatDateTime } from '../../lib/format';
 
 /**
  * Resident facilities page (S8, Phase 7).
@@ -193,7 +194,8 @@ export function ResidentFacilitiesPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Starts">
                 <input
-                  className={inputClass}
+                  className={`${inputClass} text-base`}
+                  style={{ fontSize: '16px' }}
                   type="datetime-local"
                   value={startsAt}
                   onChange={(event) => {
@@ -204,7 +206,8 @@ export function ResidentFacilitiesPage() {
               </Field>
               <Field label="Ends">
                 <input
-                  className={inputClass}
+                  className={`${inputClass} text-base`}
+                  style={{ fontSize: '16px' }}
                   type="datetime-local"
                   value={endsAt}
                   onChange={(event) => {
@@ -217,7 +220,8 @@ export function ResidentFacilitiesPage() {
             <div className="mt-4">
               <Field label="Attendees (optional)">
                 <input
-                  className={inputClass}
+                  className={`${inputClass} text-base`}
+                  style={{ fontSize: '16px' }}
                   type="number"
                   min={1}
                   max={500}
@@ -228,10 +232,20 @@ export function ResidentFacilitiesPage() {
             </div>
 
             <div className="mt-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-(--color-ink-muted)">
-              {bookingFacility.estate.name} ·{' '}
-              {bookingFacility.usageFeeKobo === 0
-                ? 'Free booking'
-                : `${formatNaira(bookingFacility.usageFeeKobo)} usage fee`}
+              <p>
+                {bookingFacility.estate.name} · {bookingFacility.openingTime}–
+                {bookingFacility.closingTime}
+              </p>
+              <p className="mt-1">
+                {bookingFacility.usageFeeKobo === 0
+                  ? 'Free booking'
+                  : `${formatNaira(bookingFacility.usageFeeKobo)} usage fee`}
+                {bookingFacility.bookingThresholdHours != null &&
+                  ` · Book at least ${bookingFacility.bookingThresholdHours} hours ahead`}
+              </p>
+              <p className="mt-1">
+                Bookings must start and end within these hours on the same day.
+              </p>
             </div>
 
             {(actionError || watchError) && (
@@ -316,6 +330,11 @@ export function ResidentFacilitiesPage() {
                         {facility.description}
                       </p>
                     )}
+                    <p className="mt-1 text-xs font-medium text-(--color-ink-muted)">
+                      Open {facility.openingTime}–{facility.closingTime}
+                      {facility.bookingThresholdHours != null &&
+                        ` · ${facility.bookingThresholdHours}h minimum notice`}
+                    </p>
                   </div>
                   {facility.bookable && (
                     <Button size="sm" variant="secondary" onClick={() => openBooking(facility)}>
@@ -438,11 +457,4 @@ function formatWindow(startsAt: string, endsAt: string): string {
   const time = (date: Date) =>
     date.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
   return `${day} · ${time(starts)}–${time(ends)}`;
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }

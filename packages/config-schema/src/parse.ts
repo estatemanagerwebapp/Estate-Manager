@@ -7,7 +7,7 @@ import {
 } from './organization-config.schema.js';
 
 export interface ConfigIssue {
-  /** Dot-separated path to the offending field, e.g. `assetModel.types.0.key`. */
+  /** Dot-separated path to the offending field, e.g. `payments.bankTransfer.accountNumber`. */
   path: string;
   message: string;
 }

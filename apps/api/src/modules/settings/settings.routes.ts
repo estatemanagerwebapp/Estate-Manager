@@ -1,7 +1,12 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { SOS_CONTACT_CATEGORIES, type OrganizationSettingsUpdateInput } from '@silverstone/shared';
-import { getAuth, requireAuth, requirePermission } from '../../middleware/auth-guard.js';
+import {
+  getAuth,
+  requireAuth,
+  requirePermission,
+  routeParam,
+} from '../../middleware/auth-guard.js';
 import { AppError, ValidationError } from '../../lib/errors.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
@@ -14,6 +19,7 @@ export interface SettingsRouteOptions {
   sessions: PrismaSessionRepository;
   permissions: PermissionResolver;
   organizationId: string;
+  estateScoped?: boolean;
 }
 
 const nullableString = (max: number) => z.string().trim().max(max).nullable().optional();
@@ -104,7 +110,7 @@ const updateSchema = z
  * is not reachable from here.
  */
 export function createSettingsRouter(options: SettingsRouteOptions): Router {
-  const router = Router();
+  const router = Router({ mergeParams: options.estateScoped === true });
   const { settingsService, sessions, permissions, organizationId } = options;
 
   const authGuard = requireAuth((sessionId) => sessions.verify(sessionId));
@@ -117,7 +123,9 @@ export function createSettingsRouter(options: SettingsRouteOptions): Router {
       if (!auth || auth.organizationId !== organizationId) {
         throw new AppError(403, 'FORBIDDEN', 'Organization mismatch');
       }
-      const settings = await settingsService.get();
+      const settings = options.estateScoped
+        ? await settingsService.getForEstate(organizationId, routeParam(req, 'estateId'))
+        : await settingsService.get();
       res.status(200).json({ data: settings });
     } catch (error) {
       next(error);
@@ -144,14 +152,18 @@ export function createSettingsRouter(options: SettingsRouteOptions): Router {
       const requestIdHeader = res.getHeader('x-request-id');
       const requestId = Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader;
 
-      const settings = await settingsService.update(
-        {
-          organizationId,
-          actorId: auth.userId,
-          requestId: typeof requestId === 'string' ? requestId : null,
-        },
-        parsed.data as OrganizationSettingsUpdateInput,
-      );
+      const context = {
+        organizationId,
+        actorId: auth.userId,
+        requestId: typeof requestId === 'string' ? requestId : null,
+      };
+      const settings = options.estateScoped
+        ? await settingsService.updateForEstate(
+            context,
+            routeParam(req, 'estateId'),
+            parsed.data as OrganizationSettingsUpdateInput,
+          )
+        : await settingsService.update(context, parsed.data as OrganizationSettingsUpdateInput);
       res.status(200).json({ data: settings });
     } catch (error) {
       next(error);

@@ -27,30 +27,26 @@ export const queryKeys = {
   dashboard: {
     all: ['dashboard'] as const,
     kpis: ['dashboard', 'kpis'] as const,
+    guard: ['dashboard', 'guard'] as const,
     activity: (limit: number) => ['dashboard', 'activity', limit] as const,
   },
   navigation: {
-    all: ['navigation'] as const,
     counts: ['navigation', 'counts'] as const,
+  },
+  sync: {
+    snapshot: ['sync'] as const,
   },
   houseTypes: ['house-types'] as const,
   estates: {
     all: ['estates'] as const,
-    detail: (estateId: string) => ['estate', estateId] as const,
-  },
-  properties: {
-    all: ['properties'] as const,
-    detail: (propertyId: string) => ['property', propertyId] as const,
   },
   users: {
     all: ['users'] as const,
-    list: (filter: UserFilter) => ['users', filter] as const,
   },
   residents: {
     all: ['residents'] as const,
   },
   audit: {
-    all: ['activity'] as const,
     list: (filter: AuditEventFilter = {}) => ['activity', filter] as const,
   },
   orgImports: {
@@ -60,35 +56,27 @@ export const queryKeys = {
   // Operator modules added in later phases. Keeping the names here makes the
   // invalidation convention visible before the screens exist.
   messages: {
-    all: ['messages'] as const,
     list: (filter: OperatorMessageFilter = {}) => ['messages', filter] as const,
-    detail: (threadId: string) => ['message-thread', threadId] as const,
   },
   complaints: {
-    all: ['complaints'] as const,
     list: (filter: OperatorComplaintFilter = {}) => ['complaints', filter] as const,
-    detail: (complaintId: string) => ['complaint', complaintId] as const,
   },
   invoices: {
-    all: ['invoices'] as const,
     list: (filter: OperatorInvoiceFilter = {}) => ['invoices', filter] as const,
-    detail: (invoiceId: string) => ['invoice', invoiceId] as const,
   },
   payments: {
-    all: ['payments'] as const,
     list: (filter: OperatorPaymentFilter = {}) => ['payments', filter] as const,
   },
   accessCodes: {
-    all: ['access-codes'] as const,
     list: (filter: OperatorAccessCodeFilter = {}) => ['access-codes', filter] as const,
   },
   verifications: {
-    all: ['verifications'] as const,
     list: (filter: AccessVerificationFilter = {}) => ['verifications', filter] as const,
   },
   facilities: {
     all: ['facilities'] as const,
     list: (filter: OperatorFacilityFilter = {}) => ['facilities', filter] as const,
+    detail: (facilityId: string) => ['facilities', 'detail', facilityId] as const,
   },
   bookings: {
     all: ['bookings'] as const,
@@ -100,7 +88,6 @@ export const queryKeys = {
     dashboard: ['resident', 'dashboard'] as const,
   },
   sos: {
-    all: ['sos'] as const,
     list: (filter: OperatorSosFilter = {}) => ['sos', filter] as const,
   },
   administrators: {
@@ -109,5 +96,6 @@ export const queryKeys = {
   },
   settings: {
     all: ['settings'] as const,
+    estate: (estateId: string) => ['estate-settings', estateId] as const,
   },
 };

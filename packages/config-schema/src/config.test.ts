@@ -13,20 +13,6 @@ import { resolveOrganizationConfig } from './resolve.js';
 const validDocument = () => ({
   schemaVersion: CONFIG_SCHEMA_VERSION,
   organization: { name: 'Silverstone Managers', slug: 'silverstone' },
-  assetModel: {
-    types: [
-      { key: 'house', label: 'House', detailKind: 'PROPERTY' },
-      {
-        key: 'apartment_block',
-        label: 'Apartment block',
-        detailKind: 'PROPERTY',
-        requiresUnits: true,
-        unitTypeKeys: ['two_bedroom'],
-        defaultUnitTypeKey: 'two_bedroom',
-      },
-    ],
-    unitTypes: [{ key: 'two_bedroom', label: 'Two bedroom', bedrooms: 2 }],
-  },
 });
 
 const issuePaths = (input: unknown): string[] => {
@@ -46,7 +32,6 @@ describe('baseline configuration', () => {
     expect(config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(config.organization.currency).toBe('NGN');
     expect(config.organization.timezone).toBe('Africa/Lagos');
-    expect(config.assetModel.types.length).toBeGreaterThan(0);
     expect(config.modules.estates).toBe(true);
     expect(config.fees.registration.amountKobo).toBe(0);
     expect(config.onboarding.residentCode.persistent).toBe(true);
@@ -54,7 +39,6 @@ describe('baseline configuration', () => {
     expect(config.accessCodes.maxDurationHours).toBe(8760);
     expect(config.payments.bankTransfer.bankName).toBeNull();
     expect(config.sos.contacts).toEqual([]);
-    expect(config.customFields).toEqual([]);
   });
 
   it('keeps module defaults aligned with the shared module contract', () => {
@@ -108,100 +92,6 @@ describe('configuration validation', () => {
     const fractional = { ...validDocument(), fees: { registration: { amountKobo: 100.5 } } };
     expect(issuePaths(negative)).toContain('fees.registration.amountKobo');
     expect(issuePaths(fractional)).toContain('fees.registration.amountKobo');
-  });
-
-  it('rejects duplicate asset type keys', () => {
-    const document = validDocument();
-    document.assetModel.types.push({ key: 'house', label: 'Duplicate', detailKind: 'PROPERTY' });
-    expect(issuePaths(document)).toContain('assetModel.types.2.key');
-  });
-
-  it('rejects unit-bearing asset types without permitted unit types', () => {
-    const document = validDocument();
-    document.assetModel.types[1] = {
-      key: 'apartment_block',
-      label: 'Apartment block',
-      detailKind: 'PROPERTY',
-      requiresUnits: true,
-      unitTypeKeys: [],
-    } as never;
-    expect(issuePaths(document)).toContain('assetModel.types.1.unitTypeKeys');
-  });
-
-  it('rejects references to undeclared unit types', () => {
-    const document = validDocument();
-    document.assetModel.types[1] = {
-      key: 'apartment_block',
-      label: 'Apartment block',
-      detailKind: 'PROPERTY',
-      requiresUnits: true,
-      unitTypeKeys: ['penthouse'],
-      defaultUnitTypeKey: 'two_bedroom',
-    } as never;
-    expect(issuePaths(document)).toContain('assetModel.types.1.unitTypeKeys');
-  });
-
-  it('rejects a default unit type that is not permitted for the asset type', () => {
-    const document = validDocument();
-    document.assetModel.types[1] = {
-      key: 'apartment_block',
-      label: 'Apartment block',
-      detailKind: 'PROPERTY',
-      requiresUnits: true,
-      unitTypeKeys: ['two_bedroom'],
-      defaultUnitTypeKey: 'penthouse',
-    } as never;
-    expect(issuePaths(document)).toContain('assetModel.types.1.defaultUnitTypeKey');
-  });
-
-  it('rejects unit types on assets that do not hold units', () => {
-    const document = validDocument();
-    document.assetModel.types[0] = {
-      key: 'house',
-      label: 'House',
-      detailKind: 'PROPERTY',
-      unitTypeKeys: ['two_bedroom'],
-    } as never;
-    expect(issuePaths(document)).toContain('assetModel.types.0.unitTypeKeys');
-  });
-
-  it('requires options for select fields and forbids them elsewhere', () => {
-    const select = {
-      ...validDocument(),
-      customFields: [
-        { key: 'ownership_type', label: 'Ownership type', entity: 'PROPERTY', type: 'SELECT' },
-      ],
-    };
-    const textWithOptions = {
-      ...validDocument(),
-      customFields: [
-        {
-          key: 'notes',
-          label: 'Notes',
-          entity: 'RESIDENT',
-          type: 'TEXT',
-          options: [{ value: 'a', label: 'A' }],
-        },
-      ],
-    };
-    expect(issuePaths(select)).toContain('customFields.0.options');
-    expect(issuePaths(textWithOptions)).toContain('customFields.0.options');
-  });
-
-  it('rejects custom fields pointing at undeclared asset types', () => {
-    const document = {
-      ...validDocument(),
-      customFields: [
-        {
-          key: 'plot_size',
-          label: 'Plot size',
-          entity: 'PROPERTY',
-          type: 'NUMBER',
-          assetTypeKey: 'mansion',
-        },
-      ],
-    };
-    expect(issuePaths(document)).toContain('customFields.0.assetTypeKey');
   });
 
   it('rejects duplicate role grants', () => {

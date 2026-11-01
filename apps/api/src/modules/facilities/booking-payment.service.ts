@@ -1,6 +1,10 @@
 import { OPERATOR_PAYMENT_METHODS } from '@silverstone/shared';
 import { AppError } from '../../lib/errors.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import {
+  requireAuditActor,
+  requireAuditOrganization,
+  type AuthAuditContext,
+} from '../auth/auth.service.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type { PrismaFinanceRepository } from '../resident/finance-repository.js';
 import type { PrismaFacilitiesRepository } from './facilities-repository.js';
@@ -37,8 +41,8 @@ export class BookingPaymentService {
     bookingId: string,
     input: OperatorConfirmBookingPaymentInput,
   ): Promise<OperatorConfirmBookingPaymentResponse> {
-    const actorId = requireActor(context);
-    const organizationId = requireOrganization(context);
+    const actorId = requireAuditActor(context);
+    const organizationId = requireAuditOrganization(context);
     const now = this.now();
 
     const booking = await this.options.bookings.findBooking(organizationId, bookingId);
@@ -157,18 +161,4 @@ function parseDate(value: string): Date {
     throw new AppError(400, 'VALIDATION_ERROR', 'Invalid payment date');
   }
   return date;
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
-}
-
-function requireOrganization(context: AuthAuditContext): string {
-  if (!context.organizationId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.organizationId;
 }

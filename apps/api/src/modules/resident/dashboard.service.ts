@@ -33,21 +33,27 @@ export interface ResidentDashboardServiceOptions {
 export class ResidentDashboardService {
   constructor(private readonly options: ResidentDashboardServiceOptions) {}
 
-  async get(organizationId: string, userId: string): Promise<ResidentDashboardView> {
+  async get(
+    organizationId: string,
+    userId: string,
+    accountUserIds: readonly string[] = [userId],
+  ): Promise<ResidentDashboardView> {
     // Sequential on purpose: every service opens its own queries, and the
     // database connection budget is small. One section at a time keeps the
     // pool quiet.
     const profile = await this.options.profile.view(organizationId, userId);
 
     const properties = this.options.properties
-      ? await this.options.properties.list(organizationId, userId)
+      ? await this.options.properties.list(organizationId, accountUserIds)
       : null;
 
     const finance = this.options.finance
-      ? await this.options.finance.view(organizationId, userId)
+      ? await this.options.finance.view(organizationId, accountUserIds)
       : null;
 
-    const codes = this.options.codes ? await this.options.codes.list(organizationId, userId) : null;
+    const codes = this.options.codes
+      ? await this.options.codes.list(organizationId, accountUserIds, null)
+      : null;
 
     const complaints = this.options.complaints
       ? await this.options.complaints.list(organizationId, userId)
@@ -75,7 +81,7 @@ export class ResidentDashboardService {
       finance: {
         outstandingCount: finance?.outstanding.length ?? 0,
         outstandingTotalKobo:
-          finance?.outstanding.reduce((total, invoice) => total + invoice.amountKobo, 0) ?? 0,
+          finance?.outstanding.reduce((total, invoice) => total + invoice.outstandingKobo, 0) ?? 0,
       },
       codes: {
         activeCount: (codes?.codes ?? []).filter((code) => code.status === 'ACTIVE').length,

@@ -1,5 +1,6 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type {
+  AccessCodeAuthenticationType,
   AccessCodeKind,
   AccessCodeStatus,
   AccessVerificationGate,
@@ -47,6 +48,7 @@ export interface OperatorAccessCodeRecord {
   visitorName: string | null;
   carPlate: string | null;
   idDocumentUrl: string | null;
+  authenticationType: AccessCodeAuthenticationType;
   issuedAt: Date;
   revokedAt: Date | null;
   resident: GateResidentRecord | null;
@@ -56,6 +58,7 @@ export interface OperatorAccessCodeRecord {
 export interface AccessCodeFilter {
   status?: AccessCodeStatus;
   kind?: AccessCodeKind;
+  estateId?: string;
   limit?: number;
 }
 
@@ -70,6 +73,7 @@ export interface AccessVerificationRecord {
   visitorName: string | null;
   carPlate: string | null;
   idDocumentUrl: string | null;
+  authenticationType: AccessCodeAuthenticationType | null;
   resident: GateResidentRecord | null;
   property: GatePropertyRecord | null;
   verifiedBy: GateActorRecord | null;
@@ -78,7 +82,12 @@ export interface AccessVerificationRecord {
 export interface VerificationFilter {
   outcome?: AccessVerificationOutcome;
   gate?: AccessVerificationGate;
+  estateId?: string;
   limit?: number;
+  /** Inclusive lower bound on `occurredAt`. */
+  since?: Date;
+  /** Exclusive upper bound on `occurredAt`. */
+  until?: Date;
 }
 
 export interface CreateAccessVerificationInput {
@@ -129,9 +138,10 @@ const VERIFICATION_INCLUDE = {
       visitorName: true,
       carPlate: true,
       idDocumentUrl: true,
+      authenticationType: true,
     },
   },
-} satisfies Record<string, unknown>;
+} satisfies Prisma.AccessVerificationInclude;
 
 type PrismaAccessCodeRow = {
   id: string;
@@ -144,6 +154,7 @@ type PrismaAccessCodeRow = {
   visitorName: string | null;
   carPlate: string | null;
   idDocumentUrl: string | null;
+  authenticationType: string;
   issuedAt: Date;
   revokedAt: Date | null;
   user: GateResidentRecord | null;
@@ -162,6 +173,7 @@ type PrismaVerificationRow = {
     visitorName: string | null;
     carPlate: string | null;
     idDocumentUrl: string | null;
+    authenticationType: string;
   } | null;
   resident: GateResidentRecord | null;
   property: GatePropertyRecord | null;
@@ -177,22 +189,42 @@ export class PrismaGateRepository {
     filter: AccessCodeFilter,
     now: Date,
   ): Promise<OperatorAccessCodeRecord[]> {
+    const statusFilter: Prisma.AccessCodeWhereInput | undefined =
+      filter.status === 'ACTIVE'
+        ? {
+            status: 'ACTIVE',
+            OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+          }
+        : filter.status === 'EXPIRED'
+          ? {
+              OR: [{ status: 'EXPIRED' }, { status: 'ACTIVE', validUntil: { lt: now } }],
+            }
+          : filter.status
+            ? { status: filter.status }
+            : undefined;
+    const estateFilter: Prisma.AccessCodeWhereInput | undefined = filter.estateId
+      ? {
+          OR: [
+            { property: { is: { estateId: filter.estateId } } },
+            {
+              user: {
+                is: {
+                  residentOnboardings: {
+                    some: { property: { is: { estateId: filter.estateId } } },
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : undefined;
     const rows = await this.prisma.accessCode.findMany({
       where: {
         organizationId,
         ...(filter.kind ? { kind: filter.kind } : {}),
-        ...(filter.status === 'ACTIVE'
-          ? {
-              status: 'ACTIVE',
-              OR: [{ validUntil: null }, { validUntil: { gte: now } }],
-            }
-          : filter.status === 'EXPIRED'
-            ? {
-                OR: [{ status: 'EXPIRED' }, { status: 'ACTIVE', validUntil: { lt: now } }],
-              }
-            : filter.status
-              ? { status: filter.status }
-              : {}),
+        ...(estateFilter || statusFilter
+          ? { AND: [estateFilter, statusFilter].filter((condition) => condition !== undefined) }
+          : {}),
       },
       orderBy: [{ createdAt: 'desc' }],
       take: filter.limit ?? 100,
@@ -281,12 +313,105 @@ export class PrismaGateRepository {
         organizationId,
         ...(filter.outcome ? { outcome: filter.outcome } : {}),
         ...(filter.gate ? { gate: filter.gate } : {}),
+        ...(filter.estateId
+          ? {
+              OR: [
+                { property: { is: { estateId: filter.estateId } } },
+                {
+                  resident: {
+                    is: {
+                      residentOnboardings: {
+                        some: { property: { is: { estateId: filter.estateId } } },
+                      },
+                    },
+                  },
+                },
+                {
+                  accessCode: {
+                    is: {
+                      OR: [
+                        { property: { is: { estateId: filter.estateId } } },
+                        {
+                          user: {
+                            is: {
+                              residentOnboardings: {
+                                some: { property: { is: { estateId: filter.estateId } } },
+                              },
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
+        ...(filter.since || filter.until
+          ? {
+              occurredAt: {
+                ...(filter.since ? { gte: filter.since } : {}),
+                ...(filter.until ? { lt: filter.until } : {}),
+              },
+            }
+          : {}),
       },
       orderBy: [{ occurredAt: 'desc' }],
       take: filter.limit ?? 100,
       include: VERIFICATION_INCLUDE,
     });
     return (rows as PrismaVerificationRow[]).map(toVerificationRecord);
+  }
+
+  /**
+   * Codes a visitor is expected to present today: still valid, not revoked,
+   * and either issued today or expiring before the day ends.
+   *
+   * A standing code issued before today with no expiry is deliberately
+   * excluded — nobody scheduled that visitor for today, and including every
+   * open-ended code would turn the list into a second register. Expiring
+   * codes are ordered first so the gate sees the tightest window at the top.
+   */
+  async listExpectedToday(
+    organizationId: string,
+    now: Date,
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<OperatorAccessCodeRecord[]> {
+    const rows = await this.prisma.accessCode.findMany({
+      where: {
+        organizationId,
+        status: 'ACTIVE',
+        AND: [
+          { OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
+          { OR: [{ issuedAt: { gte: dayStart } }, { validUntil: { lt: dayEnd } }] },
+        ],
+      },
+      orderBy: [{ validUntil: 'asc' }, { issuedAt: 'desc' }],
+      take: 50,
+      include: ACCESS_CODE_INCLUDE,
+    });
+    return (rows as PrismaAccessCodeRow[]).map(toAccessCodeRecord);
+  }
+
+  /** Today's verification attempts grouped by outcome. */
+  async countVerificationsToday(
+    organizationId: string,
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<{ granted: number; denied: number }> {
+    const rows = await this.prisma.accessVerification.groupBy({
+      by: ['outcome'],
+      where: { organizationId, occurredAt: { gte: dayStart, lt: dayEnd } },
+      _count: { _all: true },
+    });
+    let granted = 0;
+    let denied = 0;
+    for (const row of rows) {
+      if (row.outcome === 'GRANTED') granted = row._count._all;
+      if (row.outcome === 'DENIED') denied = row._count._all;
+    }
+    return { granted, denied };
   }
 }
 
@@ -308,6 +433,7 @@ function toAccessCodeRecord(row: PrismaAccessCodeRow): OperatorAccessCodeRecord 
     visitorName: row.visitorName,
     carPlate: row.carPlate,
     idDocumentUrl: row.idDocumentUrl,
+    authenticationType: row.authenticationType as AccessCodeAuthenticationType,
     issuedAt: row.issuedAt,
     revokedAt: row.revokedAt,
     resident: row.user,
@@ -327,6 +453,8 @@ function toVerificationRecord(row: PrismaVerificationRow): AccessVerificationRec
     visitorName: row.accessCode?.visitorName ?? null,
     carPlate: row.accessCode?.carPlate ?? null,
     idDocumentUrl: row.accessCode?.idDocumentUrl ?? null,
+    authenticationType:
+      (row.accessCode?.authenticationType as AccessCodeAuthenticationType | undefined) ?? null,
     resident: row.resident,
     property: row.property,
     verifiedBy: row.verifiedBy,

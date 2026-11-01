@@ -64,7 +64,18 @@ export class PermissionResolver {
       // to the documented default.
     }
 
-    return permissionsForRole(role as RoleKey, overrides);
+    const effective = permissionsForRole(role as RoleKey, overrides);
+    // Account creation, role changes and estate staff allocation are reserved
+    // for the organization-wide super administrator. A stale/broad grant must
+    // never turn an estate-scoped operator into a global user administrator.
+    return role === 'SUPER_ADMIN'
+      ? effective
+      : effective.filter(
+          (permission) =>
+            permission !== 'user.manage' &&
+            permission !== 'organization.manage' &&
+            permission !== 'config.manage',
+        );
   }
 
   async can(role: string, permission: string): Promise<boolean> {

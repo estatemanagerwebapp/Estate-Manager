@@ -24,6 +24,11 @@ import { PrismaResidentOnboardingRepository } from './modules/auth/resident-onbo
 import { PrismaFinanceRepository } from './modules/resident/finance-repository.js';
 import { PrismaComplaintRepository } from './modules/resident/complaints-repository.js';
 import { PrismaSosRepository } from './modules/resident/sos-repository.js';
+import { PrismaGateRepository } from './modules/gate/gate-repository.js';
+import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
+import { PrismaCommunityRepository } from './modules/resident/community-repository.js';
+import { PrismaMessageRepository } from './modules/resident/messages-repository.js';
+import { PrismaBookingRepository } from './modules/resident/bookings-repository.js';
 import { PermissionResolver } from './modules/auth/permission-resolver.js';
 import { MockEmailAdapter } from './modules/auth/email-adapter.js';
 import { DEFAULT_MODULE_FLAGS, type ModuleFlags } from '@silverstone/shared';
@@ -42,6 +47,11 @@ let residentOnboarding: PrismaResidentOnboardingRepository;
 let finance: PrismaFinanceRepository;
 let complaints: PrismaComplaintRepository;
 let sos: PrismaSosRepository;
+let gate: PrismaGateRepository;
+let notifications: PrismaNotificationRepository;
+let community: PrismaCommunityRepository;
+let messages: PrismaMessageRepository;
+let bookings: PrismaBookingRepository;
 let email: MockEmailAdapter;
 let organizationId = '';
 
@@ -52,7 +62,7 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildApp(loadModules?: () => Promise<ModuleFlags>): Express {
+function buildApp(loadModules?: () => Promise<ModuleFlags>, now?: () => Date): Express {
   const permissions = new PermissionResolver(async () => []);
   const authService = new AuthService(
     users,
@@ -88,8 +98,27 @@ function buildApp(loadModules?: () => Promise<ModuleFlags>): Express {
       finance,
       complaints,
       sos,
+      gate,
       organizationId,
       ...(loadModules ? { loadModules } : {}),
+      ...(now ? { now } : {}),
+    },
+    sync: {
+      sessions,
+      permissions,
+      organizationId,
+      audit,
+      notifications,
+      community,
+      navigation: {
+        residentOnboarding,
+        finance,
+        complaints,
+        messages,
+        bookings,
+        sos,
+        ...(loadModules ? { loadModules } : {}),
+      },
     },
   });
 }
@@ -137,6 +166,11 @@ beforeAll(async () => {
   finance = new PrismaFinanceRepository(prisma);
   complaints = new PrismaComplaintRepository(prisma);
   sos = new PrismaSosRepository(prisma);
+  gate = new PrismaGateRepository(prisma);
+  notifications = new PrismaNotificationRepository(prisma);
+  community = new PrismaCommunityRepository(prisma);
+  messages = new PrismaMessageRepository(prisma);
+  bookings = new PrismaBookingRepository(prisma);
 
   const org = await prisma.organization.create({
     data: { slug: `dash_test_${uniqueSuffix()}`, name: 'Dashboard Test' },
@@ -147,6 +181,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await prisma.notification.deleteMany({ where: { organizationId } });
+  await prisma.announcement.deleteMany({ where: { organizationId } });
+  await prisma.estateBroadcast.deleteMany({ where: { organizationId } });
   await prisma.auditEvent.deleteMany({ where: { organizationId } });
   await prisma.session.deleteMany({ where: { user: { organizationId } } });
   await prisma.user.deleteMany({ where: { organizationId } });
@@ -281,7 +318,6 @@ describe('dashboard KPIs', () => {
       expect.arrayContaining([
         expect.objectContaining({ key: 'residents', count: 1 }),
         expect.objectContaining({ key: 'billing', count: 1 }),
-        expect.objectContaining({ key: 'complaints', count: 1 }),
         expect.objectContaining({ key: 'sos', count: 1 }),
       ]),
     );
@@ -346,7 +382,7 @@ describe('dashboard KPIs', () => {
     expect(kpis.activeSos).toBe(1);
     expect(kpis.openComplaints).toBe(1);
     const keys = response.body.data.attention.map((item: { key: string }) => item.key);
-    expect(keys).toEqual(expect.arrayContaining(['billing', 'complaints', 'sos']));
+    expect(keys).toEqual(expect.arrayContaining(['billing', 'sos']));
     expect(keys).not.toContain('residents');
   });
 
@@ -475,5 +511,314 @@ describe('dashboard activity', () => {
       .set('Cookie', cookie);
     expect(secondPage.status).toBe(200);
     expect(secondPage.body.data.events[0].id).toBe(referenceIds[2]);
+  });
+});
+
+describe('guard overview', () => {
+  // Fixed local midday: the day window is deterministic on any machine, and
+  // the same clock is injected into the loader so "today" means this instant.
+  const fixedNow = new Date(2026, 5, 15, 12, 0, 0);
+  const dayStart = new Date(fixedNow);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  async function loginAs(email: string, password: string): Promise<string> {
+    const login = await request(app).post('/api/v1/auth/login').send({ email, password });
+    expect(login.status).toBe(200);
+    return cookieFrom(login);
+  }
+
+  it('returns 401 when unauthenticated', async () => {
+    const response = await request(app).get('/api/v1/dashboard/guard');
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('denies a role without verification.read', async () => {
+    const resident = await createTestUser({ role: 'RESIDENT' });
+    const cookie = await loginAs(resident.email, SUPER_ADMIN_PASSWORD);
+
+    const response = await request(app).get('/api/v1/dashboard/guard').set('Cookie', cookie);
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('gives a guard SOS, expected visitors and today’s verification counts', async () => {
+    await seedData();
+    const guard = await createTestUser({ role: 'GUARD', password: GUARD_PASSWORD });
+    const resident = await createTestUser({
+      role: 'RESIDENT',
+      password: 'Res1dentSecretXyz',
+    });
+
+    const property = await prisma.property.findFirst({
+      where: { organizationId },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(property).not.toBeNull();
+
+    async function accessCode(input: {
+      issuedAt: Date;
+      validUntil: Date | null;
+      status?: string;
+      visitorName: string;
+    }) {
+      return prisma.accessCode.create({
+        data: {
+          organizationId,
+          userId: resident.id,
+          propertyId: property!.id,
+          kind: 'ENTRY',
+          status: input.status ?? 'ACTIVE',
+          codeHash: randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, ''),
+          codePrefix: 'GUARD1',
+          issuedAt: input.issuedAt,
+          validUntil: input.validUntil,
+          visitorName: input.visitorName,
+        },
+      });
+    }
+
+    // Expected: issued today, still valid.
+    const issuedToday = await accessCode({
+      issuedAt: new Date(dayStart.getTime() + 60 * 60 * 1000),
+      validUntil: new Date(fixedNow.getTime() + 2 * 60 * 60 * 1000),
+      visitorName: 'Visitor Issued Today',
+    });
+    // Expected: issued earlier, expiring later today.
+    const expiringToday = await accessCode({
+      issuedAt: new Date(dayStart.getTime() - 2 * 24 * 60 * 60 * 1000),
+      validUntil: new Date(fixedNow.getTime() + 60 * 60 * 1000),
+      visitorName: 'Visitor Expiring Today',
+    });
+    // Excluded: issued earlier, valid for days.
+    const futureWindow = await accessCode({
+      issuedAt: new Date(dayStart.getTime() - 2 * 24 * 60 * 60 * 1000),
+      validUntil: new Date(dayEnd.getTime() + 3 * 24 * 60 * 60 * 1000),
+      visitorName: 'Visitor Next Week',
+    });
+    // Excluded: old standing code with no expiry.
+    const openEnded = await accessCode({
+      issuedAt: new Date(dayStart.getTime() - 3 * 24 * 60 * 60 * 1000),
+      validUntil: null,
+      visitorName: 'Visitor No Expiry',
+    });
+    // Excluded: revoked.
+    const revoked = await accessCode({
+      issuedAt: new Date(dayStart.getTime() + 60 * 60 * 1000),
+      validUntil: new Date(fixedNow.getTime() + 2 * 60 * 60 * 1000),
+      status: 'REVOKED',
+      visitorName: 'Visitor Revoked',
+    });
+
+    async function verification(input: {
+      gate: 'ENTRY' | 'EXIT';
+      outcome: 'GRANTED' | 'DENIED';
+      reason: 'NOT_FOUND' | null;
+      occurredAt: Date;
+      accessCodeId: string | null;
+    }) {
+      return prisma.accessVerification.create({
+        data: {
+          organizationId,
+          accessCodeId: input.accessCodeId,
+          residentId: resident.id,
+          propertyId: property!.id,
+          verifiedById: guard.id,
+          gate: input.gate,
+          outcome: input.outcome,
+          reason: input.reason,
+          codePrefix: 'GUAR',
+          occurredAt: input.occurredAt,
+        },
+      });
+    }
+
+    const granted = await verification({
+      gate: 'ENTRY',
+      outcome: 'GRANTED',
+      reason: null,
+      occurredAt: new Date(fixedNow.getTime() - 60 * 60 * 1000),
+      accessCodeId: issuedToday.id,
+    });
+    const denied = await verification({
+      gate: 'EXIT',
+      outcome: 'DENIED',
+      reason: 'NOT_FOUND',
+      occurredAt: new Date(fixedNow.getTime() - 2 * 60 * 60 * 1000),
+      accessCodeId: null,
+    });
+    await verification({
+      gate: 'ENTRY',
+      outcome: 'GRANTED',
+      reason: null,
+      occurredAt: new Date(dayStart.getTime() - 6 * 60 * 60 * 1000),
+      accessCodeId: issuedToday.id,
+    });
+
+    const expectedSos = await prisma.sosEvent.count({
+      where: { organizationId, status: { in: ['RAISED', 'ACKNOWLEDGED'] } },
+    });
+
+    const fixedApp = buildApp(undefined, () => fixedNow);
+    const cookie = await loginAs(guard.email, GUARD_PASSWORD);
+    const response = await request(fixedApp).get('/api/v1/dashboard/guard').set('Cookie', cookie);
+    expect(response.status).toBe(200);
+
+    const data = response.body.data;
+    expect(data.activeSos).toBe(expectedSos);
+    expect(data.activeSosEvents).toHaveLength(Math.min(3, expectedSos));
+    expect(
+      data.activeSosEvents.every((event: { status: string }) =>
+        ['RAISED', 'ACKNOWLEDGED'].includes(event.status),
+      ),
+    ).toBe(true);
+
+    // Ordered by the tightest window first.
+    expect(data.expectedToday.map((code: { id: string }) => code.id)).toEqual([
+      expiringToday.id,
+      issuedToday.id,
+    ]);
+    expect(data.expectedToday[0].visitorName).toBe('Visitor Expiring Today');
+    const expectedIds = new Set(data.expectedToday.map((code: { id: string }) => code.id));
+    for (const excluded of [futureWindow, openEnded, revoked]) {
+      expect(expectedIds.has(excluded.id)).toBe(false);
+    }
+
+    expect(data.verificationsToday).toEqual({ granted: 1, denied: 1 });
+    expect(data.recentVerifications.map((entry: { id: string }) => entry.id)).toEqual([
+      granted.id,
+      denied.id,
+    ]);
+    expect(data.generatedAt).toBe(fixedNow.toISOString());
+  });
+});
+
+describe('live sync', () => {
+  it('returns 401 unauthenticated and rejects a malformed cursor', async () => {
+    expect((await request(app).get('/api/v1/sync')).status).toBe(401);
+
+    const guard = await createTestUser({ role: 'GUARD', password: GUARD_PASSWORD });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: guard.email, password: GUARD_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    const invalid = await request(app).get('/api/v1/sync?since=not-a-date').set('Cookie', cookie);
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('gives staff current badges and a baseline with no changed domains', async () => {
+    await seedData();
+    const guard = await createTestUser({ role: 'GUARD', password: GUARD_PASSWORD });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: guard.email, password: GUARD_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    const response = await request(app).get('/api/v1/sync').set('Cookie', cookie);
+    expect(response.status).toBe(200);
+    const snapshot = response.body.data;
+    expect(snapshot.residentCounts).toBeNull();
+    expect(snapshot.staffCounts).not.toBeNull();
+    expect(typeof snapshot.staffCounts.sosAlerts).toBe('number');
+    expect(snapshot.staffCounts.openComplaints).toBeNull();
+    expect(snapshot.changed).toEqual([]);
+    expect(typeof snapshot.generatedAt).toBe('string');
+  });
+
+  it('reports the domains changed since the cursor', async () => {
+    const guard = await createTestUser({ role: 'GUARD', password: GUARD_PASSWORD });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: guard.email, password: GUARD_PASSWORD });
+    const cookie = cookieFrom(login);
+
+    const since = new Date(Date.now() - 60_000).toISOString();
+    await prisma.auditEvent.create({
+      data: {
+        organizationId,
+        eventType: 'resident_sos_raised',
+        targetType: 'sos_event',
+        outcome: 'success',
+      },
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/sync?since=${encodeURIComponent(since)}`)
+      .set('Cookie', cookie);
+    expect(response.status).toBe(200);
+    expect(response.body.data.changed).toContain('sos');
+  });
+
+  it('derives resident badges from unread notifications and scopes changes', async () => {
+    const resident = await createTestUser({
+      role: 'RESIDENT',
+      password: 'Res1dentSecretXyz',
+    });
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: resident.email, password: 'Res1dentSecretXyz' });
+    const cookie = cookieFrom(login);
+
+    const since = new Date(Date.now() - 60_000).toISOString();
+    await prisma.notification.createMany({
+      data: [
+        {
+          organizationId,
+          userId: resident.id,
+          kind: 'BOOKING',
+          title: 'Booking confirmed',
+          body: 'Your booking is confirmed.',
+          linkTo: '/resident/app/bookings',
+        },
+        {
+          organizationId,
+          userId: resident.id,
+          kind: 'BOOKING',
+          title: 'Booking cancelled',
+          body: 'Your booking was cancelled.',
+          linkTo: '/resident/app/bookings',
+        },
+        {
+          organizationId,
+          userId: resident.id,
+          kind: 'CODE',
+          title: 'Code used',
+          body: 'Your visitor arrived.',
+          linkTo: '/resident/app/codes',
+        },
+        {
+          organizationId,
+          userId: resident.id,
+          kind: 'PAYMENT',
+          title: 'Already read',
+          body: 'This one was read.',
+          linkTo: '/resident/app/invoices',
+          read: true,
+          createdAt: new Date(Date.now() - 5 * 60_000),
+        },
+      ],
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/sync?since=${encodeURIComponent(since)}`)
+      .set('Cookie', cookie);
+    expect(response.status).toBe(200);
+    const snapshot = response.body.data;
+    expect(snapshot.staffCounts).toBeNull();
+    expect(snapshot.residentCounts).toEqual({
+      unreadNotifications: 3,
+      bookingUpdates: 2,
+      codeUpdates: 1,
+      messageUpdates: 0,
+      invoiceUpdates: 0,
+      sosUpdates: 0,
+      communityUpdates: 0,
+    });
+    expect(snapshot.changed).toEqual(expect.arrayContaining(['bookings', 'codes']));
+    expect(snapshot.changed).not.toContain('payments');
   });
 });

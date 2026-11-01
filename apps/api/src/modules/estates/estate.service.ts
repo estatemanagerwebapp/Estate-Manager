@@ -29,6 +29,7 @@ export interface EstateServiceContext {
   organizationId: string;
   actorId: string | null;
   requestId: string | null;
+  actorRole?: string;
 }
 
 const SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -65,15 +66,21 @@ export class EstateService {
       organizationId: context.organizationId,
       search: query.search,
       status: query.status,
+      ...(context.actorRole && context.actorRole !== 'SUPER_ADMIN' && context.actorId
+        ? { assignedUserId: context.actorId }
+        : {}),
     });
     return {
-      estates: records.map((record) => toDto(record)),
+      estates: records.map((record) => ({
+        ...toDto(record),
+        propertyCount: record.propertyCount ?? 0,
+      })),
       total: records.length,
     };
   }
 
   async detail(context: EstateServiceContext, estateId: string): Promise<EstateDetailResponse> {
-    const record = await this.requireEstate(context.organizationId, estateId);
+    const record = await this.requireEstate(context, estateId);
     const counts = await this.estates.propertyCounts(record.id);
     return {
       estate: toDto(record),
@@ -134,7 +141,7 @@ export class EstateService {
     estateId: string,
     input: { name?: string; address?: string | null; slug?: string },
   ): Promise<EstateDto> {
-    const record = await this.requireEstate(context.organizationId, estateId);
+    const record = await this.requireEstate(context, estateId);
 
     const data: UpdateEstateInput = {};
     if (input.name !== undefined) {
@@ -183,7 +190,7 @@ export class EstateService {
     estateId: string,
     status: EstateStatus,
   ): Promise<SetEstateStatusResponse> {
-    const record = await this.requireEstate(context.organizationId, estateId);
+    const record = await this.requireEstate(context, estateId);
     if (!isEstateStatus(status)) {
       throw new AppError(400, 'VALIDATION_ERROR', `Unknown estate status "${status}"`);
     }
@@ -214,7 +221,7 @@ export class EstateService {
    * archive or delete the properties first.
    */
   async delete(context: EstateServiceContext, estateId: string): Promise<void> {
-    const record = await this.requireEstate(context.organizationId, estateId);
+    const record = await this.requireEstate(context, estateId);
     const counts = await this.estates.propertyCounts(record.id);
     if (counts.total > 0) {
       throw new AppError(
@@ -238,9 +245,20 @@ export class EstateService {
     });
   }
 
-  private async requireEstate(organizationId: string, estateId: string): Promise<EstateRecord> {
-    const record = await this.estates.findById(organizationId, estateId);
+  private async requireEstate(
+    context: EstateServiceContext,
+    estateId: string,
+  ): Promise<EstateRecord> {
+    const record = await this.estates.findById(context.organizationId, estateId);
     if (!record) {
+      throw new AppError(404, 'NOT_FOUND', 'Estate not found');
+    }
+    if (
+      context.actorRole &&
+      context.actorRole !== 'SUPER_ADMIN' &&
+      context.actorId &&
+      !(await this.estates.isAssigned(context.actorId, estateId, context.organizationId))
+    ) {
       throw new AppError(404, 'NOT_FOUND', 'Estate not found');
     }
     return record;

@@ -1,5 +1,17 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Building2, KeyRound, LogOut, Settings } from 'lucide-react';
+import {
+  Bell,
+  Building2,
+  ChevronDown,
+  KeyRound,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  X,
+} from 'lucide-react';
+import { useState } from 'react';
 import { useAuth, canManageUsers } from '../auth/AuthContext';
 import { useCan } from '../auth/useCan';
 import { RefreshButton } from './RefreshButton';
@@ -12,7 +24,7 @@ import {
   sectionLabelForPath,
   type NavItem,
 } from '../navigation';
-import { useNavigationCounts } from '../api/navigation';
+import { useSyncSnapshot } from '../api/sync';
 
 const BADGE_LABELS: Record<NavCounterKey, string> = {
   sosAlerts: 'active',
@@ -65,7 +77,10 @@ export function AppShell() {
   const userCanManage = canManageUsers(user);
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: navCounts } = useNavigationCounts();
+  const { snapshot } = useSyncSnapshot(Boolean(user));
+  const navCounts = snapshot?.staffCounts ?? null;
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   async function handleLogout() {
     await logout();
@@ -73,11 +88,11 @@ export function AppShell() {
   }
 
   const navClasses = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+    `group flex items-center gap-3 rounded-r-lg border-l-2 px-3 py-2 text-sm font-medium transition-colors ${
       isActive
-        ? 'bg-(--color-primary-soft) text-(--color-ink)'
-        : 'text-(--color-ink-muted) hover:bg-(--color-surface) hover:text-(--color-ink)'
-    }`;
+        ? 'border-(--color-primary) bg-orange-50 text-orange-800'
+        : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-slate-950'
+    } ${sidebarCollapsed ? 'md:justify-center md:px-0' : ''}`;
 
   function renderNavItem(item: NavItem) {
     const Icon = item.icon;
@@ -92,30 +107,70 @@ export function AppShell() {
         end={item.end}
         className={navClasses}
         aria-label={ariaLabel}
+        title={sidebarCollapsed ? item.label : undefined}
       >
         <span className="text-(--color-primary)">
-          <Icon aria-hidden size={16} />
+          <Icon aria-hidden size={18} strokeWidth={1.8} />
         </span>
-        {item.label}
-        <NavBadge item={item} counts={navCounts} />
+        <span className={sidebarCollapsed ? 'md:sr-only' : ''}>{item.label}</span>
+        <span className={sidebarCollapsed ? 'md:hidden' : ''}>
+          <NavBadge item={item} counts={navCounts} />
+        </span>
       </NavLink>
     );
   }
 
   return (
-    <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col overflow-y-auto border-r border-slate-200/80 bg-white md:flex">
-        <div className="flex items-center gap-2.5 px-5 py-5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-(--color-primary-soft)">
-            <Building2 aria-hidden size={18} className="text-(--color-primary)" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold leading-tight tracking-tight">Silverstone</p>
-            <p className="text-[11px] text-(--color-ink-muted)">Managers console</p>
-          </div>
+    <div className="min-h-screen bg-[#f5f8fb] text-slate-900">
+      {mobileNavOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/35 md:hidden"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col overflow-x-hidden overflow-y-auto border-r border-slate-200/80 bg-white transition-[width,transform] duration-200 md:translate-x-0 ${sidebarCollapsed ? 'md:w-[76px]' : 'md:w-[268px]'} ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+      >
+        <div
+          className={`relative flex h-[72px] shrink-0 items-center justify-between border-b border-slate-100 px-5 ${sidebarCollapsed ? 'md:h-[104px] md:flex-col md:justify-center md:gap-1 md:px-0' : ''}`}
+        >
+          <Link
+            to="/app"
+            onClick={() => setMobileNavOpen(false)}
+            className={`flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-orange-500 ${sidebarCollapsed ? 'md:justify-center' : ''}`}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-sm shadow-orange-200">
+              <Building2 aria-hidden size={20} strokeWidth={2.1} />
+            </span>
+            <span className={sidebarCollapsed ? 'md:hidden' : ''}>
+              <span className="block text-[15px] font-bold leading-tight tracking-tight">
+                Silverstone
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-500">Managers console</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(false)}
+            className="rounded-md p-2 text-slate-500 hover:bg-slate-100 md:hidden"
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className={`hidden rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 md:block ${sidebarCollapsed ? 'md:static' : ''}`}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-3 px-3" aria-label="Primary">
+        <nav className="flex flex-1 flex-col gap-4 px-0 py-4" aria-label="Primary">
           {NAV_SECTIONS.map((section) => {
             const items = section.items.filter((item) =>
               isNavItemVisible(item, can, userCanManage),
@@ -132,79 +187,119 @@ export function AppShell() {
                 {section.label ? (
                   <p
                     id={labelId}
-                    className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)"
+                    className={`px-6 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${sidebarCollapsed ? 'md:sr-only' : ''}`}
                   >
                     {section.label}
                   </p>
                 ) : null}
-                <div className="flex flex-col gap-1">{items.map(renderNavItem)}</div>
+                <div className={`flex flex-col gap-1 pr-3 ${sidebarCollapsed ? 'md:pr-2' : ''}`}>
+                  {items.map((item) => (
+                    <span key={item.to} onClick={() => setMobileNavOpen(false)}>
+                      {renderNavItem(item)}
+                    </span>
+                  ))}
+                </div>
               </div>
             );
           })}
 
-          <div className="mt-auto border-t border-slate-200/80 pt-3">
+          <div className="mt-auto border-t border-slate-100 pt-3">
             <p
               id="nav-settings"
-              className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-(--color-ink-muted)"
+              className={`px-6 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${sidebarCollapsed ? 'md:sr-only' : ''}`}
             >
               {SETTINGS_SECTION_LABEL}
             </p>
-            <div role="group" aria-labelledby="nav-settings" className="flex flex-col gap-1">
+            <div
+              role="group"
+              aria-labelledby="nav-settings"
+              className={`flex flex-col gap-1 pr-3 ${sidebarCollapsed ? 'md:pr-2' : ''}`}
+            >
               {SETTINGS_NAV.filter((item) => isNavItemVisible(item, can, userCanManage)).map(
-                renderNavItem,
+                (item) => (
+                  <span key={item.to} onClick={() => setMobileNavOpen(false)}>
+                    {renderNavItem(item)}
+                  </span>
+                ),
               )}
             </div>
           </div>
         </nav>
 
-        <div className="border-t border-slate-200/80 p-4">
-          <p className="truncate text-xs font-medium text-(--color-ink)">{user?.email ?? '…'}</p>
-          <p className="text-[11px] text-(--color-ink-muted)">
-            {user ? ROLE_LABELS[user.role] : ''}
-          </p>
+        <div
+          className={`border-t border-slate-100 p-4 ${sidebarCollapsed ? 'md:flex md:justify-center md:p-3' : ''}`}
+        >
+          <div className={sidebarCollapsed ? 'md:hidden' : ''}>
+            <p className="truncate text-xs font-semibold text-slate-800">{user?.email ?? '…'}</p>
+            <p className="text-[11px] text-slate-500">{user ? ROLE_LABELS[user.role] : ''}</p>
+          </div>
           <button
             type="button"
             onClick={() => void handleLogout()}
-            className="mt-3 flex w-full items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-(--color-ink-muted) transition-colors hover:bg-(--color-surface)"
+            title={sidebarCollapsed ? 'Sign out' : undefined}
+            className={`mt-3 flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 ${sidebarCollapsed ? 'md:mt-0 md:h-10 md:w-10 md:justify-center md:p-0' : ''}`}
           >
             <LogOut aria-hidden size={14} />
-            Sign out
+            <span className={sidebarCollapsed ? 'md:sr-only' : ''}>Sign out</span>
           </button>
         </div>
       </aside>
 
-      <main className="md:pl-64">
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur md:px-8 md:py-2">
-          <div className="flex items-center gap-2 md:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-primary-soft)">
-              <Building2 aria-hidden size={16} className="text-(--color-primary)" />
-            </span>
-            <span className="text-sm font-semibold">Silverstone</span>
-          </div>
-          <p className="hidden text-[11px] font-semibold uppercase tracking-[0.14em] text-(--color-ink-muted) md:block">
-            {sectionLabelForPath(location.pathname)}
-          </p>
-          <div className="flex items-center gap-1.5">
-            <RefreshButton />
-            <Link
-              to="/app/account"
-              className="rounded-md p-2 text-(--color-ink-muted) hover:bg-(--color-surface) md:hidden"
-              aria-label="Account"
-            >
-              <Settings aria-hidden size={16} />
-            </Link>
+      <main className={sidebarCollapsed ? 'md:pl-[76px]' : 'md:pl-[268px]'}>
+        <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between gap-4 border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur md:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
               type="button"
-              onClick={() => void handleLogout()}
-              className="rounded-md p-2 text-(--color-ink-muted) hover:bg-(--color-surface) md:hidden"
-              aria-label="Sign out"
+              onClick={() => setMobileNavOpen(true)}
+              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden"
+              aria-label="Open menu"
             >
-              <LogOut aria-hidden size={16} />
+              <Menu size={19} />
             </button>
+            <label className="hidden h-10 w-full max-w-[470px] items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-slate-500 shadow-sm md:flex">
+              <Search aria-hidden size={17} />
+              <input
+                aria-label="Search estates, properties, residents"
+                placeholder="Search estates, properties, residents…"
+                className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              />
+            </label>
+            <p className="truncate text-sm font-semibold text-slate-700 md:hidden">
+              {sectionLabelForPath(location.pathname)}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <Link
+              to="/app/activity"
+              aria-label="Recent activity"
+              title="Recent activity"
+              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100"
+            >
+              <Bell size={18} strokeWidth={1.8} />
+            </Link>
+            <span className="hidden h-8 w-px bg-slate-200 sm:block" />
+            <Link
+              to="/app/account"
+              className="flex items-center gap-3 rounded-lg py-1 pl-1 pr-2 transition hover:bg-slate-50"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-base font-medium text-white shadow-sm">
+                {(user?.fullName || user?.email || 'A').slice(0, 1).toUpperCase()}
+              </span>
+              <span className="hidden text-left sm:block">
+                <span className="block max-w-36 truncate text-sm font-semibold leading-tight text-slate-900">
+                  {user?.fullName || user?.email?.split('@')[0] || 'Admin'}
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  {user ? ROLE_LABELS[user.role] : ''}
+                </span>
+              </span>
+              <ChevronDown size={15} className="hidden text-slate-500 sm:block" />
+            </Link>
+            <RefreshButton />
           </div>
         </header>
 
-        <div className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 md:px-7 md:py-7">
           {user?.mustChangePassword && (
             <div
               role="alert"

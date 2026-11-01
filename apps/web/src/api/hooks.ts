@@ -3,6 +3,7 @@ import type {
   AuditEventDto,
   DashboardAttentionItemDto,
   DashboardKpisDto,
+  GuardOverviewDto,
 } from '@silverstone/shared';
 import { api, ApiRequestError } from './client';
 import { useApiQuery } from './query';
@@ -33,6 +34,31 @@ export function useHouseTypes(enabled: boolean) {
  * "zero".
  */
 export type DashboardKpis = DashboardKpisDto;
+
+/**
+ * The guard home aggregate.
+ *
+ * Deliberately narrower than `useDashboard`: a gateman only acts on SOS and
+ * the gate, so there is no activity feed and no KPI row to deny. The endpoint
+ * already nulls fields the role cannot read; the page hides those sections.
+ */
+export function useGuardOverview(enabled: boolean) {
+  const { data, loading, fetching, error, errorObject, refresh } = useApiQuery(
+    queryKeys.dashboard.guard,
+    () => api.getGuardOverview(),
+    'Could not load the gate desk.',
+    enabled,
+  );
+
+  return {
+    overview: (data ?? null) as GuardOverviewDto | null,
+    loading,
+    fetching,
+    error,
+    errorObject,
+    refresh,
+  };
+}
 
 /**
  * Loads the operator dashboard in one pass: the KPI aggregate plus the most

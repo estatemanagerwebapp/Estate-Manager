@@ -1,5 +1,4 @@
 import ExcelJS from 'exceljs';
-import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import {
   ORG_IMPORT_COLUMNS,
@@ -102,13 +101,12 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * written here; the caller persists the returned rows as a PREVIEWED batch.
  */
 export async function parseOrgWorkbook(
-  filePath: string,
+  bytes: Buffer,
   input: {
     context: OrgImportValidationContext;
     houseTypes: ReadonlyArray<HouseTypeRecord>;
   },
 ): Promise<OrgParseResult> {
-  const bytes = await fs.readFile(filePath);
   const fingerprint = createHash('sha256').update(bytes).digest('hex');
 
   const workbook = new ExcelJS.Workbook();
@@ -810,8 +808,7 @@ function cellToString(value: ExcelJS.CellValue): string {
  * instead of every invoice in the organization. Header validation is the same
  * as the full parse.
  */
-export async function extractBillingResidentEmails(filePath: string): Promise<string[]> {
-  const bytes = await fs.readFile(filePath);
+export async function extractBillingResidentEmails(bytes: Buffer): Promise<string[]> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as unknown as ArrayBuffer);
   const sheets = readRawSheets(workbook);

@@ -53,6 +53,26 @@ export class PrismaCommunityRepository {
   }
 
   /**
+   * Whether any community content was published since a cursor. Used by the
+   * resident live-sync feed; announcements are organization-wide and
+   * broadcasts are checked across the organization (a false positive only
+   * costs one extra refresh).
+   */
+  async hasChangeSince(organizationId: string, since: Date): Promise<boolean> {
+    const [announcement, broadcast] = await Promise.all([
+      this.prisma.announcement.findFirst({
+        where: { organizationId, createdAt: { gte: since } },
+        select: { id: true },
+      }),
+      this.prisma.estateBroadcast.findFirst({
+        where: { organizationId, createdAt: { gte: since } },
+        select: { id: true },
+      }),
+    ]);
+    return announcement !== null || broadcast !== null;
+  }
+
+  /**
    * The estate's active broadcast, if any. A broadcast is active while it
    * has been issued and has not expired; the most recent one wins.
    */

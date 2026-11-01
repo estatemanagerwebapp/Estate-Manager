@@ -227,18 +227,6 @@ export class OrganizationConfigService {
     return { config, source: 'bootstrap', version: 0 };
   }
 
-  /** Provisions the organization with the current bootstrap defaults. */
-  async provision(createdBy?: string): Promise<StoredConfigRecord> {
-    const bootstrap = this.bootstrapLoader();
-    const created = await this.repository.createRecord({
-      organizationSlug: this.organizationSlug,
-      config: bootstrap,
-      createdBy,
-    });
-    this.invalidate();
-    return created;
-  }
-
   /**
    * Writes the next versioned configuration document. `config` must already be
    * validated by the config-schema package; the repository only serialises it.

@@ -18,3 +18,25 @@ export const NAV_COUNTER_KEYS = [
 export type NavCounterKey = (typeof NAV_COUNTER_KEYS)[number];
 
 export type NavCountsDto = Record<NavCounterKey, number | null>;
+
+/**
+ * Resident sidebar counters.
+ *
+ * Resident badges are derived from **unread notifications** addressed to the
+ * acting user, grouped by the in-app route they point at. That keeps one write
+ * ("notify the resident") responsible for both the inbox and the badge, and it
+ * means a badge clears when the resident reads the notification.
+ */
+export const RESIDENT_NAV_COUNTER_KEYS = [
+  'unreadNotifications',
+  'bookingUpdates',
+  'codeUpdates',
+  'messageUpdates',
+  'invoiceUpdates',
+  'sosUpdates',
+  'communityUpdates',
+] as const;
+
+export type ResidentNavCounterKey = (typeof RESIDENT_NAV_COUNTER_KEYS)[number];
+
+export type ResidentNavCountsDto = Record<ResidentNavCounterKey, number | null>;

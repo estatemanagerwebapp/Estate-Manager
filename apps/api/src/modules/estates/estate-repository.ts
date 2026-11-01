@@ -12,6 +12,7 @@ export interface EstateRecord {
   name: string;
   address: string | null;
   status: string;
+  propertyCount?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +37,7 @@ export interface EstateQuery {
   search?: string;
   /** Filter by status. */
   status?: string;
+  assignedUserId?: string;
 }
 
 export class PrismaEstateRepository {
@@ -73,8 +75,12 @@ export class PrismaEstateRepository {
 
   async list(query: EstateQuery): Promise<EstateRecord[]> {
     const rows = await this.prisma.estate.findMany({
+      include: { _count: { select: { properties: true } } },
       where: {
         organizationId: query.organizationId,
+        ...(query.assignedUserId
+          ? { staffAssignments: { some: { userId: query.assignedUserId } } }
+          : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.search
           ? {
@@ -87,7 +93,15 @@ export class PrismaEstateRepository {
       },
       orderBy: [{ createdAt: 'desc' }],
     });
-    return rows.map(toRecord);
+    return rows.map((row) => ({ ...toRecord(row), propertyCount: row._count.properties }));
+  }
+
+  async isAssigned(userId: string, estateId: string, organizationId: string): Promise<boolean> {
+    return (
+      (await this.prisma.userEstateAssignment.count({
+        where: { userId, estateId, organizationId },
+      })) > 0
+    );
   }
 
   async update(estateId: string, input: UpdateEstateInput): Promise<EstateRecord | null> {

@@ -33,6 +33,8 @@ import { OperatorMessagesService } from './modules/messages/operator-messages.se
 import { OperatorComplaintsService } from './modules/complaints/operator-complaints.service.js';
 import { PrismaEstateRepository } from './modules/estates/estate-repository.js';
 import { PrismaPropertyRepository } from './modules/properties/property-repository.js';
+import { PrismaNotificationRepository } from './modules/resident/notifications-repository.js';
+import { ResidentNotificationsService } from './modules/resident/notifications.service.js';
 
 let prisma: PrismaClient;
 let app: Express;
@@ -47,6 +49,9 @@ let auditorCookie = '';
 let residentCookie = '';
 let otherThreadId = '';
 let otherComplaintId = '';
+let estateId = '';
+let secondResidentId = '';
+let archivedResidentId = '';
 const PASSWORD = 'Sup3rSecretXyz';
 
 function uniqueSuffix(): string {
@@ -171,6 +176,10 @@ beforeAll(async () => {
   );
   const userService = new UserService(users, sessions, audit, permissions);
 
+  const notifications = new ResidentNotificationsService({
+    notifications: new PrismaNotificationRepository(prisma),
+  });
+
   app = createApp({
     checkDatabase: async () => {},
     rateLimitMax: 1000,
@@ -189,6 +198,8 @@ beforeAll(async () => {
       messages: new OperatorMessagesService({
         messages: new PrismaMessageRepository(prisma),
         audit,
+        notifyWithin: (tx, orgId, userId, input) =>
+          notifications.notifyWithin(tx, orgId, userId, input),
       }),
     },
     complaints: {
@@ -229,6 +240,57 @@ beforeAll(async () => {
     },
   });
 
+  const estateRow = await prisma.property.findUnique({ where: { id: propertyId } });
+  estateId = estateRow?.estateId ?? '';
+
+  // A second active resident on the same estate, for the broadcast path.
+  const secondResident = await createUser(
+    organizationId,
+    'RESIDENT',
+    'resident-two',
+    'Bola Adeyemi',
+  );
+  secondResidentId = secondResident.id;
+  await prisma.residentOnboarding.create({
+    data: {
+      organizationId,
+      propertyId,
+      status: 'COMPLETED',
+      codeHash: createHash('sha256').update(`messaging2_${uniqueSuffix()}`).digest('hex'),
+      firstName: 'Bola',
+      email: secondResident.email,
+      phone: '+2348000000001',
+      paymentStatus: 'PAID',
+      paidAt: new Date(),
+      completedAt: new Date(),
+      userId: secondResidentId,
+    },
+  });
+
+  // An archived resident on the same estate: excluded from broadcasts.
+  const archivedResident = await createUser(
+    organizationId,
+    'RESIDENT',
+    'resident-archived',
+    'Archived Resident',
+  );
+  archivedResidentId = archivedResident.id;
+  await prisma.residentOnboarding.create({
+    data: {
+      organizationId,
+      propertyId,
+      status: 'COMPLETED',
+      codeHash: createHash('sha256').update(`messaging3_${uniqueSuffix()}`).digest('hex'),
+      firstName: 'Archived',
+      email: archivedResident.email,
+      paymentStatus: 'PAID',
+      paidAt: new Date(),
+      completedAt: new Date(),
+      userId: archivedResidentId,
+      archivedAt: new Date(),
+    },
+  });
+
   const otherResident = await prisma.user.create({
     data: {
       organizationId: otherOrganizationId,
@@ -265,6 +327,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const orgIds = [organizationId, otherOrganizationId];
+  await prisma.notification.deleteMany({ where: { organizationId: { in: orgIds } } });
   await prisma.complaint.deleteMany({ where: { organizationId: { in: orgIds } } });
   await prisma.messageThread.deleteMany({ where: { organizationId: { in: orgIds } } });
   await prisma.residentOnboarding.deleteMany({ where: { organizationId: { in: orgIds } } });
@@ -558,5 +621,163 @@ describe('operator complaints', () => {
       .set('Cookie', adminCookie)
       .send({ status: 'NOT_A_STATUS' });
     expect(invalid.status).toBe(400);
+  });
+});
+
+describe('compose messages', () => {
+  it('starts one conversation for a direct message and notifies the resident', async () => {
+    const response = await request(app)
+      .post('/api/v1/messages/compose')
+      .set('Cookie', adminCookie)
+      .send({
+        mode: 'DIRECT',
+        recipientUserId: residentId,
+        subject: 'Gate hours changed',
+        body: 'The estate gate now closes at 10pm.',
+      });
+    expect(response.status).toBe(201);
+    expect(response.body.data.recipientCount).toBe(1);
+    const threadId = response.body.data.threadId as string;
+    expect(threadId).toBeTruthy();
+
+    const thread = await prisma.messageThread.findUnique({
+      where: { id: threadId },
+      include: { messages: { orderBy: { createdAt: 'asc' } } },
+    });
+    expect(thread?.residentUserId).toBe(residentId);
+    expect(thread?.subject).toBe('Gate hours changed');
+    expect(thread?.messages).toHaveLength(1);
+    expect(thread?.messages[0]?.senderRole).toBe('ESTATE_OFFICE');
+    expect(thread?.messages[0]?.authorId).toBe(adminId);
+    expect(thread?.messages[0]?.body).toBe('The estate gate now closes at 10pm.');
+
+    const notification = await prisma.notification.findFirst({
+      where: { organizationId, userId: residentId, title: 'Gate hours changed' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(notification?.kind).toBe('MESSAGE');
+    expect(notification?.linkTo).toBe('/resident/app/notifications');
+
+    const audit = await prisma.auditEvent.findFirst({
+      where: { organizationId, eventType: 'message_sent', targetId: threadId },
+    });
+    expect(audit?.actorId).toBe(adminId);
+    expect(audit?.outcome).toBe('success');
+    expect(audit?.metadata).toMatchObject({ mode: 'DIRECT', recipientCount: 1 });
+  });
+
+  it('creates a conversation for every active resident on the estate', async () => {
+    const response = await request(app)
+      .post('/api/v1/messages/compose')
+      .set('Cookie', adminCookie)
+      .send({
+        mode: 'BROADCAST',
+        estateId,
+        subject: 'Water maintenance',
+        body: 'Water will be off on Saturday morning.',
+      });
+    expect(response.status).toBe(201);
+    expect(response.body.data.recipientCount).toBe(2);
+    expect(response.body.data.threadId).toBeUndefined();
+
+    const threads = await prisma.messageThread.findMany({
+      where: { organizationId, subject: 'Water maintenance' },
+      include: { messages: { orderBy: { createdAt: 'asc' } } },
+    });
+    expect(threads).toHaveLength(2);
+    expect(new Set(threads.map((thread) => thread.residentUserId))).toEqual(
+      new Set([residentId, secondResidentId]),
+    );
+    expect(threads.some((thread) => thread.residentUserId === archivedResidentId)).toBe(false);
+    for (const thread of threads) {
+      expect(thread.messages).toHaveLength(1);
+      expect(thread.messages[0]?.senderRole).toBe('ESTATE_OFFICE');
+      expect(thread.messages[0]?.authorId).toBe(adminId);
+      expect(thread.messages[0]?.body).toBe('Water will be off on Saturday morning.');
+    }
+
+    const notifications = await prisma.notification.findMany({
+      where: { organizationId, title: 'Water maintenance' },
+    });
+    expect(new Set(notifications.map((row) => row.userId))).toEqual(
+      new Set([residentId, secondResidentId]),
+    );
+
+    const audit = await prisma.auditEvent.findFirst({
+      where: { organizationId, eventType: 'message_sent', targetId: threads[0]?.id ?? '' },
+    });
+    expect(audit?.metadata).toMatchObject({
+      mode: 'BROADCAST',
+      recipientCount: 2,
+      estateId,
+    });
+  });
+
+  it('rejects residents, read-only auditors and cross-organization estates', async () => {
+    const direct = {
+      mode: 'DIRECT',
+      recipientUserId: residentId,
+      subject: 'Not allowed',
+      body: 'Not allowed',
+    };
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/messages/compose')
+          .set('Cookie', residentCookie)
+          .send(direct)
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/messages/compose')
+          .set('Cookie', auditorCookie)
+          .send(direct)
+      ).status,
+    ).toBe(403);
+
+    const crossOrg = await request(app)
+      .post('/api/v1/messages/compose')
+      .set('Cookie', adminCookie)
+      .send({
+        mode: 'BROADCAST',
+        estateId: '00000000-0000-4000-8000-000000000000',
+        subject: 'Nowhere',
+        body: 'Nobody should receive this.',
+      });
+    expect(crossOrg.status).toBe(404);
+  });
+
+  it('rolls the whole broadcast back when the audit write fails', async () => {
+    const failing = new OperatorMessagesService({
+      messages: new PrismaMessageRepository(prisma),
+      audit: {
+        recordWithin: async () => {
+          throw new Error('audit unavailable');
+        },
+      } as unknown as PrismaAuditRepository,
+    });
+
+    await expect(
+      failing.compose(
+        { organizationId, actorId: adminId, requestId: null },
+        {
+          mode: 'BROADCAST',
+          estateId,
+          subject: 'Atomic rollback',
+          body: 'This batch must not persist.',
+        },
+      ),
+    ).rejects.toThrow('audit unavailable');
+
+    const threads = await prisma.messageThread.count({
+      where: { organizationId, subject: 'Atomic rollback' },
+    });
+    expect(threads).toBe(0);
+    const messages = await prisma.message.count({
+      where: { body: 'This batch must not persist.' },
+    });
+    expect(messages).toBe(0);
   });
 });

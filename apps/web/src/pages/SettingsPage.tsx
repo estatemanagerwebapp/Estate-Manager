@@ -78,7 +78,7 @@ function newContactId(): string {
  * emergency contacts. Structural configuration (asset model, property
  * options, module switches) is not exposed here.
  */
-export function SettingsPage() {
+export function SettingsPage({ estateId, estateName }: { estateId: string; estateName: string }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const {
@@ -86,7 +86,12 @@ export function SettingsPage() {
     loading,
     error: queryError,
     refresh,
-  } = useApiQuery(queryKeys.settings.all, api.getSettings, 'Could not load estate settings.');
+  } = useApiQuery(
+    queryKeys.settings.estate(estateId),
+    () => api.getEstateSettings(estateId),
+    'Could not load estate settings.',
+    Boolean(estateId),
+  );
 
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -202,7 +207,7 @@ export function SettingsPage() {
 
     setSaving(true);
     try {
-      const updated = await api.updateSettings({
+      const updated = await api.updateEstateSettings(estateId, {
         expectedVersion: settings.version,
         onboarding: {
           registrationFee: {
@@ -224,10 +229,10 @@ export function SettingsPage() {
         sos: { contacts },
       });
 
-      queryClient.setQueryData(queryKeys.settings.all, updated);
+      queryClient.setQueryData(queryKeys.settings.estate(estateId), updated);
       setDraft(draftFromSettings(updated));
       await queryClient.invalidateQueries({ queryKey: ['resident'], refetchType: 'none' });
-      toast.success('Estate settings saved.');
+      toast.success(`${estateName} settings saved.`);
     } catch (err) {
       setActionError(
         err instanceof ApiRequestError ? err.message : 'Could not save estate settings.',
@@ -242,7 +247,7 @@ export function SettingsPage() {
       <OperatorPageHeader
         icon={<Settings2 aria-hidden size={18} className="text-(--color-primary)" />}
         title="Estate settings"
-        description="Registration fee, gate-code validity, payment instructions and emergency contacts."
+        description={`${estateName}: registration fee, gate-code validity, payment instructions and emergency contacts.`}
         actions={
           <Button type="submit" form="estate-settings-form" disabled={!draft || saving}>
             <Save aria-hidden size={15} />
@@ -271,7 +276,8 @@ export function SettingsPage() {
                   hint="Enter 0 to make onboarding free. The API stores kobo."
                 >
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.feeNaira}
                     onChange={(event) => setDraft({ ...draft, feeNaira: event.target.value })}
                     inputMode="decimal"
@@ -280,7 +286,8 @@ export function SettingsPage() {
                 </Field>
                 <Field label="Description">
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.feeDescription}
                     onChange={(event) => setDraft({ ...draft, feeDescription: event.target.value })}
                     maxLength={160}
@@ -311,7 +318,8 @@ export function SettingsPage() {
                   hint="Prefilled in the resident form when they generate a code."
                 >
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     type="number"
                     min={1}
                     max={365 * 24}
@@ -326,7 +334,8 @@ export function SettingsPage() {
                   hint="Residents cannot request or extend a code beyond this ceiling."
                 >
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     type="number"
                     min={1}
                     max={365 * 24}
@@ -352,7 +361,8 @@ export function SettingsPage() {
               <CardBody className="grid gap-4 sm:grid-cols-2">
                 <Field label="Bank name">
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.bankName}
                     onChange={(event) => setDraft({ ...draft, bankName: event.target.value })}
                     maxLength={120}
@@ -360,7 +370,8 @@ export function SettingsPage() {
                 </Field>
                 <Field label="Account name">
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.accountName}
                     onChange={(event) => setDraft({ ...draft, accountName: event.target.value })}
                     maxLength={120}
@@ -368,7 +379,8 @@ export function SettingsPage() {
                 </Field>
                 <Field label="Account number" hint="10–20 digits.">
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.accountNumber}
                     onChange={(event) => setDraft({ ...draft, accountNumber: event.target.value })}
                     inputMode="numeric"
@@ -377,7 +389,8 @@ export function SettingsPage() {
                 </Field>
                 <Field label="Sort code (optional)">
                   <input
-                    className={inputClass}
+                    className={`${inputClass} text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.sortCode}
                     onChange={(event) => setDraft({ ...draft, sortCode: event.target.value })}
                     maxLength={20}
@@ -385,7 +398,8 @@ export function SettingsPage() {
                 </Field>
                 <Field label="Instructions (optional)">
                   <textarea
-                    className={`${inputClass} min-h-20`}
+                    className={`${inputClass} min-h-20 text-base`}
+                    style={{ fontSize: '16px' }}
                     value={draft.instructions}
                     onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}
                     maxLength={500}
@@ -431,7 +445,8 @@ export function SettingsPage() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Label">
                           <input
-                            className={inputClass}
+                            className={`${inputClass} text-base`}
+                            style={{ fontSize: '16px' }}
                             value={contact.label}
                             onChange={(event) =>
                               updateContact(contact.id, { label: event.target.value })
@@ -442,7 +457,8 @@ export function SettingsPage() {
                         </Field>
                         <Field label="Phone">
                           <input
-                            className={inputClass}
+                            className={`${inputClass} text-base`}
+                            style={{ fontSize: '16px' }}
                             value={contact.phone}
                             onChange={(event) =>
                               updateContact(contact.id, { phone: event.target.value })
@@ -453,7 +469,8 @@ export function SettingsPage() {
                         </Field>
                         <Field label="Category">
                           <select
-                            className={`${selectClass} w-full`}
+                            className={`${selectClass} w-full text-base`}
+                            style={{ fontSize: '16px' }}
                             value={contact.category}
                             onChange={(event) =>
                               updateContact(contact.id, {
@@ -470,7 +487,8 @@ export function SettingsPage() {
                         </Field>
                         <Field label="Notes (optional)">
                           <input
-                            className={inputClass}
+                            className={`${inputClass} text-base`}
+                            style={{ fontSize: '16px' }}
                             value={contact.notes ?? ''}
                             onChange={(event) =>
                               updateContact(contact.id, { notes: event.target.value })

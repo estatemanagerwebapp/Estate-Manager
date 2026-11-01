@@ -22,7 +22,7 @@ export interface ResidentSosServiceOptions {
    */
   loadPropertyId: (organizationId: string, userId: string) => Promise<string | null>;
   /** Active predefined emergency contacts, when configured. */
-  contacts?: () => Promise<SosContactDto[]>;
+  contacts?: (organizationId: string, propertyId: string | null) => Promise<SosContactDto[]>;
 }
 
 /**
@@ -36,9 +36,12 @@ export class ResidentSosService {
 
   /** The resident's own SOS history, most recent first. */
   async list(organizationId: string, userId: string): Promise<ResidentSosEventsResponse> {
+    const propertyId = await this.options.loadPropertyId(organizationId, userId);
     const [records, contacts] = await Promise.all([
       this.options.sos.listByUser(organizationId, userId),
-      this.options.contacts ? this.options.contacts() : Promise.resolve([]),
+      this.options.contacts
+        ? this.options.contacts(organizationId, propertyId)
+        : Promise.resolve([]),
     ]);
     return { events: records.map(toDto), contacts };
   }

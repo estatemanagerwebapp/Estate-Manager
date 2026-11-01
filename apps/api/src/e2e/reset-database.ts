@@ -27,6 +27,7 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
+import { seedE2EUsers } from './seed-users.js';
 
 /** The only database this script is ever allowed to touch. */
 const REQUIRED_DATABASE_NAME = 'silverstone_test';
@@ -170,8 +171,16 @@ async function reset(target: TestDatabaseTarget): Promise<void> {
   run(localBin(root, 'tsx'), [`${root}/prisma/seed.ts`], apiDir, target.url);
 
   // 3. Create the fixture users the browser suite signs in with.
-  const seedScript = `${apiDir}/src/e2e/seed-database-users.ts`;
-  run(localBin(root, 'tsx'), [seedScript], apiDir, target.url);
+  const prisma = new PrismaClient({ datasources: { db: { url: target.url } } });
+  try {
+    const organization = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
+    if (!organization) {
+      throw new Error('The seeded organization was not found.');
+    }
+    await seedE2EUsers(prisma, organization.id);
+  } finally {
+    await prisma.$disconnect();
+  }
 
   console.log('Test database reset complete.');
 }

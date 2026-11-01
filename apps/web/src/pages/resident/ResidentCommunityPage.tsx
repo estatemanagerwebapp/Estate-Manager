@@ -11,6 +11,7 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../../components/ui';
+import { formatShortDate } from '../../lib/format';
 
 /**
  * Resident community page (S7).
@@ -60,7 +61,7 @@ export function ResidentCommunityPage() {
                 <li key={announcement.id} className="border-l-2 border-slate-100 pl-3">
                   <p className="text-sm font-semibold text-(--color-ink)">{announcement.title}</p>
                   <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-                    {formatDate(announcement.publishedAt)}
+                    {formatShortDate(announcement.publishedAt)}
                   </p>
                   <p className="mt-2 whitespace-pre-line text-sm text-(--color-ink)">
                     {announcement.body}
@@ -111,8 +112,8 @@ function BroadcastBanner({ broadcast }: { broadcast: EstateBroadcastDto }) {
       </div>
       <p className="mt-2 whitespace-pre-line text-sm text-(--color-ink)">{broadcast.body}</p>
       <p className="mt-2 text-xs text-(--color-ink-muted)">
-        Issued {formatDate(broadcast.issuedAt)}
-        {broadcast.expiresAt ? ` · expires ${formatDate(broadcast.expiresAt)}` : ''}
+        Issued {formatShortDate(broadcast.issuedAt)}
+        {broadcast.expiresAt ? ` · expires ${formatShortDate(broadcast.expiresAt)}` : ''}
       </p>
     </div>
   );
@@ -131,12 +132,4 @@ function priorityTone(priority: EstateBroadcastDto['priority']) {
   if (priority === 'CRITICAL') return 'danger' as const;
   if (priority === 'WARNING') return 'warning' as const;
   return 'neutral' as const;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
 }

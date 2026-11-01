@@ -62,21 +62,4 @@ describe('OrganizationConfigService cache', () => {
     await service.resolve();
     expect(findActiveRecord).toHaveBeenCalledTimes(3);
   });
-
-  it('invalidates the cache after provisioning', async () => {
-    const findActiveRecord = vi.fn(async () => activeRecord);
-    const createRecord = vi.fn(async () => activeRecord);
-    const service = new OrganizationConfigService(
-      { findActiveRecord, createRecord } as never,
-      () => config,
-      'silverstone',
-      30_000,
-    );
-
-    await service.resolve();
-    await service.provision();
-    await service.resolve();
-
-    expect(findActiveRecord).toHaveBeenCalledTimes(2);
-  });
 });

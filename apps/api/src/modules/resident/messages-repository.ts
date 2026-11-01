@@ -47,6 +47,34 @@ export interface CreateMessageInput {
   body: string;
 }
 
+export interface OperatorMessageRecipientRecord {
+  id: string;
+  fullName: string | null;
+  email: string;
+  propertyIdentifier: string;
+  estate: { id: string; name: string };
+}
+
+export interface CreateOperatorMessageThreadInput {
+  organizationId: string;
+  residentUserId: string;
+  authorId: string;
+  subject: string;
+  body: string;
+}
+
+export interface OperatorThreadCreateHooks {
+  /**
+   * Runs inside the write transaction after every thread and opening message
+   * exists. Throwing rolls the whole batch back, so a broadcast can never leave
+   * only some residents messaged (or commit without its audit row).
+   */
+  beforeCommit?: (
+    tx: Prisma.TransactionClient,
+    threads: OperatorMessageThreadRecord[],
+  ) => Promise<void>;
+}
+
 export interface OperatorMessageQuery {
   organizationId: string;
   status?: MessageThreadStatus;
@@ -103,7 +131,8 @@ const operatorThreadInclude = {
       fullName: true,
       email: true,
       phone: true,
-      residentOnboarding: {
+      residentOnboardings: {
+        take: 1,
         select: {
           property: {
             select: {
@@ -129,6 +158,103 @@ type OperatorThreadRow = Prisma.MessageThreadGetPayload<{ include: typeof operat
 
 export class PrismaMessageRepository {
   constructor(private readonly prisma: PrismaClient) {}
+
+  /** Active residents with an assigned property, used by staff compose. */
+  async listOperatorRecipients(organizationId: string): Promise<OperatorMessageRecipientRecord[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        organizationId,
+        role: 'RESIDENT',
+        status: 'ACTIVE',
+        residentOnboardings: {
+          some: { archivedAt: null },
+        },
+      },
+      orderBy: [{ fullName: 'asc' }, { email: 'asc' }],
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        residentOnboardings: {
+          take: 1,
+          select: {
+            property: {
+              select: {
+                identifier: true,
+                estate: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    return users.flatMap((user) => {
+      const property = user.residentOnboardings[0]?.property;
+      return property
+        ? [
+            {
+              id: user.id,
+              fullName: user.fullName,
+              email: user.email,
+              propertyIdentifier: property.identifier,
+              estate: property.estate,
+            },
+          ]
+        : [];
+    });
+  }
+
+  /** Create staff-initiated threads and opening messages in one transaction. */
+  async createOperatorThreads(
+    inputs: CreateOperatorMessageThreadInput[],
+    hooks: OperatorThreadCreateHooks = {},
+  ): Promise<OperatorMessageThreadRecord[]> {
+    if (inputs.length === 0) return [];
+    return this.prisma.$transaction(
+      async (tx) => {
+        const ids: string[] = [];
+        for (const input of inputs) {
+          // Thread + opening message in one write; a large estate broadcast
+          // keeps the interactive transaction well inside its budget.
+          const thread = await tx.messageThread.create({
+            data: {
+              organizationId: input.organizationId,
+              residentUserId: input.residentUserId,
+              subject: input.subject,
+              status: 'OPEN',
+              staffLastReadAt: new Date(),
+              messages: {
+                create: {
+                  senderRole: 'ESTATE_OFFICE',
+                  authorId: input.authorId,
+                  body: input.body,
+                },
+              },
+            },
+            select: { id: true },
+          });
+          ids.push(thread.id);
+        }
+        const rows = await tx.messageThread.findMany({
+          where: { id: { in: ids } },
+          include: operatorThreadInclude,
+        });
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        const records = ids.flatMap((id) => {
+          const row = byId.get(id);
+          return row ? [toOperatorThreadRecord(row)] : [];
+        });
+        if (hooks.beforeCommit) {
+          await hooks.beforeCommit(tx, records);
+        }
+        return records;
+      },
+      // Composing for a whole estate writes one thread, its message, the audit
+      // row and one notification per resident; give the batch room so a large
+      // estate is not mistaken for a database outage.
+      { timeout: 15_000 },
+    );
+  }
 
   /** Start a thread with its first message. */
   async createThread(input: CreateMessageThreadInput): Promise<MessageThreadRecord> {
@@ -325,7 +451,7 @@ function toThreadRecord(row: ThreadRow): MessageThreadRecord {
 }
 
 function toOperatorThreadRecord(row: OperatorThreadRow): OperatorMessageThreadRecord {
-  const onboardingProperty = row.resident?.residentOnboarding?.property ?? null;
+  const onboardingProperty = row.resident?.residentOnboardings[0]?.property ?? null;
   return {
     ...toThreadRecord(row),
     resident: row.resident

@@ -72,6 +72,7 @@ export type {
   PasswordPolicy,
   RegisterResidentInput,
   RegisterResidentResponse,
+  ResidentAccountMatchDto,
   ResidentIdType,
   ResidentMutationResponse,
   ResidentOnboardingDto,
@@ -90,10 +91,15 @@ export type {
   DashboardAttentionKey,
   DashboardKpisDto,
   DashboardSummaryResponse,
+  GuardOverviewDto,
+  GuardVerificationCountsDto,
 } from './dashboard-contract.js';
 
-export { NAV_COUNTER_KEYS } from './navigation-contract.js';
 export type { NavCounterKey, NavCountsDto } from './navigation-contract.js';
+export type { ResidentNavCounterKey, ResidentNavCountsDto } from './navigation-contract.js';
+export { RESIDENT_NAV_COUNTER_KEYS } from './navigation-contract.js';
+export { RESIDENT_SECTIONS, SYNC_DOMAINS, residentSectionForLink } from './sync-contract.js';
+export type { ResidentSection, SyncDomain, SyncSnapshotDto } from './sync-contract.js';
 
 export { ERROR_CODES } from './api-contract.js';
 export type {
@@ -179,6 +185,7 @@ export {
   RESIDENT_INVOICE_STATUSES,
   ACCESS_CODE_KINDS,
   ACCESS_CODE_STATUSES,
+  ACCESS_CODE_AUTHENTICATION_TYPES,
   ACCESS_VERIFICATION_GATES,
   ACCESS_VERIFICATION_OUTCOMES,
   ACCESS_VERIFICATION_REASONS,
@@ -207,6 +214,7 @@ export type {
   ResidentCreatePaymentResponse,
   AccessCodeKind,
   AccessCodeStatus,
+  AccessCodeAuthenticationType,
   ResidentAccessCodeDto,
   ResidentGenerateAccessCodeInput,
   ResidentGenerateAccessCodeResponse,
@@ -221,6 +229,8 @@ export type {
   AccessVerificationDto,
   AccessVerificationsResponse,
   OperatorVerifyAccessCodeInput,
+  OperatorVerifyAccessCodePreview,
+  OperatorVerifyAccessCodePreviewResponse,
   OperatorVerifyAccessCodeResponse,
   ComplaintStatus,
   ComplaintReplyDto,
@@ -241,6 +251,10 @@ export type {
   OperatorMessageDto,
   OperatorMessageThreadDto,
   OperatorMessagesResponse,
+  OperatorMessageRecipientDto,
+  OperatorMessageRecipientsResponse,
+  OperatorComposeMessageInput,
+  OperatorComposeMessageResponse,
   OperatorMessageReplyInput,
   OperatorMessageThreadResponse,
   OperatorComplaintReplyDto,

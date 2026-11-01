@@ -15,6 +15,7 @@ import {
 function invoice(overrides: Partial<OperatorInvoiceDto> = {}): OperatorInvoiceDto {
   return {
     id: 'invoice-1',
+    title: 'Security levy',
     period: '2026-11',
     amountKobo: 2_500_000,
     currency: 'NGN',
@@ -37,6 +38,7 @@ function invoice(overrides: Partial<OperatorInvoiceDto> = {}): OperatorInvoiceDt
       estate: { id: 'estate-1', name: 'Silverstone Estate', slug: 'silverstone' },
     },
     paidKobo: 0,
+    outstandingKobo: 2_500_000,
     paymentCount: 0,
     createdBy: {
       id: 'staff-1',
@@ -111,6 +113,7 @@ describe('operator billing helpers', () => {
     expect(invoicePropertyLabel(invoice({ property: null }))).toBe('No property assigned');
     expect(invoiceMatchesSearch(invoice(), 'ada')).toBe(true);
     expect(invoiceMatchesSearch(invoice(), 'cedar')).toBe(true);
+    expect(invoiceMatchesSearch(invoice(), 'security levy')).toBe(true);
     expect(invoiceMatchesSearch(invoice(), '25,000')).toBe(true);
     expect(invoiceMatchesSearch(invoice(), 'unrelated')).toBe(false);
   });

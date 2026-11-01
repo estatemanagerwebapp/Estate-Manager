@@ -5,7 +5,7 @@ import type {
   PrismaComplaintRepository,
 } from '../resident/complaints-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
-import type { AuthAuditContext } from '../auth/auth.service.js';
+import { requireAuditActor, type AuthAuditContext } from '../auth/auth.service.js';
 import type {
   OperatorComplaintReplyInput,
   OperatorComplaintResponse,
@@ -52,7 +52,7 @@ export class OperatorComplaintsService {
     complaintId: string,
     input: OperatorComplaintReplyInput,
   ): Promise<OperatorComplaintResponse> {
-    const actorId = requireActor(context);
+    const actorId = requireAuditActor(context);
     const body = input.body.trim();
     if (!body || body.length > MAX_BODY_LENGTH) {
       throw new AppError(
@@ -100,7 +100,7 @@ export class OperatorComplaintsService {
     complaintId: string,
     status: ComplaintStatus,
   ): Promise<OperatorComplaintResponse> {
-    const actorId = requireActor(context);
+    const actorId = requireAuditActor(context);
     const current = await this.requireComplaint(context.organizationId, complaintId);
     if (current.status === status) {
       return { ok: true, complaint: toDto(current) };
@@ -144,13 +144,6 @@ export class OperatorComplaintsService {
     }
     return record;
   }
-}
-
-function requireActor(context: AuthAuditContext): string {
-  if (!context.actorId) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
-  }
-  return context.actorId;
 }
 
 function resolveTimestamp(current: OperatorComplaintRecord, status: ComplaintStatus): Date | null {

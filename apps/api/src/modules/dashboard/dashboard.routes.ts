@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express';
+import { Router } from 'express';
 import { requireAuth, requirePermission, getAuth } from '../../middleware/auth-guard.js';
 import { AppError } from '../../lib/errors.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
@@ -11,11 +11,15 @@ import type { PrismaPropertyRepository } from '../properties/property-repository
 import type { PrismaFinanceRepository } from '../resident/finance-repository.js';
 import type { PrismaComplaintRepository } from '../resident/complaints-repository.js';
 import type { PrismaSosRepository } from '../resident/sos-repository.js';
+import type { PrismaGateRepository } from '../gate/gate-repository.js';
+import { toOperatorAccessCodeDto, toVerificationDto } from '../gate/gate.service.js';
+import { toOperatorSosDto } from '../sos/operator-sos.service.js';
 import {
   DEFAULT_MODULE_FLAGS,
   type AuditEventDto,
   type DashboardAttentionItemDto,
   type DashboardKpisDto,
+  type GuardOverviewDto,
   type ModuleFlags,
 } from '@silverstone/shared';
 
@@ -30,9 +34,13 @@ export interface DashboardRouteOptions {
   finance: PrismaFinanceRepository;
   complaints: PrismaComplaintRepository;
   sos: PrismaSosRepository;
+  /** Gate access codes + verification history for the guard home. */
+  gate: PrismaGateRepository;
   organizationId: string;
   /** Reads the live module flags; omitted in tests means all defaults. */
   loadModules?: () => Promise<ModuleFlags>;
+  /** Injectable clock for deterministic day-boundary tests. */
+  now?: () => Date;
 }
 
 /**
@@ -125,11 +133,11 @@ export async function loadDashboardSummary(
     held.has('user.manage') && residentsEnabled
       ? users.countActiveByRole(organizationId, 'RESIDENT')
       : Promise.resolve(null),
-    held.has('user.manage') && residentsEnabled
+    held.has('resident.manage') && residentsEnabled
       ? residentOnboarding.countPending(organizationId)
       : Promise.resolve(null),
     held.has('user.manage') ? users.countAll(organizationId) : Promise.resolve(null),
-    held.has('user.manage')
+    held.has('resident.manage')
       ? residentOnboarding.countActive(organizationId)
       : Promise.resolve(null),
     held.has('billing.read') && billingEnabled
@@ -159,14 +167,8 @@ export async function loadDashboardSummary(
       href: '/app/billing',
     });
   }
-  if (openComplaints !== null && openComplaints > 0) {
-    attention.push({
-      key: 'complaints',
-      label: 'Open complaints',
-      count: openComplaints,
-      href: '/app/complaints',
-    });
-  }
+  // Complaints were folded into Messages: the count stays in the KPI payload
+  // for compatibility, but there is no separate queue screen to link to.
   if (activeSos !== null && activeSos > 0) {
     attention.push({
       key: 'sos',
@@ -233,16 +235,73 @@ export async function loadDashboardActivity(
   };
 }
 
-/** Wrap async handlers so rejections reach the central error handler once. */
-function asyncWrap(handler: RequestHandler): RequestHandler {
-  return (req, res, next) => {
-    void (async () => {
-      try {
-        await handler(req, res, next);
-      } catch (error) {
-        if (!res.headersSent) next(error);
-      }
-    })();
+/**
+ * The guard home aggregate.
+ *
+ * A gateman only needs two things on screen, so this loader deliberately does
+ * not call the estate/property/finance/complaint counters. Fields the role
+ * cannot read stay `null`, matching the dashboard's null-vs-zero contract.
+ *
+ * "Today" is the server's local calendar day. The organization timezone is
+ * display-only in the config schema today; once scheduling modules consume it,
+ * this boundary should move with it.
+ */
+export const GUARD_SOS_LIMIT = 3;
+export const GUARD_RECENT_VERIFICATION_LIMIT = 5;
+
+export async function loadGuardOverview(
+  organizationId: string,
+  held: ReadonlySet<string>,
+  options: Pick<DashboardRouteOptions, 'sos' | 'gate' | 'now'>,
+): Promise<GuardOverviewDto> {
+  const now = options.now ? options.now() : new Date();
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const canReadSos = held.has('sos.read');
+  const canReadCodes = held.has('gate.read');
+  const canReadVerifications = held.has('verification.read');
+
+  const [activeSos, activeSosEvents, expectedToday, verificationsToday, recentVerifications] =
+    await Promise.all([
+      canReadSos ? options.sos.countActive(organizationId) : Promise.resolve(null),
+      canReadSos
+        ? options.sos
+            .listForOrganization({
+              organizationId,
+              activeOnly: true,
+              limit: GUARD_SOS_LIMIT,
+            })
+            .then((rows) => rows.map(toOperatorSosDto))
+        : Promise.resolve(null),
+      canReadCodes
+        ? options.gate
+            .listExpectedToday(organizationId, now, dayStart, dayEnd)
+            .then((rows) => rows.map((row) => toOperatorAccessCodeDto(row, now)))
+        : Promise.resolve(null),
+      canReadVerifications
+        ? options.gate.countVerificationsToday(organizationId, dayStart, dayEnd)
+        : Promise.resolve(null),
+      canReadVerifications
+        ? options.gate
+            .listVerifications(organizationId, {
+              since: dayStart,
+              until: dayEnd,
+              limit: GUARD_RECENT_VERIFICATION_LIMIT,
+            })
+            .then((rows) => rows.map(toVerificationDto))
+        : Promise.resolve(null),
+    ]);
+
+  return {
+    activeSos,
+    activeSosEvents,
+    expectedToday,
+    verificationsToday,
+    recentVerifications,
+    generatedAt: now.toISOString(),
   };
 }
 
@@ -253,38 +312,57 @@ export function createDashboardRouter(options: DashboardRouteOptions): Router {
   const verifySession = (sessionId: string) => sessions.verify(sessionId);
   const authGuard = requireAuth(verifySession);
 
+  router.get('/kpis', authGuard, async (req, res, next) => {
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
+    // Resolve the role's effective permissions server-side; the dashboard
+    // exposes only counters the role is granted to read.
+    const held = new Set<string>(await permissions.effectivePermissions(auth.role));
+    const summary = await loadDashboardSummary(organizationId, held, {
+      users: options.users,
+      residentOnboarding: options.residentOnboarding,
+      estates: options.estates,
+      properties: options.properties,
+      finance: options.finance,
+      complaints: options.complaints,
+      sos: options.sos,
+      audit,
+      loadModules: options.loadModules,
+    });
+    res.status(200).json({ data: summary });
+  });
+
   router.get(
-    '/kpis',
+    '/guard',
     authGuard,
-    asyncWrap(async (req, res, next) => {
+    // The guard home is a gate-work surface: everything it shows (SOS, the
+    // expected list, verification counts) is only meaningful to a user who can
+    // read verification history. Fields they cannot read still resolve to null.
+    requirePermission((ctx) => permissions.can(ctx.role, 'verification.read')),
+    async (req, res, next) => {
       const auth = getAuth(req);
       if (!auth) {
         next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
         return;
       }
-      // Resolve the role's effective permissions server-side; the dashboard
-      // exposes only counters the role is granted to read.
       const held = new Set<string>(await permissions.effectivePermissions(auth.role));
-      const summary = await loadDashboardSummary(organizationId, held, {
-        users: options.users,
-        residentOnboarding: options.residentOnboarding,
-        estates: options.estates,
-        properties: options.properties,
-        finance: options.finance,
-        complaints: options.complaints,
+      const overview = await loadGuardOverview(organizationId, held, {
         sos: options.sos,
-        audit,
-        loadModules: options.loadModules,
+        gate: options.gate,
+        ...(options.now ? { now: options.now } : {}),
       });
-      res.status(200).json({ data: summary });
-    }),
+      res.status(200).json({ data: overview });
+    },
   );
 
   router.get(
     '/activity',
     authGuard,
     requirePermission((ctx) => permissions.can(ctx.role, 'audit.read')),
-    asyncWrap(async (req, res) => {
+    async (req, res) => {
       const query = req.query;
       const rawLimit = typeof query.limit === 'string' ? Number.parseInt(query.limit, 10) : 20;
       const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
@@ -292,7 +370,7 @@ export function createDashboardRouter(options: DashboardRouteOptions): Router {
         typeof query.after === 'string' && query.after.length > 0 ? query.after : undefined;
       const page = await loadDashboardActivity(organizationId, limit, audit, after);
       res.status(200).json({ data: { ...page, limit } });
-    }),
+    },
   );
 
   return router;

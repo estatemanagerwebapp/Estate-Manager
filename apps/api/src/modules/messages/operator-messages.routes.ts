@@ -1,8 +1,8 @@
-import { Router, type Request, type RequestHandler, type Response } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { MESSAGE_THREAD_STATUSES } from '@silverstone/shared';
 import { AppError } from '../../lib/errors.js';
-import { requireAuth, requirePermission, auditContext } from '../../middleware/auth-guard.js';
+import { requireAuth, requirePermission, routeAuditContext } from '../../middleware/auth-guard.js';
 import type { PrismaSessionRepository } from '../auth/session-repository.js';
 import type { PermissionResolver } from '../auth/permission-resolver.js';
 import type { OperatorMessagesService } from './operator-messages.service.js';
@@ -12,18 +12,6 @@ export interface OperatorMessagesRouteOptions {
   permissions: PermissionResolver;
   organizationId: string;
   messages: OperatorMessagesService;
-}
-
-function asyncWrap(handler: RequestHandler): RequestHandler {
-  return (req, res, next) => {
-    void (async () => {
-      try {
-        await handler(req, res, next);
-      } catch (error) {
-        if (!res.headersSent) next(error);
-      }
-    })();
-  };
 }
 
 /**
@@ -41,15 +29,6 @@ export function createOperatorMessagesRouter(options: OperatorMessagesRouteOptio
   const readGuard = requirePermission((ctx) => permissions.can(ctx.role, 'message.read'));
   const manageGuard = requirePermission((ctx) => permissions.can(ctx.role, 'message.manage'));
 
-  function makeContext(req: Request, res: Response) {
-    const ctx = auditContext(req, res);
-    return {
-      organizationId: ctx.organizationId ?? organizationId,
-      actorId: ctx.actorId,
-      requestId: ctx.requestId ?? null,
-    };
-  }
-
   function threadId(req: Request): string {
     const value = req.params.threadId;
     const flat = Array.isArray(value) ? value[0] : value;
@@ -62,79 +41,86 @@ export function createOperatorMessagesRouter(options: OperatorMessagesRouteOptio
     return flat;
   }
 
-  router.get(
-    '/',
-    authGuard,
-    readGuard,
-    asyncWrap(async (req, res, next) => {
-      const query = z
-        .object({
-          status: z.enum(MESSAGE_THREAD_STATUSES).optional(),
-          limit: z.coerce.number().int().min(1).max(200).optional(),
-        })
-        .safeParse(req.query ?? {});
-      if (!query.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid conversation filter'));
-        return;
-      }
+  router.get('/', authGuard, readGuard, async (req, res, next) => {
+    const query = z
+      .object({
+        status: z.enum(MESSAGE_THREAD_STATUSES).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      })
+      .safeParse(req.query ?? {});
+    if (!query.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid conversation filter'));
+      return;
+    }
 
-      const response = await messages.list(organizationId, {
-        status: query.data.status,
-        limit: query.data.limit,
-      });
-      res.status(200).json({ data: response });
-    }),
-  );
+    const response = await messages.list(organizationId, {
+      status: query.data.status,
+      limit: query.data.limit,
+    });
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/:threadId/read',
-    authGuard,
-    manageGuard,
-    asyncWrap(async (req, res) => {
-      const context = makeContext(req, res);
-      const response = await messages.markRead(context, threadId(req));
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.get('/recipients', authGuard, manageGuard, async (_req, res) => {
+    const response = await messages.recipients(organizationId);
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/:threadId/reply',
-    authGuard,
-    manageGuard,
-    asyncWrap(async (req, res, next) => {
-      const body = z.object({ body: z.string().trim().min(1).max(4000) }).safeParse(req.body ?? {});
-      if (!body.success) {
-        next(new AppError(400, 'VALIDATION_ERROR', 'Invalid message body'));
-        return;
-      }
+  router.post('/compose', authGuard, manageGuard, async (req, res, next) => {
+    const body = z
+      .object({
+        mode: z.enum(['DIRECT', 'BROADCAST']),
+        recipientUserId: z.string().uuid().optional(),
+        estateId: z.string().uuid().optional(),
+        subject: z.string().trim().min(1).max(160),
+        body: z.string().trim().min(1).max(4000),
+      })
+      .refine(
+        (value) =>
+          value.mode === 'DIRECT'
+            ? Boolean(value.recipientUserId) && !value.estateId
+            : Boolean(value.estateId) && !value.recipientUserId,
+        'Choose exactly one recipient appropriate to the message type',
+      )
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid composed message'));
+      return;
+    }
 
-      const context = makeContext(req, res);
-      const response = await messages.reply(context, threadId(req), body.data);
-      res.status(201).json({ data: response });
-    }),
-  );
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await messages.compose(context, body.data);
+    res.status(201).json({ data: response });
+  });
 
-  router.post(
-    '/:threadId/close',
-    authGuard,
-    manageGuard,
-    asyncWrap(async (req, res) => {
-      const context = makeContext(req, res);
-      const response = await messages.setStatus(context, threadId(req), 'CLOSED');
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/:threadId/read', authGuard, manageGuard, async (req, res) => {
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await messages.markRead(context, threadId(req));
+    res.status(200).json({ data: response });
+  });
 
-  router.post(
-    '/:threadId/reopen',
-    authGuard,
-    manageGuard,
-    asyncWrap(async (req, res) => {
-      const context = makeContext(req, res);
-      const response = await messages.setStatus(context, threadId(req), 'OPEN');
-      res.status(200).json({ data: response });
-    }),
-  );
+  router.post('/:threadId/reply', authGuard, manageGuard, async (req, res, next) => {
+    const body = z.object({ body: z.string().trim().min(1).max(4000) }).safeParse(req.body ?? {});
+    if (!body.success) {
+      next(new AppError(400, 'VALIDATION_ERROR', 'Invalid message body'));
+      return;
+    }
+
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await messages.reply(context, threadId(req), body.data);
+    res.status(201).json({ data: response });
+  });
+
+  router.post('/:threadId/close', authGuard, manageGuard, async (req, res) => {
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await messages.setStatus(context, threadId(req), 'CLOSED');
+    res.status(200).json({ data: response });
+  });
+
+  router.post('/:threadId/reopen', authGuard, manageGuard, async (req, res) => {
+    const context = routeAuditContext(req, res, organizationId);
+    const response = await messages.setStatus(context, threadId(req), 'OPEN');
+    res.status(200).json({ data: response });
+  });
 
   return router;
 }

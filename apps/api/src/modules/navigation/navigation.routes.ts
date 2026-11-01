@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from 'express';
+import { Router } from 'express';
 import { getAuth, requireAuth } from '../../middleware/auth-guard.js';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
@@ -105,7 +105,7 @@ export async function loadNavigationCounts(
     ),
     readCounter(
       'pendingResidents',
-      held.has('user.manage') && residentsEnabled
+      held.has('resident.manage') && residentsEnabled
         ? () => options.residentOnboarding.countPending(organizationId)
         : null,
     ),
@@ -128,43 +128,26 @@ export async function loadNavigationCounts(
   };
 }
 
-/** Wrap async handlers so rejections reach the central error handler once. */
-function asyncWrap(handler: RequestHandler): RequestHandler {
-  return (req, res, next) => {
-    void (async () => {
-      try {
-        await handler(req, res, next);
-      } catch (error) {
-        if (!res.headersSent) next(error);
-      }
-    })();
-  };
-}
-
 export function createNavigationRouter(options: NavigationRouteOptions): Router {
   const router = Router();
   const { sessions, permissions, organizationId } = options;
 
   const authGuard = requireAuth((sessionId) => sessions.verify(sessionId));
 
-  router.get(
-    '/counts',
-    authGuard,
-    asyncWrap(async (req, res, next) => {
-      const auth = getAuth(req);
-      if (!auth) {
-        next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
-        return;
-      }
+  router.get('/counts', authGuard, async (req, res, next) => {
+    const auth = getAuth(req);
+    if (!auth) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      return;
+    }
 
-      // Resolve the role's effective permissions server-side. The endpoint is
-      // intentionally readable by every signed-in role; each field is nulled
-      // individually when the role cannot see that queue.
-      const held = new Set<string>(await permissions.effectivePermissions(auth.role));
-      const counts = await loadNavigationCounts(organizationId, held, options);
-      res.status(200).json({ data: counts });
-    }),
-  );
+    // Resolve the role's effective permissions server-side. The endpoint is
+    // intentionally readable by every signed-in role; each field is nulled
+    // individually when the role cannot see that queue.
+    const held = new Set<string>(await permissions.effectivePermissions(auth.role));
+    const counts = await loadNavigationCounts(organizationId, held, options);
+    res.status(200).json({ data: counts });
+  });
 
   return router;
 }

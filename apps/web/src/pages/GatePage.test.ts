@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { AccessVerificationDto, OperatorAccessCodeDto } from '@silverstone/shared';
+import type {
+  AccessVerificationDto,
+  OperatorAccessCodeDto,
+  OperatorVerifyAccessCodePreview,
+} from '@silverstone/shared';
 import {
   accessCodeDisplayStatus,
   accessCodeFilterForView,
@@ -10,7 +14,9 @@ import {
   accessCodeTone,
   accessCodeVisitorDetail,
   accessCodeVisitorLabel,
+  confirmVerificationLabel,
   idDocumentHref,
+  previewOutcomeLabel,
   verificationFilterForView,
   verificationMatchesSearch,
   verificationOutcomeLabel,
@@ -32,6 +38,7 @@ function code(overrides: Partial<OperatorAccessCodeDto> = {}): OperatorAccessCod
     visitorName: 'Chinedu Okafor',
     carPlate: 'LAG-123-AA',
     idDocumentUrl: '/api/v1/media/org-1/media-1',
+    authenticationType: 'ID_IMAGE',
     resident: {
       id: 'resident-1',
       fullName: 'Ada Okafor',
@@ -60,6 +67,7 @@ function verification(overrides: Partial<AccessVerificationDto> = {}): AccessVer
     visitorName: 'Chinedu Okafor',
     carPlate: 'LAG-123-AA',
     idDocumentUrl: '/api/v1/media/org-1/media-1',
+    authenticationType: 'ID_IMAGE',
     resident: {
       id: 'resident-1',
       fullName: 'Ada Okafor',
@@ -162,5 +170,52 @@ describe('gate page helpers', () => {
       '/api/v1/media/org/media?x=1&inline=1',
     );
     expect(idDocumentHref(null)).toBeNull();
+  });
+
+  it('labels the pre-commit review and its confirmation action', () => {
+    function preview(
+      overrides: Partial<OperatorVerifyAccessCodePreview> = {},
+    ): OperatorVerifyAccessCodePreview {
+      return {
+        found: true,
+        outcome: 'GRANTED',
+        reason: null,
+        gate: 'ENTRY',
+        codePrefix: 'ABCD',
+        kind: 'ENTRY',
+        status: 'ACTIVE',
+        validUntil: '2026-11-01T12:00:00.000Z',
+        issuedAt: '2026-11-01T08:00:00.000Z',
+        visitorName: 'Chinedu Okafor',
+        carPlate: 'LAG-123-AA',
+        idDocumentUrl: null,
+        authenticationType: 'ID_IMAGE',
+        resident: null,
+        property: null,
+        accessCodeId: 'code-1',
+        ...overrides,
+      };
+    }
+
+    expect(previewOutcomeLabel(preview())).toBe('Access would be granted');
+    expect(confirmVerificationLabel(preview())).toBe('Confirm entry');
+    expect(confirmVerificationLabel(preview({ gate: 'EXIT' }))).toBe('Confirm exit');
+
+    const denied = preview({ outcome: 'DENIED', reason: 'EXPIRED', status: 'EXPIRED' });
+    expect(previewOutcomeLabel(denied)).toBe('Access would be denied');
+    expect(confirmVerificationLabel(denied)).toBe('Record denied attempt');
+
+    const unknown = preview({
+      found: false,
+      outcome: 'DENIED',
+      reason: 'NOT_FOUND',
+      accessCodeId: null,
+      kind: null,
+      status: null,
+      validUntil: null,
+      issuedAt: null,
+    });
+    expect(previewOutcomeLabel(unknown)).toBe('No matching code');
+    expect(confirmVerificationLabel(unknown)).toBe('Record denied attempt');
   });
 });

@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { AppError } from '../../lib/errors.js';
 import type { PrismaNotificationRepository, NotificationKind } from './notifications-repository.js';
 import type {
@@ -67,6 +68,23 @@ export class ResidentNotificationsService {
   /** Enqueue a notification for a resident. */
   async notify(organizationId: string, userId: string, input: NotifyInput): Promise<void> {
     await this.options.notifications.create({
+      organizationId,
+      userId,
+      kind: input.kind,
+      title: input.title,
+      body: input.body,
+      linkTo: input.linkTo ?? null,
+    });
+  }
+
+  /** Enqueue a notification inside the caller's transaction. */
+  async notifyWithin(
+    client: Prisma.TransactionClient,
+    organizationId: string,
+    userId: string,
+    input: NotifyInput,
+  ): Promise<void> {
+    await this.options.notifications.createWithin(client, {
       organizationId,
       userId,
       kind: input.kind,

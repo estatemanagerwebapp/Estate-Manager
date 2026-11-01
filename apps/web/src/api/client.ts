@@ -6,10 +6,10 @@ import type {
   MeResponse,
   RegisterResidentInput,
   RegisterResidentResponse,
+  ResidentAccountMatchDto,
   ResetPasswordResponse,
   UserDto,
   UserListResponse,
-  UserDetailResponse,
   AdminCreateUserInput,
   AdminCreateUserResponse,
   RevokeUserSessionsResponse,
@@ -51,6 +51,8 @@ import type {
   AuditEventFilter,
   AuditEventsResponse,
   DashboardSummaryResponse,
+  GuardOverviewDto,
+  SyncSnapshotDto,
   NavCountsDto,
   ResidentProfileView,
   ResidentProfileUpdateInput,
@@ -99,6 +101,9 @@ import type {
   OperatorSosMutationResponse,
   MessageThreadStatus,
   OperatorMessagesResponse,
+  OperatorMessageRecipientsResponse,
+  OperatorComposeMessageInput,
+  OperatorComposeMessageResponse,
   OperatorMessageThreadResponse,
   OperatorMessageReplyInput,
   OperatorComplaintsResponse,
@@ -115,6 +120,7 @@ import type {
   OperatorRevokeAccessCodeResponse,
   AccessVerificationsResponse,
   OperatorVerifyAccessCodeInput,
+  OperatorVerifyAccessCodePreviewResponse,
   OperatorVerifyAccessCodeResponse,
   AccessCodeKind,
   AccessCodeStatus,
@@ -186,10 +192,6 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
-export function isUnauthorized(error: unknown): boolean {
-  return error instanceof ApiRequestError && error.code === 'UNAUTHORIZED';
-}
-
 /**
  * Core fetch wrapper. `init.content` (string | Blob) overrides the default
  * JSON serialization; `content` is used for multipart / binary uploads so
@@ -252,6 +254,7 @@ export interface UserFilter {
   status?: string;
   /** `staff` excludes RESIDENT accounts (Administrators screen). */
   scope?: 'all' | 'staff';
+  estateId?: string;
 }
 
 /** Query filters for the estate list (mirrors the API's accepted params). */
@@ -268,6 +271,8 @@ export interface OperatorSosFilter {
   status?: string;
   /** Active means RAISED + ACKNOWLEDGED. Ignored when `status` is set. */
   active?: boolean;
+  /** Limit the queue to alerts from one estate. */
+  estateId?: string;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -289,11 +294,13 @@ export interface OperatorComplaintFilter {
 /** Query filters for the operator invoice/payment views. */
 export interface OperatorInvoiceFilter {
   status?: ResidentInvoiceStatus;
+  estateId?: string;
   /** Server caps at 200. */
   limit?: number;
 }
 
 export interface OperatorPaymentFilter {
+  estateId?: string;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -302,6 +309,7 @@ export interface OperatorPaymentFilter {
 export interface OperatorAccessCodeFilter {
   status?: AccessCodeStatus;
   kind?: AccessCodeKind;
+  estateId?: string;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -310,6 +318,7 @@ export interface OperatorAccessCodeFilter {
 export interface AccessVerificationFilter {
   outcome?: AccessVerificationOutcome;
   gate?: AccessVerificationGate;
+  estateId?: string;
   /** Server caps at 200. */
   limit?: number;
 }
@@ -327,6 +336,7 @@ export interface OperatorBookingFilter {
   status?: BookingStatus;
   paymentStatus?: BookingPaymentStatus;
   facilityId?: string;
+  estateId?: string;
   /** ISO timestamps; both filter on startsAt. */
   from?: string;
   to?: string;
@@ -348,17 +358,6 @@ export interface PropertyFilter {
 }
 
 /**
- * Error envelope `details` field (present on VALIDATION_ERROR responses that
- * carry structured field errors).
- */
-export interface ApiErrorDetails {
-  code: string;
-  message: string;
-  requestId?: string;
-  details?: Array<{ path: string; message: string }>;
-}
-
-/**
  * Serialize audit filters into the query string accepted by `/audit/events`
  * and `/audit/export`. Empty values are omitted so a cleared filter does not
  * become `eventType=`.
@@ -370,6 +369,7 @@ export function buildAuditQuery(filter: AuditEventFilter = {}, includeLimit = tr
   if (filter.eventType) params.set('eventType', filter.eventType);
   if (filter.outcome) params.set('outcome', filter.outcome);
   if (filter.targetType) params.set('targetType', filter.targetType);
+  if (filter.estateId) params.set('estateId', filter.estateId);
   if (filter.actorId) params.set('actorId', filter.actorId);
   if (filter.from) params.set('from', filter.from);
   if (filter.to) params.set('to', filter.to);
@@ -411,7 +411,9 @@ export const api = {
     const params = new URLSearchParams();
     if (filter.role) params.set('role', filter.role);
     if (filter.status) params.set('status', filter.status);
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.scope) params.set('scope', filter.scope);
+    if (filter.estateId) params.set('estateId', filter.estateId);
     const qs = params.toString();
     return request<UserListResponse>(`/api/v1/auth/users${qs ? `?${qs}` : ''}`);
   },
@@ -430,9 +432,6 @@ export const api = {
       { method: 'POST' },
     ),
 
-  getUser: (userId: string) =>
-    request<UserDetailResponse>(`/api/v1/auth/users/${encodeURIComponent(userId)}`),
-
   setUserStatus: (userId: string, status: string, reason?: string) =>
     request<SetUserStatusResponse>(`/api/v1/auth/users/${encodeURIComponent(userId)}/status`, {
       method: 'POST',
@@ -444,6 +443,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ role }),
     }),
+
+  setUserEstates: (userId: string, estateIds: string[]) =>
+    request<{ ok: true; estateAssignments: Array<{ id: string; name: string }> }>(
+      `/api/v1/auth/users/${encodeURIComponent(userId)}/estates`,
+      { method: 'PUT', body: JSON.stringify({ estateIds }) },
+    ),
 
   /** Permanently delete a user account. */
   deleteUser: (userId: string) =>
@@ -457,6 +462,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  findResidentAccountMatch: (email: string) =>
+    request<{ match: ResidentAccountMatchDto | null }>(
+      `/api/v1/onboard/residents/account-match?email=${encodeURIComponent(email)}`,
+    ),
 
   listResidents: () => request<{ residents: ResidentOnboardingDto[] }>('/api/v1/onboard/residents'),
 
@@ -629,6 +639,20 @@ export const api = {
    * see.
    */
   getDashboardKpis: () => request<DashboardSummaryResponse>('/api/v1/dashboard/kpis'),
+
+  /**
+   * The guard home aggregate: active SOS, today's expected visitors, today's
+   * verification counts and the newest attempts. Requires `verification.read`;
+   * fields the role cannot read are `null`.
+   */
+  getGuardOverview: () => request<GuardOverviewDto>('/api/v1/dashboard/guard'),
+
+  /**
+   * Live badges + changed domains since `since`. Both shells poll this; the
+   * returned `generatedAt` is the cursor for the next poll.
+   */
+  getSync: (since?: string) =>
+    request<SyncSnapshotDto>(`/api/v1/sync${since ? `?since=${encodeURIComponent(since)}` : ''}`),
 
   /**
    * Sidebar counters. Fields the signed-in role cannot read are `null`; the
@@ -812,7 +836,10 @@ export const api = {
     }),
 
   /** S4: the acting resident's access codes (prefix + validity, never the secret). */
-  getResidentCodes: () => request<ResidentAccessCodesResponse>('/api/v1/resident/codes'),
+  getResidentCodes: (propertyId?: string) =>
+    request<ResidentAccessCodesResponse>(
+      `/api/v1/resident/codes${propertyId ? `?propertyId=${encodeURIComponent(propertyId)}` : ''}`,
+    ),
 
   /** S4: upload the visitor ID image that will be attached to an access code. */
   uploadCodeVisitorIdDocument: (file: File) => {
@@ -928,6 +955,7 @@ export const api = {
     const params = new URLSearchParams();
     if (filter.status) params.set('status', filter.status);
     if (filter.active !== undefined) params.set('active', String(filter.active));
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.limit) params.set('limit', String(filter.limit));
     const qs = params.toString();
     return request<OperatorSosEventsResponse>(`/api/v1/sos${qs ? `?${qs}` : ''}`);
@@ -956,6 +984,17 @@ export const api = {
     const qs = params.toString();
     return request<OperatorMessagesResponse>(`/api/v1/messages${qs ? `?${qs}` : ''}`);
   },
+
+  /** Recipients eligible for a direct message or estate broadcast. */
+  listOperatorMessageRecipients: () =>
+    request<OperatorMessageRecipientsResponse>('/api/v1/messages/recipients'),
+
+  /** Start one direct conversation or one per resident in an estate. */
+  composeOperatorMessage: (input: OperatorComposeMessageInput) =>
+    request<OperatorComposeMessageResponse>('/api/v1/messages/compose', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   /** Mark a conversation as read by the estate office. */
   markOperatorMessageRead: (threadId: string) =>
@@ -1014,6 +1053,7 @@ export const api = {
   listOperatorInvoices: (filter: OperatorInvoiceFilter = {}) => {
     const params = new URLSearchParams();
     if (filter.status) params.set('status', filter.status);
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.limit) params.set('limit', String(filter.limit));
     const qs = params.toString();
     return request<OperatorInvoicesResponse>(`/api/v1/invoices${qs ? `?${qs}` : ''}`);
@@ -1042,6 +1082,7 @@ export const api = {
   /** Organization-scoped manual payment history. Requires `billing.read`. */
   listOperatorPayments: (filter: OperatorPaymentFilter = {}) => {
     const params = new URLSearchParams();
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.limit) params.set('limit', String(filter.limit));
     const qs = params.toString();
     return request<OperatorPaymentsResponse>(`/api/v1/payments${qs ? `?${qs}` : ''}`);
@@ -1053,6 +1094,7 @@ export const api = {
     const params = new URLSearchParams();
     if (filter.status) params.set('status', filter.status);
     if (filter.kind) params.set('kind', filter.kind);
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.limit) params.set('limit', String(filter.limit));
     const qs = params.toString();
     return request<OperatorAccessCodesResponse>(`/api/v1/access-codes${qs ? `?${qs}` : ''}`);
@@ -1070,6 +1112,7 @@ export const api = {
     const params = new URLSearchParams();
     if (filter.outcome) params.set('outcome', filter.outcome);
     if (filter.gate) params.set('gate', filter.gate);
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.limit) params.set('limit', String(filter.limit));
     const qs = params.toString();
     return request<AccessVerificationsResponse>(`/api/v1/verifications${qs ? `?${qs}` : ''}`);
@@ -1078,6 +1121,17 @@ export const api = {
   /** Verify a presented code and record the attempt. Requires `gate.manage`. */
   verifyAccessCode: (input: OperatorVerifyAccessCodeInput) =>
     request<OperatorVerifyAccessCodeResponse>('/api/v1/verifications', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /**
+   * Resolve a presented code and return what would happen, without recording
+   * the attempt. The guard reviews these details before confirming. Requires
+   * `gate.manage`.
+   */
+  previewAccessCode: (input: OperatorVerifyAccessCodeInput) =>
+    request<OperatorVerifyAccessCodePreviewResponse>('/api/v1/verifications/preview', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
@@ -1092,6 +1146,10 @@ export const api = {
     const qs = params.toString();
     return request<OperatorFacilitiesResponse>(`/api/v1/facilities${qs ? `?${qs}` : ''}`);
   },
+
+  /** Read one facility for its management view. */
+  getOperatorFacility: (facilityId: string) =>
+    request<OperatorFacilityResponse>(`/api/v1/facilities/${encodeURIComponent(facilityId)}`),
 
   /** Create an estate-scoped facility. Requires `facility.manage`. */
   createOperatorFacility: (input: OperatorCreateFacilityInput) =>
@@ -1120,6 +1178,7 @@ export const api = {
     if (filter.status) params.set('status', filter.status);
     if (filter.paymentStatus) params.set('paymentStatus', filter.paymentStatus);
     if (filter.facilityId) params.set('facilityId', filter.facilityId);
+    if (filter.estateId) params.set('estateId', filter.estateId);
     if (filter.from) params.set('from', filter.from);
     if (filter.to) params.set('to', filter.to);
     if (filter.limit) params.set('limit', String(filter.limit));
@@ -1169,8 +1228,17 @@ export const api = {
   // --- Operational settings ------------------------------------------------
   getSettings: () => request<OrganizationSettingsView>('/api/v1/settings'),
 
+  getEstateSettings: (estateId: string) =>
+    request<OrganizationSettingsView>(`/api/v1/estates/${encodeURIComponent(estateId)}/settings`),
+
   updateSettings: (input: OrganizationSettingsUpdateInput) =>
     request<OrganizationSettingsView>('/api/v1/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  updateEstateSettings: (estateId: string, input: OrganizationSettingsUpdateInput) =>
+    request<OrganizationSettingsView>(`/api/v1/estates/${encodeURIComponent(estateId)}/settings`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),

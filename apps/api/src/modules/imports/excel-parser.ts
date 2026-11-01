@@ -1,5 +1,4 @@
 import ExcelJS from 'exceljs';
-import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import type { PropertyKind } from '@silverstone/shared';
 import type { HouseTypeRecord } from '../properties/house-type-repository.js';
@@ -70,10 +69,9 @@ export interface ImportRowContext {
  * No database writes happen here — the import service persists the results.
  */
 export async function parseWorkbook(
-  filePath: string,
+  bytes: Buffer,
   context: ImportRowContext,
 ): Promise<ParseResult> {
-  const bytes = await fs.readFile(filePath);
   const fingerprint = createHash('sha256').update(bytes).digest('hex');
 
   const workbook = new ExcelJS.Workbook();

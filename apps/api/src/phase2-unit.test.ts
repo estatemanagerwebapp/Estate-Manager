@@ -11,9 +11,6 @@ import {
 import type { HouseTypeRecord } from './modules/properties/house-type-repository.js';
 import { slugify } from './modules/estates/estate.service.js';
 import { parseWorkbook, buildTemplate } from './modules/imports/excel-parser.js';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 // --- Helpers -------------------------------------------------------------------
 
@@ -43,16 +40,12 @@ function derive(
   });
 }
 
-async function writeTestWorkbook(rows: string[][]): Promise<string> {
+async function writeTestWorkbook(rows: string[][]): Promise<Buffer> {
   const ExcelJS = await import('exceljs');
-  const dir = await mkdtemp(join(tmpdir(), 'import-test-'));
-  const file = join(dir, 'test.xlsx');
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Properties');
   for (const row of rows) ws.addRow(row);
-  await wb.xlsx.writeFile(file);
-  setTimeout(() => rm(dir, { recursive: true, force: true }).catch(() => {}), 0);
-  return file;
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
 // --- Identifier derivation -----------------------------------------------------

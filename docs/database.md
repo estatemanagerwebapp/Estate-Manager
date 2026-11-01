@@ -118,3 +118,43 @@ Idempotent. Creates the organization and the initial ACTIVE config (version
 
 Out of scope for Phase 0. The deployment layer (IaC, not this repo) is
 responsible for `pg_dump` / snapshots.
+
+### API runtime role and row-level security
+
+The API must connect as a dedicated role that is **`NOSUPERUSER NOBYPASSRLS`**
+and owns no protected table; `FORCE ROW LEVEL SECURITY` does not constrain
+table owners, superusers or `BYPASSRLS` roles.
+
+`.env` therefore carries two URLs:
+
+```sh
+DIRECT_URL=postgresql://postgres.<ref>:<password>@...   # schema owner: migrations, seeds, tests
+DATABASE_URL=postgresql://silverstone_api.<ref>:<password>@...  # API runtime role
+```
+
+- Prisma Migrate uses `DIRECT_URL` (`directUrl` in the datasource); the app
+  and `DATABASE_URL` use the runtime role.
+- Tests and `prisma/seed.ts` also use `DIRECT_URL` because they write
+  protected tables before any request scope exists.
+- Startup and `/health/ready` run `assertRlsRuntimeReady()`: the API fails
+  closed if the connected role can bypass RLS, owns a protected table, or any
+  table in `RLS_PROTECTED_TABLES` lacks both `relrowsecurity` and
+  `relforcerowsecurity`.
+- Provision the runtime role with:
+
+```sql
+CREATE ROLE silverstone_api LOGIN PASSWORD '<secret>'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+GRANT USAGE ON SCHEMA public TO silverstone_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO silverstone_api;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO silverstone_api;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO silverstone_api;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO silverstone_api;
+```
+
+- Authentication and onboarding run before a user scope exists. Pre-auth
+  routes (`/auth/login`, `/auth/forgot-password`, `/auth/reset-password`) set
+  only the organization scope for their audit writes; public onboarding sets
+  the SHA-256 onboarding-code scope and receives only that property.
+

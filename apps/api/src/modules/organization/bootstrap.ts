@@ -54,14 +54,5 @@ export function loadBootstrapConfig(pathOverride?: string): OrganizationConfig {
     ]);
   }
 
-  const config = parseOrganizationConfig(document);
-  configSource = found;
-  return config;
-}
-
-/** The resolved path of the bootstrap file, set on the last successful load. */
-let configSource: string | undefined;
-
-export function bootstrapConfigSource(): string | undefined {
-  return configSource;
+  return parseOrganizationConfig(document);
 }

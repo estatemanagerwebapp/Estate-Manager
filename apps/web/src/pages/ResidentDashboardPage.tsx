@@ -19,6 +19,7 @@ import {
   EmptyState,
   ErrorBanner,
 } from '../components/ui';
+import { formatShortDateTime } from '../lib/format';
 
 /**
  * Resident dashboard home (S11).
@@ -181,13 +182,6 @@ export function ResidentDashboardPage() {
             actions={<ViewLink to="/resident/app/community" label="View" />}
           />
           <CardBody className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-(--color-ink)">Open complaints</span>
-              <Badge tone={estateOffice.openComplaints > 0 ? 'warning' : 'neutral'}>
-                {estateOffice.openComplaints}
-              </Badge>
-            </div>
-
             {estateOffice.activeBroadcast && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-(--color-ink)">
@@ -240,7 +234,7 @@ export function ResidentDashboardPage() {
                   <li key={booking.id} className="text-sm">
                     <span className="font-semibold text-(--color-ink)">{booking.facilityName}</span>
                     <span className="block text-xs text-(--color-ink-muted)">
-                      {formatDate(booking.startsAt)}
+                      {formatShortDateTime(booking.startsAt)}
                     </span>
                   </li>
                 ))}
@@ -269,7 +263,7 @@ export function ResidentDashboardPage() {
                   <li key={notification.id} className="text-sm">
                     <span className="font-semibold text-(--color-ink)">{notification.title}</span>
                     <span className="block text-xs text-(--color-ink-muted)">
-                      {formatDate(notification.createdAt)}
+                      {formatShortDateTime(notification.createdAt)}
                     </span>
                   </li>
                 ))}
@@ -298,13 +292,4 @@ function formatKobo(kobo: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }

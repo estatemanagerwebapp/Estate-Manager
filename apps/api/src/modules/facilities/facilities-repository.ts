@@ -25,6 +25,9 @@ export interface OperatorFacilityRecord {
   name: string;
   description: string;
   bookable: boolean;
+  openingTime: string;
+  closingTime: string;
+  bookingThresholdHours: number | null;
   usageFeeKobo: number;
   archivedAt: Date | null;
   createdAt: Date;
@@ -45,6 +48,9 @@ export interface CreateFacilityRecordInput {
   description: string;
   usageFeeKobo: number;
   bookable: boolean;
+  openingTime: string;
+  closingTime: string;
+  bookingThresholdHours: number | null;
 }
 
 export interface UpdateFacilityRecordInput {
@@ -53,6 +59,9 @@ export interface UpdateFacilityRecordInput {
   description?: string;
   usageFeeKobo?: number;
   bookable?: boolean;
+  openingTime?: string;
+  closingTime?: string;
+  bookingThresholdHours?: number | null;
 }
 
 export interface OperatorBookingResidentRecord {
@@ -100,6 +109,7 @@ export interface OperatorBookingFilter {
   status?: BookingStatus;
   paymentStatus?: BookingPaymentStatus;
   facilityId?: string;
+  estateId?: string;
   from?: Date;
   to?: Date;
   limit?: number;
@@ -138,7 +148,8 @@ const BOOKING_INCLUDE = {
   user: {
     select: {
       ...RESIDENT_SELECT,
-      residentOnboarding: {
+      residentOnboardings: {
+        take: 1,
         select: {
           property: { select: PROPERTY_SELECT },
         },
@@ -214,6 +225,9 @@ export class PrismaFacilitiesRepository {
         description: input.description,
         usageFeeKobo: input.usageFeeKobo,
         bookable: input.bookable,
+        openingTime: input.openingTime,
+        closingTime: input.closingTime,
+        bookingThresholdHours: input.bookingThresholdHours,
       },
       include: FACILITY_INCLUDE,
     });
@@ -233,6 +247,11 @@ export class PrismaFacilitiesRepository {
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.usageFeeKobo !== undefined ? { usageFeeKobo: input.usageFeeKobo } : {}),
         ...(input.bookable !== undefined ? { bookable: input.bookable } : {}),
+        ...(input.openingTime !== undefined ? { openingTime: input.openingTime } : {}),
+        ...(input.closingTime !== undefined ? { closingTime: input.closingTime } : {}),
+        ...(input.bookingThresholdHours !== undefined
+          ? { bookingThresholdHours: input.bookingThresholdHours }
+          : {}),
       },
       include: FACILITY_INCLUDE,
     });
@@ -283,6 +302,7 @@ export class PrismaFacilitiesRepository {
     if (filter.status) where.status = filter.status;
     if (filter.paymentStatus) where.paymentStatus = filter.paymentStatus;
     if (filter.facilityId) where.facilityId = filter.facilityId;
+    if (filter.estateId) where.facility = { estateId: filter.estateId };
     if (filter.from || filter.to) {
       where.startsAt = {
         ...(filter.from ? { gte: filter.from } : {}),
@@ -389,6 +409,9 @@ function toFacilityRecord(row: FacilityRow): OperatorFacilityRecord {
     name: row.name,
     description: row.description,
     bookable: row.bookable,
+    openingTime: row.openingTime,
+    closingTime: row.closingTime,
+    bookingThresholdHours: row.bookingThresholdHours,
     usageFeeKobo: row.usageFeeKobo,
     archivedAt: row.archivedAt,
     createdAt: row.createdAt,
@@ -398,7 +421,7 @@ function toFacilityRecord(row: FacilityRow): OperatorFacilityRecord {
 }
 
 function toBookingRecord(row: BookingRow): OperatorBookingRecord {
-  const property = row.user.residentOnboarding?.property ?? null;
+  const property = row.user.residentOnboardings[0]?.property ?? null;
   return {
     id: row.id,
     organizationId: row.organizationId,

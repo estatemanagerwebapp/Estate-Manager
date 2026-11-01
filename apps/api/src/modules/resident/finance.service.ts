@@ -6,6 +6,7 @@ import type {
   FinanceTransactionRecord,
 } from './finance-repository.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
+import { formatNaira } from '@silverstone/shared';
 import type {
   BankTransferDetailsDto,
   ResidentFinanceView,
@@ -24,9 +25,12 @@ export interface ResidentFinanceServiceOptions {
   finance: PrismaFinanceRepository;
   audit: PrismaAuditRepository;
   /** The configured registration fee (amount + currency). 0 = free onboarding. */
-  registrationFee: () => Promise<RegistrationFee>;
+  registrationFee: (organizationId: string, propertyId: string | null) => Promise<RegistrationFee>;
   /** Bank-transfer instructions, when the estate office has configured them. */
-  paymentDetails?: () => Promise<BankTransferDetailsDto | null>;
+  paymentDetails?: (
+    organizationId: string,
+    userId: string,
+  ) => Promise<BankTransferDetailsDto | null>;
 }
 
 /**
@@ -48,18 +52,26 @@ export class ResidentFinanceService {
    * The four-section finance view for the acting resident: outstanding
    * invoices, paid invoices, payment history and the transaction ledger.
    */
-  async view(organizationId: string, userId: string): Promise<ResidentFinanceView> {
+  async view(
+    organizationId: string,
+    userIds: string | readonly string[],
+  ): Promise<ResidentFinanceView> {
+    const primaryUserId = typeof userIds === 'string' ? userIds : userIds[0] ?? '';
     const [outstanding, paid, payments, transactions, paymentDetails] = await Promise.all([
-      this.options.finance.listInvoicesByStatus(organizationId, userId, 'UNPAID'),
-      this.options.finance.listInvoicesByStatus(organizationId, userId, 'PAID'),
-      this.options.finance.listPayments(organizationId, userId),
-      this.options.finance.listTransactions(organizationId, userId),
-      this.options.paymentDetails ? this.options.paymentDetails() : Promise.resolve(null),
+      // OVERDUE belongs in the outstanding list; a past-due invoice must not
+      // vanish from the resident's finance page.
+      this.options.finance.listInvoicesWithTotals(organizationId, userIds, ['UNPAID', 'OVERDUE']),
+      this.options.finance.listInvoicesWithTotals(organizationId, userIds, ['PAID']),
+      this.options.finance.listPayments(organizationId, userIds),
+      this.options.finance.listTransactions(organizationId, userIds),
+      this.options.paymentDetails
+        ? this.options.paymentDetails(organizationId, primaryUserId)
+        : Promise.resolve(null),
     ]);
 
     return {
-      outstanding: outstanding.map(toInvoiceDto),
-      paid: paid.map(toInvoiceDto),
+      outstanding: outstanding.map(({ invoice, paidKobo }) => toInvoiceDto(invoice, paidKobo)),
+      paid: paid.map(({ invoice, paidKobo }) => toInvoiceDto(invoice, paidKobo)),
       payments: payments.map(toPaymentDto),
       transactions: transactions.map(toTransactionDto),
       paymentDetails,
@@ -77,78 +89,91 @@ export class ResidentFinanceService {
    */
   async createPayment(
     organizationId: string,
-    userId: string,
-    input: { invoiceId: string; method?: string; reference: string | null },
+    actorUserId: string,
+    accountUserIds: readonly string[],
+    input: { invoiceId: string; amountKobo?: number; method?: string; reference: string | null },
     requestId: string | null,
   ): Promise<ResidentCreatePaymentResponse> {
-    const invoice = await this.options.finance.findInvoice(organizationId, userId, input.invoiceId);
-    if (!invoice) {
+    const current = await this.options.finance.findInvoiceWithTotals(
+      organizationId,
+      accountUserIds,
+      input.invoiceId,
+    );
+    if (!current) {
       // Never reveals whether another user's invoice exists with this id.
       throw new AppError(404, 'NOT_FOUND', 'Invoice not found');
     }
-    if (invoice.status === 'PAID') {
-      throw new AppError(409, 'CONFLICT', 'This invoice is already paid');
-    }
-    if (invoice.status === 'VOID') {
+    if (current.invoice.status === 'VOID') {
       throw new AppError(409, 'CONFLICT', 'This invoice has been voided');
     }
+    const outstanding = Math.max(current.invoice.amountKobo - current.paidKobo, 0);
+    if (current.invoice.status === 'PAID' || outstanding === 0) {
+      throw new AppError(409, 'CONFLICT', 'This invoice is already settled');
+    }
+    // No amount means "pay the balance"; a smaller amount is a part payment.
+    const amountKobo = input.amountKobo ?? outstanding;
+    if (!Number.isSafeInteger(amountKobo) || amountKobo <= 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Enter a valid payment amount');
+    }
+    if (amountKobo > outstanding) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `The amount exceeds the outstanding balance of ${formatNaira(outstanding)}`,
+      );
+    }
 
-    const amountKobo = invoice.amountKobo;
     const method = input.method?.trim() || 'CASH';
     const reference = input.reference?.trim() || null;
 
-    const payment = await this.options.finance.createPayment({
+    const applied = await this.options.finance.applyInvoicePayment({
       organizationId,
-      userId,
-      invoiceId: invoice.id,
+      invoiceId: current.invoice.id,
+      userId: current.invoice.userId,
       amountKobo,
       method,
       reference,
+      paidAt: new Date(),
+      recordedById: null,
     });
-
-    // The provider is NONE, so a recorded reference is treated as settled:
-    // flip the invoice PAID.
-    await this.options.finance.markInvoicePaid(invoice.id);
-
-    // Ledger entries: one for the payment (credit, incoming), one for the
-    // now-settled invoice (debit, outgoing).
-    await this.options.finance.createTransaction({
-      organizationId,
-      userId,
-      kind: 'PAYMENT',
-      amountKobo,
-      signed: amountKobo,
-      memo: `Payment against ${invoice.period}`,
-      reference: payment.id,
-    });
-    await this.options.finance.createTransaction({
-      organizationId,
-      userId,
-      kind: 'INVOICE',
-      amountKobo,
-      signed: -amountKobo,
-      memo: `${invoice.period} settled`,
-      reference: invoice.id,
-    });
+    if (!applied.ok) {
+      if (applied.reason === 'OVERPAYMENT') {
+        throw new AppError(
+          400,
+          'VALIDATION_ERROR',
+          `The amount exceeds the outstanding balance of ${formatNaira(applied.remainingKobo ?? 0)}`,
+        );
+      }
+      if (applied.reason === 'NOT_FOUND') {
+        throw new AppError(404, 'NOT_FOUND', 'Invoice not found');
+      }
+      if (applied.reason === 'VOID') {
+        throw new AppError(409, 'CONFLICT', 'This invoice has been voided');
+      }
+      throw new AppError(409, 'CONFLICT', 'This invoice is already settled');
+    }
 
     await this.options.audit.record({
       organizationId,
-      actorId: userId,
+      actorId: actorUserId,
       eventType: 'resident.payment_recorded',
       targetType: 'resident',
-      targetId: userId,
+      targetId: current.invoice.userId,
       requestId,
       outcome: 'success',
       metadata: {
-        invoiceId: invoice.id,
-        paymentId: payment.id,
+        invoiceId: current.invoice.id,
+        paymentId: applied.payment.id,
         amountKobo,
+        paidKobo: applied.paidKobo,
+        outstandingKobo: applied.outstandingKobo,
+        status: applied.status,
         method,
         reference,
       },
     });
 
-    return { ok: true, payment: toPaymentDto(payment) };
+    return { ok: true, payment: toPaymentDto(applied.payment) };
   }
 
   /**
@@ -166,7 +191,7 @@ export class ResidentFinanceService {
     propertyId: string | null,
     requestId: string | null,
   ): Promise<void> {
-    const fee = await this.options.registrationFee();
+    const fee = await this.options.registrationFee(organizationId, propertyId);
     const period = 'Registration fee';
 
     if (await this.options.finance.hasSeededInvoice(organizationId, userId, period)) {
@@ -233,15 +258,19 @@ export class ResidentFinanceService {
   }
 }
 
-function toInvoiceDto(invoice: FinanceInvoiceRecord): ResidentInvoiceDto {
+function toInvoiceDto(invoice: FinanceInvoiceRecord, paidKobo: number): ResidentInvoiceDto {
   return {
     id: invoice.id,
+    propertyId: invoice.propertyId,
+    title: invoice.title,
     period: invoice.period,
     amountKobo: invoice.amountKobo,
     currency: invoice.currency,
     status: invoice.status as ResidentInvoiceDto['status'],
     dueAt: invoice.dueAt.toISOString(),
     issuedAt: invoice.issuedAt.toISOString(),
+    paidKobo,
+    outstandingKobo: Math.max(invoice.amountKobo - paidKobo, 0),
   };
 }
 

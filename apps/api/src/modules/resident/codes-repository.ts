@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import type { AccessCodeAuthenticationType } from '@silverstone/shared';
 import { sha256Hex } from '../../lib/password.js';
 import { generateResidentCode } from '../auth/resident-onboarding-repository.js';
 
@@ -30,6 +31,7 @@ export interface AccessCodeRecord {
   visitorName: string | null;
   carPlate: string | null;
   idDocumentUrl: string | null;
+  authenticationType: AccessCodeAuthenticationType;
   issuedAt: Date;
   revokedAt: Date | null;
   createdAt: Date;
@@ -48,6 +50,7 @@ export interface CreateAccessCodeInput {
   carPlate?: string | null;
   /** Uploaded visitor ID image URL, when supplied. */
   idDocumentUrl?: string | null;
+  authenticationType: AccessCodeAuthenticationType;
   /** Length of the generated code. */
   codeLength: number;
 }
@@ -79,6 +82,7 @@ export class PrismaAccessCodeRepository {
         visitorName: input.visitorName ?? null,
         carPlate: input.carPlate ?? null,
         idDocumentUrl: input.idDocumentUrl ?? null,
+        authenticationType: input.authenticationType,
       },
     });
     return { record: toRecord(row), code };
@@ -90,11 +94,14 @@ export class PrismaAccessCodeRepository {
    */
   async listByUser(
     organizationId: string,
-    userId: string,
+    userIds: string | readonly string[],
     limit = 50,
   ): Promise<AccessCodeRecord[]> {
     const rows = await this.prisma.accessCode.findMany({
-      where: { organizationId, userId },
+      where: {
+        organizationId,
+        userId: { in: typeof userIds === 'string' ? [userIds] : [...userIds] },
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
@@ -104,11 +111,15 @@ export class PrismaAccessCodeRepository {
   /** Ownership-checked lookup: a code belonging to someone else is invisible. */
   async findById(
     organizationId: string,
-    userId: string,
+    userIds: string | readonly string[],
     codeId: string,
   ): Promise<AccessCodeRecord | null> {
     const row = await this.prisma.accessCode.findFirst({
-      where: { organizationId, userId, id: codeId },
+      where: {
+        organizationId,
+        userId: { in: typeof userIds === 'string' ? [userIds] : [...userIds] },
+        id: codeId,
+      },
     });
     return row ? toRecord(row) : null;
   }
@@ -143,6 +154,7 @@ function toRecord(row: {
   visitorName: string | null;
   carPlate: string | null;
   idDocumentUrl: string | null;
+  authenticationType: string;
   issuedAt: Date;
   revokedAt: Date | null;
   createdAt: Date;
@@ -161,6 +173,7 @@ function toRecord(row: {
     visitorName: row.visitorName,
     carPlate: row.carPlate,
     idDocumentUrl: row.idDocumentUrl,
+    authenticationType: row.authenticationType as AccessCodeAuthenticationType,
     issuedAt: row.issuedAt,
     revokedAt: row.revokedAt,
     createdAt: row.createdAt,

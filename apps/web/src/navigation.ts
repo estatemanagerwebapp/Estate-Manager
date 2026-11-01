@@ -1,7 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Building,
-  Building2,
   CalendarDays,
   FileSpreadsheet,
   History,
@@ -9,11 +8,9 @@ import {
   KeyRound,
   LayoutDashboard,
   Mail,
-  MessageSquareWarning,
   ScanLine,
   ShieldCheck,
   Siren,
-  SlidersHorizontal,
   UserRound,
   Wallet,
 } from 'lucide-react';
@@ -85,13 +82,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         permission: 'message.read',
         badge: 'unreadMessages',
       },
-      {
-        to: '/app/complaints',
-        label: 'Complaints',
-        icon: MessageSquareWarning,
-        permission: 'complaint.read',
-        badge: 'openComplaints',
-      },
     ],
   },
   {
@@ -105,16 +95,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         permission: 'estate.read',
       },
       {
-        to: '/app/properties',
-        label: 'Properties',
-        icon: Building2,
-        permission: 'property.read',
-      },
-      {
         to: '/app/residents',
         label: 'Residents',
         icon: UserRound,
-        requiresUserManage: true,
+        permission: 'resident.manage',
         badge: 'pendingResidents',
       },
     ],
@@ -178,21 +162,9 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   },
 ];
 
-/**
- * Flattened view retained for callers that only need to resolve a destination
- * (tests, path helpers). The shell renders the grouped sections instead.
- */
-export const PRIMARY_NAV: readonly NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
-
 export const SETTINGS_SECTION_LABEL = 'Settings';
 
 export const SETTINGS_NAV: readonly NavItem[] = [
-  {
-    to: '/app/settings',
-    label: 'Estate settings',
-    icon: SlidersHorizontal,
-    permission: 'config.manage',
-  },
   {
     to: '/app/account',
     label: 'Account & password',
@@ -213,7 +185,7 @@ export function isNavItemVisible(
 export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/estates')) return 'Estates';
   if (pathname.startsWith('/app/properties/')) return 'Property';
-  if (pathname.startsWith('/app/properties')) return 'Properties';
+  if (pathname.startsWith('/app/properties')) return 'Estates';
   if (pathname.startsWith('/app/imports')) return 'Data import';
   if (pathname.startsWith('/app/billing')) return 'Billing';
   if (pathname.startsWith('/app/facilities')) return 'Facilities';
@@ -223,7 +195,6 @@ export function sectionLabelForPath(pathname: string): string {
   if (pathname.startsWith('/app/users')) return 'Administrators';
   if (pathname.startsWith('/app/sos')) return 'SOS alerts';
   if (pathname.startsWith('/app/messages')) return 'Messages';
-  if (pathname.startsWith('/app/complaints')) return 'Complaints';
   if (pathname.startsWith('/app/gate')) return 'Gate access';
   if (pathname.startsWith('/app/activity')) return 'Activity';
   if (pathname.startsWith('/app/settings')) return 'Settings';

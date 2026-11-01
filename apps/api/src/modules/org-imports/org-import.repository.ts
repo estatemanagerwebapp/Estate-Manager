@@ -286,7 +286,8 @@ export class PrismaOrgImportRepository {
         select: {
           id: true,
           email: true,
-          residentOnboarding: {
+          residentOnboardings: {
+            where: { archivedAt: null },
             select: {
               propertyId: true,
               property: {
@@ -342,7 +343,7 @@ export class PrismaOrgImportRepository {
 
     const activeResidentsByEmail = new Map<string, OrgImportResidentRef>();
     for (const user of users) {
-      const onboarding = user.residentOnboarding;
+      const onboarding = user.residentOnboardings[0];
       activeResidentsByEmail.set(user.email.toLowerCase(), {
         id: user.id,
         email: user.email,

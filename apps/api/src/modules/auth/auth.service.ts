@@ -5,7 +5,7 @@ import {
   verifyPassword,
   sha256Hex,
 } from '../../lib/password.js';
-import { validatePassword } from './password-policy.js';
+import { validatePasswordPolicy } from '@silverstone/shared';
 import type { PrismaUserRepository } from './user-repository.js';
 import type { PrismaSessionRepository } from './session-repository.js';
 import type { PrismaPasswordResetRepository } from './reset-token-repository.js';
@@ -24,6 +24,20 @@ export interface AuthAuditContext {
   organizationId: string;
   actorId: string | null;
   requestId: string | null;
+}
+
+export function requireAuditActor(context: AuthAuditContext): string {
+  if (!context.actorId) {
+    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+  }
+  return context.actorId;
+}
+
+export function requireAuditOrganization(context: AuthAuditContext): string {
+  if (!context.organizationId) {
+    throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+  }
+  return context.organizationId;
 }
 
 // A deliberately-failing hash matching the active backend. Verifying against it
@@ -169,7 +183,7 @@ export class AuthService {
       throw new AppError(401, 'UNAUTHORIZED', 'Current password is incorrect');
     }
 
-    const problems = validatePassword(newPassword);
+    const problems = validatePasswordPolicy(newPassword);
     if (problems.length > 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Password does not meet the requirements', {
         details: problems.map((message, index) => ({
@@ -289,7 +303,7 @@ export class AuthService {
       throw new AppError(400, 'BAD_REQUEST', 'This reset token is invalid or has expired');
     }
 
-    const problems = validatePassword(newPassword);
+    const problems = validatePasswordPolicy(newPassword);
     if (problems.length > 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Password does not meet the requirements', {
         details: problems.map((message, index) => ({
@@ -352,7 +366,7 @@ export class AuthService {
       return { created: false, user: null };
     }
 
-    const problems = validatePassword(password);
+    const problems = validatePasswordPolicy(password);
     if (problems.length > 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Password does not meet the requirements', {
         details: problems.map((message, index) => ({
@@ -415,6 +429,7 @@ export class AuthService {
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
       lastPasswordChangedAt: record.lastPasswordChangedAt?.toISOString() ?? null,
+      estateAssignments: await this.users.listEstateAssignments(record.id),
     };
   }
 }

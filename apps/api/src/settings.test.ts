@@ -198,7 +198,6 @@ describe('operational settings', () => {
       sos: { contacts: [{ id: 'contact-security', category: 'SECURITY' }] },
     });
     expect(response.body.data).not.toHaveProperty('modules');
-    expect(response.body.data).not.toHaveProperty('propertyOptions');
   });
 
   it('rejects a stale expectedVersion', async () => {

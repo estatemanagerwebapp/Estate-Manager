@@ -54,6 +54,8 @@ export interface ResidentBookingsServiceOptions {
    * remains valid.
    */
   availability?: AvailabilityService;
+  /** Organization-local schedule timezone. */
+  loadTimeZone?: (organizationId: string) => Promise<string>;
   /** Injectable clock for tests. */
   now?: () => Date;
 }
@@ -84,6 +86,9 @@ export class ResidentBookingsService {
         name: facility.name,
         description: facility.description,
         bookable: facility.bookable,
+        openingTime: facility.openingTime,
+        closingTime: facility.closingTime,
+        bookingThresholdHours: facility.bookingThresholdHours,
         estate: facility.estate,
         usageFeeKobo: facility.usageFeeKobo,
       })),
@@ -132,6 +137,13 @@ export class ResidentBookingsService {
     if (!facility.bookable) {
       throw new AppError(409, 'CONFLICT', 'This facility cannot be booked');
     }
+    assertWithinFacilityRules(
+      facility,
+      startsAt,
+      endsAt,
+      this.now(),
+      (await this.options.loadTimeZone?.(organizationId)) ?? 'Africa/Lagos',
+    );
 
     const clash = await this.options.bookings.findOverlappingBooking(facility.id, startsAt, endsAt);
     if (clash) {
@@ -276,6 +288,13 @@ export class ResidentBookingsService {
     if (!facility.bookable) {
       throw new AppError(409, 'CONFLICT', 'This facility cannot be booked');
     }
+    assertWithinFacilityRules(
+      facility,
+      startsAt,
+      endsAt,
+      this.now(),
+      (await this.options.loadTimeZone?.(organizationId)) ?? 'Africa/Lagos',
+    );
 
     const clash = await this.options.bookings.findOverlappingBooking(facility.id, startsAt, endsAt);
     if (!clash) {
@@ -361,6 +380,58 @@ function validateBookingWindow(startsAt: Date, endsAt: Date, now: Date): void {
       'VALIDATION_ERROR',
       `A booking cannot run for more than ${MAX_BOOKING_HOURS} hours`,
     );
+  }
+}
+
+function assertWithinFacilityRules(
+  facility: { openingTime: string; closingTime: string; bookingThresholdHours: number | null },
+  startsAt: Date,
+  endsAt: Date,
+  now: Date,
+  timeZone: string,
+): void {
+  const parts = (value: Date) => {
+    const values = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(value);
+    const get = (key: string) => values.find((part) => part.type === key)?.value ?? '';
+    return {
+      date: `${get('year')}-${get('month')}-${get('day')}`,
+      minute: Number(get('hour')) * 60 + Number(get('minute')),
+    };
+  };
+  const start = parts(startsAt);
+  const end = parts(endsAt);
+  const minutes = (time: string) => {
+    const [hour, minute] = time.split(':').map(Number);
+    return hour! * 60 + minute!;
+  };
+  if (
+    start.date !== end.date ||
+    start.minute < minutes(facility.openingTime) ||
+    end.minute > minutes(facility.closingTime)
+  ) {
+    throw new AppError(
+      400,
+      'VALIDATION_ERROR',
+      `This facility is open ${facility.openingTime}–${facility.closingTime}; choose a booking within those hours on one day.`,
+    );
+  }
+  if (facility.bookingThresholdHours !== null) {
+    const earliest = now.getTime() + facility.bookingThresholdHours * 3_600_000;
+    if (startsAt.getTime() < earliest) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `This facility must be booked at least ${facility.bookingThresholdHours} hours in advance.`,
+      );
+    }
   }
 }
 

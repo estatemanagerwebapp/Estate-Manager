@@ -26,6 +26,8 @@ export interface EstateDto {
   /** Free-text location/description; not part of the identifier. */
   address: string | null;
   status: EstateStatus;
+  /** Included on estate list responses; omitted from detail and mutation responses. */
+  propertyCount?: number;
   createdAt: string;
   updatedAt: string;
 }

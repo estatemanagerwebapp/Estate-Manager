@@ -53,6 +53,7 @@ describe('activity filter helpers', () => {
         targetType: '',
         from: '',
         to: '',
+        estateId: '',
       }),
     ).toEqual({});
   });
@@ -65,6 +66,7 @@ describe('activity filter helpers', () => {
         targetType: 'estate',
         from: '2026-10-01',
         to: '2026-10-31',
+        estateId: '',
       }),
     ).toEqual({
       eventType: 'estate.created',

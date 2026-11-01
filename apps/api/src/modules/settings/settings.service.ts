@@ -1,4 +1,5 @@
 import { safeParseOrganizationConfig, type OrganizationConfig } from '@silverstone/config-schema';
+import type { Prisma } from '@prisma/client';
 import type {
   OrganizationSettingsUpdateInput,
   OrganizationSettingsView,
@@ -6,6 +7,7 @@ import type {
 import { AppError, ValidationError } from '../../lib/errors.js';
 import type { PrismaAuditRepository } from '../audit/audit-repository.js';
 import type { OrganizationConfigService } from '../organization/config.service.js';
+import type { PrismaEstateSettingsRepository } from './estate-settings-repository.js';
 import { organizationSettingsViewFromConfig } from './settings.mapper.js';
 
 export interface SettingsContext {
@@ -18,12 +20,113 @@ export class OrganizationSettingsService {
   constructor(
     private readonly configService: OrganizationConfigService,
     private readonly audit: PrismaAuditRepository,
+    private readonly estateSettings?: PrismaEstateSettingsRepository,
   ) {}
 
   /** Curated settings projection of the active organization config. */
   async get(): Promise<OrganizationSettingsView> {
     const resolved = await this.configService.resolve();
     return organizationSettingsViewFromConfig(resolved.config, resolved.version);
+  }
+
+  async getForEstate(organizationId: string, estateId: string): Promise<OrganizationSettingsView> {
+    const estate = await this.requireEstateSettings(organizationId, estateId);
+    const config = await this.resolveConfigForEstate(organizationId, estateId);
+    return organizationSettingsViewFromConfig(config, estate.version);
+  }
+
+  /** Resolve estate overrides over the organization defaults for runtime use. */
+  async resolveConfigForEstate(
+    organizationId: string,
+    estateId: string,
+  ): Promise<OrganizationConfig> {
+    const estate = await this.requireEstateSettings(organizationId, estateId);
+    const base = await this.configService.resolve();
+    const withOverrides = mergeSettings(
+      base.config,
+      storedSettingsToInput(estate.operationalSettings),
+    );
+    const parsed = safeParseOrganizationConfig(withOverrides);
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.issues.map((issue) => ({ path: issue.path, message: issue.message })),
+      );
+    }
+    return parsed.config;
+  }
+
+  async updateForEstate(
+    context: SettingsContext,
+    estateId: string,
+    input: OrganizationSettingsUpdateInput,
+  ): Promise<OrganizationSettingsView> {
+    const repository = this.requireEstateRepository();
+    const estate = await this.requireEstateSettings(context.organizationId, estateId);
+    if (input.expectedVersion !== undefined && input.expectedVersion !== estate.version) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'Settings changed since they were loaded. Refresh and try again.',
+      );
+    }
+
+    const base = await this.configService.resolve();
+    const currentConfig = mergeSettings(
+      base.config,
+      storedSettingsToInput(estate.operationalSettings),
+    );
+    const next = mergeSettings(currentConfig, input);
+    const parsed = safeParseOrganizationConfig(next);
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.issues.map((issue) => ({ path: issue.path, message: issue.message })),
+      );
+    }
+
+    const nextVersion = estate.version + 1;
+    const nextView = organizationSettingsViewFromConfig(parsed.config, nextVersion);
+    const updated = await repository.save(
+      context.organizationId,
+      estateId,
+      estate.version,
+      toStoredSettings(nextView),
+    );
+    if (!updated) {
+      throw new AppError(
+        409,
+        'CONFLICT',
+        'Settings changed since they were loaded. Refresh and try again.',
+      );
+    }
+
+    const changed = Object.keys(input).filter(
+      (key) =>
+        key !== 'expectedVersion' &&
+        input[key as keyof OrganizationSettingsUpdateInput] !== undefined,
+    );
+    await this.audit.record({
+      organizationId: context.organizationId,
+      actorId: context.actorId,
+      eventType: 'settings.updated',
+      targetType: 'settings',
+      targetId: estateId,
+      requestId: context.requestId,
+      outcome: 'success',
+      metadata: { estateId, version: updated.version, changed },
+    });
+    return organizationSettingsViewFromConfig(parsed.config, updated.version);
+  }
+
+  private async requireEstateSettings(organizationId: string, estateId: string) {
+    const estate = await this.requireEstateRepository().find(organizationId, estateId);
+    if (!estate) throw new AppError(404, 'NOT_FOUND', 'Estate not found');
+    return estate;
+  }
+
+  private requireEstateRepository(): PrismaEstateSettingsRepository {
+    if (!this.estateSettings)
+      throw new AppError(501, 'INTERNAL_ERROR', 'Estate settings are not available');
+    return this.estateSettings;
   }
 
   /**
@@ -78,6 +181,29 @@ export class OrganizationSettingsService {
 
     return organizationSettingsViewFromConfig(parsed.config, created.version);
   }
+}
+
+function toStoredSettings(settings: OrganizationSettingsView): Prisma.InputJsonValue {
+  return {
+    onboarding: settings.onboarding,
+    accessCodes: {
+      defaultDurationHours: settings.accessCodes.defaultDurationHours,
+      maxDurationHours: settings.accessCodes.maxDurationHours,
+    },
+    payments: settings.payments,
+    sos: settings.sos,
+  } as unknown as Prisma.InputJsonValue;
+}
+
+function storedSettingsToInput(value: Prisma.JsonValue): OrganizationSettingsUpdateInput {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const stored = value as Record<string, unknown>;
+  return {
+    onboarding: stored.onboarding as OrganizationSettingsUpdateInput['onboarding'],
+    accessCodes: stored.accessCodes as OrganizationSettingsUpdateInput['accessCodes'],
+    payments: stored.payments as OrganizationSettingsUpdateInput['payments'],
+    sos: stored.sos as OrganizationSettingsUpdateInput['sos'],
+  };
 }
 
 /** Drop keys whose value is `undefined` so a partial payload cannot erase data. */
