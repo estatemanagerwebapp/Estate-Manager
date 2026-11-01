@@ -24,7 +24,7 @@ International standards, local understanding — thoughtfully run estates, cared
 
 ## Operating Context
 
-Lagos, Nigeria. Web-first public landing page linked from silverstonemanagers.com. Primary audience evaluates the service and seeks a path to engage (sign in, onboard, contact). Operator console lives at /app and /login; resident portal at /resident/login.
+Lagos, Nigeria. Web-first public landing page linked from silverstonemanagers.com. Primary audience evaluates the service and seeks a path to engage (sign in, onboard, contact). All account types use the shared /login entry point; successful sign-in routes each user to their role-specific console. The operator console lives at /app and the resident portal at /resident/app.
 
 ## Capabilities and Constraints
 

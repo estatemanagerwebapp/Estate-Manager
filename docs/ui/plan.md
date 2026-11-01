@@ -63,15 +63,15 @@ Separate, login-gated surface for residents (`portalName` branding). Distinct fr
 
 | Route                           | Description                                                                                                          |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `/resident/login`               | Login with email + demo password issued by estate manager.                                                           |
+| `/login`                        | Shared login with role-neutral copy; redirects signed-in users to the console for their account type.                 |
 | `/resident/app/dashboard`       | "Welcome to your dashboard" — resident home.                                                                         |
-| `/resident/app/change-password` | Forced first-login password change (when `mustChangePassword = true`). Redirects to `/resident/login` after success. |
+| `/resident/app/change-password` | Forced first-login password change (when `mustChangePassword = true`). Redirects to `/login` after success.         |
 
 **Flow:**
 
-1. Resident logs in at `/resident/login` with the demo password.
+1. Resident logs in at `/login` with the demo password.
 2. If `mustChangePassword`, they are sent to `/resident/app/change-password` before reaching the dashboard.
-3. After password change, the server revokes all sessions; resident signs back in at `/resident/login`.
+3. After password change, the server revokes all sessions; resident signs back in at `/login`.
 4. Dashboard shows welcome message + property/payment info (to be fleshed out in upcoming phases).
 
 ## 7. HTML deliverables (iteration artifacts)

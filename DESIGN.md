@@ -201,7 +201,7 @@ One drenched Commit Orange section split into message and contact halves. The he
 - **Do** separate content with 1px rules and tonal ground shifts.
 - **Do** keep body measure within 460–560px.
 - **Do** put Ink or Ink on Commit text on orange surfaces.
-- **Do** preserve both auth paths: operator `/login` and resident `/resident/login`, plus `/onboard`.
+- **Do** use one shared `/login` entry point for every account type, plus `/onboard`; legacy role-specific login URLs redirect to `/login`.
 
 ### Don't:
 

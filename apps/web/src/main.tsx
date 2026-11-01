@@ -5,7 +5,12 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './api/query';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { ToastProvider } from './toast/Toast';
-import { RequireGuest, RequireAuth, RequirePermission } from './auth/RouteGuards';
+import {
+  RequireGuest,
+  RequireAuth,
+  RequirePermission,
+  signedInDestination,
+} from './auth/RouteGuards';
 import { AppShell } from './components/AppShell';
 import { FoundationPage } from './pages/FoundationPage';
 import { LoginPage } from './pages/LoginPage';
@@ -26,7 +31,6 @@ import { FacilityDetailPage } from './pages/FacilityDetailPage';
 import { OrgImportsPage } from './pages/imports/OrgImportsPage';
 import { BookingsPage } from './pages/BookingsPage';
 import { GatePage } from './pages/GatePage';
-import { ResidentLoginPage } from './pages/ResidentLoginPage';
 import { ResidentAppShell } from './components/ResidentAppShell';
 import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
 import { ResidentChangePasswordPage } from './pages/ResidentChangePasswordPage';
@@ -66,6 +70,8 @@ createRoot(container).render(
                   </RequireGuest>
                 }
               />
+              <Route path="/guard/login" element={<Navigate to="/login" replace />} />
+              <Route path="/resident/login" element={<Navigate to="/login" replace />} />
               <Route
                 path="/forgot-password"
                 element={
@@ -241,14 +247,6 @@ createRoot(container).render(
 
               {/* Resident dashboard */}
               <Route
-                path="/resident/login"
-                element={
-                  <RequireGuest>
-                    <ResidentLoginPage />
-                  </RequireGuest>
-                }
-              />
-              <Route
                 path="/resident/app"
                 element={
                   <RequireAuth>
@@ -270,10 +268,10 @@ createRoot(container).render(
                 <Route path="notifications" element={<ResidentNotificationsPage />} />
               </Route>
 
-              {/* Root: signed-in operators land on the overview; anonymous
-                visitors get the Phase 0 foundation landing. */}
+              {/* The public Foundation page is the root landing. Signed-in
+                users are sent to their role-aware application home. */}
               <Route index element={<RootRedirect />} />
-              <Route path="/foundation" element={<FoundationPage />} />
+              <Route path="/foundation" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AuthProvider>
@@ -294,5 +292,5 @@ function RootRedirect() {
       </div>
     );
   }
-  return <Navigate to={user ? '/app' : '/foundation'} replace />;
+  return user ? <Navigate to={signedInDestination(user)} replace /> : <FoundationPage />;
 }

@@ -139,9 +139,6 @@ export function FoundationPage() {
                 Onboard <ArrowRight aria-hidden size={16} />
               </Link>
             </div>
-            <Link to="/resident/login" className="sm-hero-resident">
-              Resident? Sign in to the resident portal <MoveUpRight aria-hidden size={13} />
-            </Link>
           </div>
           <div className="sm-hero-caption">
             <span className="sm-caption-rule" />
@@ -245,8 +242,7 @@ export function FoundationPage() {
           <a href="https://silverstonemanagers.com/" target="_blank" rel="noreferrer">
             Company website <MoveUpRight aria-hidden size={13} />
           </a>
-          <Link to="/login">Operator sign in</Link>
-          <Link to="/resident/login">Resident sign in</Link>
+          <Link to="/login">Sign in</Link>
         </div>
         <span className="sm-copyright">© {new Date().getFullYear()} Silverstone Managers</span>
       </footer>

@@ -1,6 +1,6 @@
 /**
  * Smoke test for the Silverstone public landing page: it mounts without an API,
- * presents the six-section structure, and keeps both sign-in paths intact.
+ * presents the six-section structure, and keeps a single sign-in path.
  */
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -44,15 +44,7 @@ describe('FoundationPage', () => {
       expect(link.getAttribute('href')).toBe('/login');
     }
 
-    expect(screen.getByRole('link', { name: /Operator sign in/i }).getAttribute('href')).toBe(
-      '/login',
-    );
-
-    const residentLinks = screen.getAllByRole('link', { name: /resident/i });
-    expect(residentLinks.length).toBeGreaterThan(0);
-    for (const link of residentLinks) {
-      expect(link.getAttribute('href')).toBe('/resident/login');
-    }
+    expect(screen.queryByRole('link', { name: /operator sign in|resident sign in/i })).toBeNull();
 
     unmount();
   });

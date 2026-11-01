@@ -6,12 +6,9 @@ import { useToast } from '../toast/Toast';
 import { ApiRequestError } from '../api/client';
 
 /**
- * Login screen. On success the session is set in `AuthContext`, which makes
- * the `RequireGuest` wrapper around this page redirect the operator to
- * `/app` — the page itself performs no navigation so there is no race.
- * Failures map to one of two copy lines: a generic credentials error (the
- * server never says *why*) and a rate-limit message that tells the operator
- * to wait.
+ * Shared login screen for residents, guards and estate staff. On success,
+ * `RequireGuest` sends the account to its role-aware home.
+ * Failures use role-neutral copy so the same form works for every account.
  */
 export function LoginPage() {
   const { login } = useAuth();
@@ -73,8 +70,8 @@ export function LoginPage() {
           <Building2 aria-hidden size={22} className="text-(--color-primary)" />
         </span>
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Silverstone Managers</h1>
-          <p className="text-xs text-(--color-ink-muted)">Estate management console</p>
+          <h1 className="text-lg font-semibold tracking-tight">Silverstone</h1>
+          <p className="text-xs text-(--color-ink-muted)">Your property, connected.</p>
         </div>
       </div>
 
@@ -83,9 +80,9 @@ export function LoginPage() {
         className="w-full max-w-sm rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)"
         noValidate
       >
-        <h2 className="text-sm font-semibold text-(--color-ink)">Sign in</h2>
+        <h2 className="text-sm font-semibold text-(--color-ink)">Sign in to your account</h2>
         <p className="mt-1 text-xs text-(--color-ink-muted)">
-          Use the credentials issued by your deployment administrator.
+          Use the email and password associated with your Silverstone account.
         </p>
 
         {notice && (

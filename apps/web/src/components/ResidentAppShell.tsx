@@ -94,7 +94,7 @@ export function ResidentAppShell() {
 
   async function handleLogout() {
     await logout();
-    navigate('/resident/login', { replace: true });
+    navigate('/login', { replace: true });
   }
 
   return (

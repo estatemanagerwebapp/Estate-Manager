@@ -1,6 +1,6 @@
 /**
- * Regression tests for the guest guard. A resident who signs in at
- * `/resident/login` must never be bounced to the operator console (`/app`).
+ * Regression tests for the shared guest route. A resident who signs in at
+ * `/login` must never be bounced to the operator console (`/app`).
  */
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -43,10 +43,10 @@ function user(overrides: Partial<UserDto>): UserDto {
 
 function renderGuestRoute() {
   return render(
-    <MemoryRouter initialEntries={['/resident/login']}>
+    <MemoryRouter initialEntries={['/login']}>
       <Routes>
         <Route
-          path="/resident/login"
+          path="/login"
           element={
             <RequireGuest>
               <p>resident sign in</p>

@@ -12,7 +12,7 @@ import { Card, CardHeader, CardBody, Field, Button } from '../components/ui';
  * Residents who log in with their demo password (`mustChangePassword =
  * true`) are sent here. They must enter the demo password as "current" and
  * choose a new password. After success the server revokes all sessions and
- * the resident signs back in at `/resident/login`.
+ * the resident signs back in through the shared `/login` form.
  */
 export function ResidentChangePasswordPage() {
   const { user, clear } = useAuth();
@@ -43,7 +43,7 @@ export function ResidentChangePasswordPage() {
       await api.changePassword(current, next);
       // The server revoked every session; sign out and start again.
       await clear();
-      navigate('/resident/login', { replace: true });
+      navigate('/login', { replace: true });
     } catch (err) {
       setSubmitting(false);
       if (err instanceof ApiRequestError) {

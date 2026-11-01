@@ -52,7 +52,7 @@ export function ForgotPasswordPage() {
               If an account exists for{' '}
               <span className="font-medium text-(--color-ink)">{email}</span>, a password reset link
               has been sent. The link is single-use and expires after a short window. If you do not
-              receive an email, check spam or contact your deployment administrator.
+              receive an email, check spam or contact your estate administrator.
             </p>
             <Link
               to="/login"
